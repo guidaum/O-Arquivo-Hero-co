@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Manrope:wght@200..800&family=Space+Grotesk:wght@300..700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Newsreader", serif;
+  --font-sans: "Manrope", sans-serif;
+  --font-mono: "Space Grotesk", monospace;
+
+  --color-obsidian: #161311;
+  --color-arcane: #47d6ff;
+  --color-ember: #ffb59c;
+  --color-gold: #eac34a;
+  --color-parchment: #d9d2c7;
+  --color-ink: #2a2624;
+}
+
+@layer base {
+  body {
+    @apply bg-obsidian text-parchment font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-md border border-white/10;
+}
+
+.glass-ember {
+  @apply bg-ember/5 backdrop-blur-md border border-ember/20;
+}
+
+.glass-arcane {
+  @apply bg-arcane/5 backdrop-blur-md border border-arcane/20;
+}
+
+.text-glow-arcane {
+  text-shadow: 0 0 10px rgba(71, 214, 255, 0.5);
+}
+
+.text-glow-ember {
+  text-shadow: 0 0 10px rgba(255, 181, 156, 0.5);
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

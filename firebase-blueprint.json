@@ -1,0 +1,175 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "RPG character data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "name": { "type": "string" },
+        "class": { "type": "string" },
+        "level": { "type": "integer" },
+        "xp": { "type": "integer" },
+        "xpMax": { "type": "integer" },
+        "image": { "type": "string" },
+        "color": { "type": "string" },
+        "icon": { "type": "string" },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "for": { "type": "integer" },
+            "con": { "type": "integer" },
+            "agi": { "type": "integer" },
+            "per": { "type": "integer" },
+            "vel": { "type": "integer" },
+            "ini": { "type": "integer" },
+            "int": { "type": "integer" },
+            "cor": { "type": "integer" }
+          }
+        },
+        "statsMods": {
+          "type": "object",
+          "properties": {
+            "for": { "type": "integer" },
+            "con": { "type": "integer" },
+            "agi": { "type": "integer" },
+            "per": { "type": "integer" },
+            "vel": { "type": "integer" },
+            "ini": { "type": "integer" },
+            "int": { "type": "integer" },
+            "cor": { "type": "integer" }
+          }
+        },
+        "canEditStats": { "type": "boolean" },
+        "talentMods": {
+          "type": "object",
+          "description": "Map of talentId to modifier value"
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "class", "level", "stats"]
+    },
+    "JournalEntry": {
+      "title": "JournalEntry",
+      "description": "RPG session journal entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "gameSessionId": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "type": { "type": "string" },
+        "xp": { "type": "integer" },
+        "content": { "type": "string" },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "time": { "type": "string" },
+              "event": { "type": "string" },
+              "type": { "type": "string" },
+              "status": { "type": "string", "enum": ["completed", "current", "upcoming"] }
+            }
+          }
+        },
+        "npcs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "role": { "type": "string" },
+              "status": { "type": "string" },
+              "image": { "type": "string" }
+            }
+          }
+        },
+        "gallery": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "date"]
+    },
+    "GameSession": {
+      "title": "GameSession",
+      "description": "A multi-player RPG session managed by a GM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "gmId": { "type": "string" },
+        "playerIds": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "maxAttributePoints": { "type": "integer" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["gmId", "name", "code"]
+    },
+    "Talent": {
+      "title": "Talent",
+      "description": "A talent or skill that can be assigned to characters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "gmId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "composition": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of attribute IDs that compose this talent"
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "gmId", "name", "composition"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Characters created by users"
+    },
+    "/journalEntries/{entryId}": {
+      "schema": "JournalEntry",
+      "description": "Session journal entries"
+    },
+    "/gameSessions/{sessionId}": {
+      "schema": "GameSession",
+      "description": "Multi-player game sessions"
+    },
+    "/talents/{talentId}": {
+      "schema": "Talent",
+      "description": "Talents created by GMs"
+    }
+  }
+}

@@ -1,0 +1,226 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - role: string (required, ['admin', 'user'])
+    //   - createdAt: string (optional, date-time)
+    //
+    // Collection: characters
+    // Document ID: characterId
+    // Fields:
+    //   - id: string (optional)
+    //   - ownerId: string (required, matches creator uid)
+    //   - name: string (required)
+    //   - class: string (required)
+    //   - level: integer (required)
+    //   - xp: integer (required)
+    //   - xpMax: integer (required)
+    //   - image: string (optional)
+    //   - color: string (optional)
+    //   - stats: map (required)
+    //   - statsMods: map (optional)
+    //   - canEditStats: boolean (optional)
+    //   - talentMods: map (optional)
+    //   - createdAt: string (optional, date-time)
+    //
+    // Collection: journalEntries
+    // Document ID: entryId
+    // Fields:
+    //   - id: string (optional)
+    //   - ownerId: string (required, matches creator uid)
+    //   - gameSessionId: string (optional)
+    //   - title: string (required)
+    //   - date: string (required, date format)
+    //   - type: string (optional)
+    //   - xp: integer (optional)
+    //   - content: string (optional)
+    //   - createdAt: string (optional, date-time)
+    //
+    // Collection: gameSessions
+    // Document ID: sessionId
+    // Fields:
+    //   - id: string (optional)
+    //   - gmId: string (required, matches creator uid)
+    //   - playerIds: list (optional)
+    //   - name: string (required)
+    //   - code: string (required)
+    //   - description: string (optional)
+    //   - active: boolean (optional)
+    //   - createdAt: string (optional, date-time)
+    //
+    // Collection: talents
+    // Document ID: talentId
+    // Fields:
+    //   - id: string (optional)
+    //   - sessionId: string (required)
+    //   - gmId: string (required)
+    //   - name: string (required)
+    //   - description: string (optional)
+    //   - composition: list (required)
+    //   - createdAt: string (optional, date-time)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
+    }
+
+    function isGMOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.gmId;
+    }
+
+    function isGMOfSession(sessionId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/gameSessions/$(sessionId)).data.gmId == request.auth.uid;
+    }
+
+    function isPlayerInSession(sessionId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/gameSessions/$(sessionId)).data.playerIds;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "guilherme.higino@gmail.com" && request.auth.token.email_verified == true)); // Default admin
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'user', 'gm'];
+    }
+
+    function isValidCharacter(data) {
+      return data.keys().hasAll(['ownerId', 'name', 'class', 'level', 'stats']) &&
+             data.ownerId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.class is string &&
+             (!('icon' in data) || data.icon is string || data.icon == null) &&
+             (!('sessionId' in data) || data.sessionId is string || data.sessionId == null) &&
+             (!('image' in data) || data.image is string || data.image == null) &&
+             (!('statsMods' in data) || data.statsMods is map) &&
+             (!('canEditStats' in data) || data.canEditStats is bool) &&
+             (!('talentMods' in data) || data.talentMods is map) &&
+             data.level is int && data.level >= 1 &&
+             data.stats is map;
+    }
+
+    function isValidJournalEntry(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'date']) &&
+             data.ownerId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.date is string &&
+             (!('gameSessionId' in data) || data.gameSessionId is string || data.gameSessionId == null) &&
+             (!('content' in data) || data.content is string) &&
+             (!('timeline' in data) || data.timeline is list) &&
+             (!('npcs' in data) || data.npcs is list) &&
+             (!('gallery' in data) || data.gallery is list);
+    }
+
+    function isValidGameSession(data) {
+      return data.keys().hasAll(['gmId', 'name', 'code']) &&
+             data.gmId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.code is string && data.code.size() > 0 &&
+             (!('maxAttributePoints' in data) || data.maxAttributePoints is int) &&
+             (!('playerIds' in data) || data.playerIds is list) &&
+             (!('description' in data) || data.description is string) &&
+             (!('active' in data) || data.active is bool) &&
+             (!('createdAt' in data) || data.createdAt is string);
+    }
+
+    function isValidTalent(data) {
+      return data.keys().hasAll(['sessionId', 'gmId', 'name', 'composition']) &&
+             data.gmId == request.auth.uid &&
+             data.sessionId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('description' in data) || data.description is string) &&
+             data.composition is list && data.composition.size() > 0;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role in ['user', 'gm'] || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /characters/{characterId} {
+      allow read: if isDocOwner() || isAdmin() || (resource.data.sessionId != null && isGMOfSession(resource.data.sessionId));
+      allow create: if isAuthenticated() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == request.auth.uid;
+      allow update: if (
+        (isGMOfSession(resource.data.sessionId) && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId) ||
+        (isDocOwner() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId && (
+          // Player can only change stats/mods if unlocked
+          resource.data.canEditStats == true || 
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['stats', 'statsMods', 'talentMods'])
+        ) && (
+          // Player cannot change canEditStats
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['canEditStats'])
+        ))
+      );
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /journalEntries/{entryId} {
+      allow read: if isDocOwner() || isAdmin() || (resource.data.gameSessionId != null && (isGMOfSession(resource.data.gameSessionId) || isPlayerInSession(resource.data.gameSessionId)));
+      allow create: if isAuthenticated() && isValidJournalEntry(request.resource.data);
+      allow update: if isDocOwner() && isValidJournalEntry(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId;
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /gameSessions/{sessionId} {
+      allow read: if isAuthenticated(); // Allow reading by code or if joined
+      allow create: if isAuthenticated() && isValidGameSession(request.resource.data);
+      allow update: if (isGMOwner() || isAuthenticated()) && isValidGameSession(request.resource.data); // Allow players to join (add to playerIds)
+      allow delete: if isGMOwner() || isAdmin();
+    }
+
+    match /talents/{talentId} {
+      allow read: if isAuthenticated() && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId));
+      allow create: if isAuthenticated() && isGMOfSession(request.resource.data.sessionId) && isValidTalent(request.resource.data);
+      allow update: if isAuthenticated() && isGMOfSession(resource.data.sessionId) && isValidTalent(request.resource.data);
+      allow delete: if isAuthenticated() && isGMOfSession(resource.data.sessionId);
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
