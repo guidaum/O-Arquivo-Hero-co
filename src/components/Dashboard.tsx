@@ -20,10 +20,11 @@ import {
   Scroll,
   Dice6,
   Sparkles,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth, db, collection, query, where, onSnapshot, getDoc, doc, OperationType, handleFirestoreError } from '../firebase';
+import { auth, db, collection, query, where, onSnapshot, getDoc, doc, deleteDoc, OperationType, handleFirestoreError } from '../firebase';
 import SessionManager from './SessionManager';
 
 const iconMap: Record<string, any> = {
@@ -42,6 +43,26 @@ export default function Dashboard() {
   const [isCreatingSession, setIsCreatingSession] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
   const [newSessionImage, setNewSessionImage] = React.useState('https://picsum.photos/seed/campaign/800/400');
+
+  const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
+
+  const handleDeleteCharacter = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'characters', id));
+      setDeleteConfirm(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `characters/${id}`);
+    }
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'gameSessions', id));
+      setDeleteConfirm(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `gameSessions/${id}`);
+    }
+  };
 
   const handleCreateSession = async () => {
     if (!user || !newSessionName.trim()) return;
@@ -116,9 +137,8 @@ export default function Dashboard() {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: 0.2 + idx * 0.1 }}
-      onClick={() => navigate(`/sheet?id=${char.id}`)}
       className={cn(
-        "relative h-[450px] rounded-[2rem] overflow-hidden group cursor-pointer border border-white/10",
+        "relative h-[450px] rounded-[2rem] overflow-hidden group border border-white/10",
         char.color === 'arcane' ? "hover:border-arcane/50" : "hover:border-ember/50"
       )}
     >
@@ -130,11 +150,29 @@ export default function Dashboard() {
         referrerPolicy="no-referrer"
       />
       
+      {/* Delete Button */}
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          setDeleteConfirm({ id: char.id, type: 'character', name: char.name });
+        }}
+        className="absolute top-6 right-6 z-10 p-3 glass rounded-2xl text-parchment/40 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+        title="Excluir Personagem"
+      >
+        <Trash2 size={20} />
+      </button>
+
+      {/* Clickable Area */}
+      <div 
+        onClick={() => navigate(`/sheet?id=${char.id}`)}
+        className="absolute inset-0 cursor-pointer"
+      />
+
       {/* Gradient Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/40 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/40 to-transparent pointer-events-none" />
 
       {/* Content */}
-      <div className="absolute inset-0 p-8 flex flex-col justify-end">
+      <div className="absolute inset-0 p-8 flex flex-col justify-end pointer-events-none">
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -305,6 +343,55 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
+          >
+            <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={40} className="text-red-500" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-2xl font-serif">Excluir {deleteConfirm.type === 'character' ? 'Personagem' : 'Campanha'}?</h3>
+              <p className="text-parchment/60">
+                Tem certeza que deseja excluir <span className="text-white font-bold">"{deleteConfirm.name}"</span>? 
+                Esta ação não pode ser desfeita.
+              </p>
+              {deleteConfirm.type === 'session' && (
+                <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest mt-4">
+                  Nota: Talentos, perícias e configurações globais serão preservados.
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <button 
+                onClick={() => setDeleteConfirm(null)}
+                className="py-4 glass rounded-2xl font-bold hover:bg-white/5 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  if (deleteConfirm.type === 'character') {
+                    handleDeleteCharacter(deleteConfirm.id);
+                  } else {
+                    handleDeleteSession(deleteConfirm.id);
+                  }
+                }}
+                className="py-4 bg-red-500 text-white rounded-2xl font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+              >
+                Excluir
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       {viewMode === 'gm' ? (
         <div className="space-y-12">
           <section className="space-y-8">
@@ -318,36 +405,51 @@ export default function Dashboard() {
                   key={session.id}
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  onClick={() => navigate(`/gm/session/${session.id}`)}
-                  className="glass p-0 rounded-[2rem] border border-white/10 hover:border-arcane/50 cursor-pointer group transition-all overflow-hidden"
+                  className="glass p-0 rounded-[2rem] border border-white/10 hover:border-arcane/50 group transition-all overflow-hidden relative"
                 >
-                  <div className="h-32 w-full relative">
-                    <img 
-                      src={session.image || 'https://picsum.photos/seed/campaign/800/400'} 
-                      alt={session.name}
-                      className="w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-obsidian to-transparent" />
-                  </div>
-                  <div className="p-6 pt-2">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h4 className="text-xl font-serif mb-1 group-hover:text-arcane transition-colors">{session.name}</h4>
-                        <p className="text-xs font-mono text-parchment/40 uppercase tracking-widest">CÓDIGO: {session.code}</p>
-                      </div>
-                      <div className="w-10 h-10 rounded-xl bg-arcane/10 flex items-center justify-center">
-                        <History size={20} className="text-arcane" />
-                      </div>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirm({ id: session.id, type: 'session', name: session.name });
+                    }}
+                    className="absolute top-4 right-4 z-10 p-2 glass rounded-xl text-parchment/20 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+                    title="Excluir Campanha"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+
+                  <div 
+                    onClick={() => navigate(`/gm/session/${session.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <div className="h-32 w-full relative">
+                      <img 
+                        src={session.image || 'https://picsum.photos/seed/campaign/800/400'} 
+                        alt={session.name}
+                        className="w-full h-full object-cover opacity-40 group-hover:opacity-60 transition-opacity"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-obsidian to-transparent" />
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-parchment/60">
-                      <div className="flex items-center gap-1">
-                        <Users size={14} />
-                        <span>{session.playerIds?.length || 0} Jogadores</span>
+                    <div className="p-6 pt-2">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="text-xl font-serif mb-1 group-hover:text-arcane transition-colors">{session.name}</h4>
+                          <p className="text-xs font-mono text-parchment/40 uppercase tracking-widest">CÓDIGO: {session.code}</p>
+                        </div>
+                        <div className="w-10 h-10 rounded-xl bg-arcane/10 flex items-center justify-center">
+                          <History size={20} className="text-arcane" />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Scroll size={14} />
-                        <span>{session.journalEntriesCount || 0} Registros</span>
+                      <div className="flex items-center gap-4 text-sm text-parchment/60">
+                        <div className="flex items-center gap-1">
+                          <Users size={14} />
+                          <span>{session.playerIds?.length || 0} Jogadores</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Scroll size={14} />
+                          <span>{session.journalEntriesCount || 0} Registros</span>
+                        </div>
                       </div>
                     </div>
                   </div>

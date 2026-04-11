@@ -198,6 +198,17 @@ export default function GMDashboard() {
   });
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
+
+  const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
+
+  const handleDeleteCharacter = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'characters', id));
+      setDeleteConfirm(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `characters/${id}`);
+    }
+  };
   const [filterClass, setFilterClass] = React.useState<string>('all');
   const [filterLevel, setFilterLevel] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
@@ -585,8 +596,6 @@ export default function GMDashboard() {
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
-    if (!confirm('Tem certeza que deseja excluir esta campanha? Todos os dados serão perdidos permanentemente.')) return;
-    
     try {
       await deleteDoc(doc(db, 'gameSessions', sessionId));
       navigate('/');
@@ -1101,6 +1110,13 @@ export default function GMDashboard() {
                           <span className="text-[10px] font-mono text-parchment/40 uppercase">Online</span>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => setDeleteConfirm({ id: char.id, type: 'character', name: char.name })}
+                            className="p-2 glass rounded-xl hover:bg-red-500/10 transition-colors text-parchment/20 hover:text-red-400"
+                            title="Excluir Personagem"
+                          >
+                            <Trash2 size={18} />
+                          </button>
                           <button 
                             onClick={() => setManagingCharacter(char)}
                             className="p-2 glass rounded-xl hover:bg-white/10 transition-colors text-parchment/60 hover:text-parchment"
@@ -1950,7 +1966,7 @@ export default function GMDashboard() {
                   <h4 className="text-ember font-serif text-lg">Zona de Perigo</h4>
                   <p className="text-sm text-parchment/60">A exclusão da campanha é permanente e não pode ser desfeita. Todos os personagens vinculados perderão o vínculo com esta campanha.</p>
                   <button 
-                    onClick={handleDeleteSession}
+                    onClick={() => setDeleteConfirm({ id: sessionId!, type: 'session', name: session.name })}
                     className="flex items-center gap-2 px-6 py-3 bg-ember/10 text-ember border border-ember/20 rounded-xl hover:bg-ember/20 transition-all font-bold text-sm"
                   >
                     <Trash2 size={18} />
@@ -2516,6 +2532,55 @@ export default function GMDashboard() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* Delete Confirmation Modal */}
+        {deleteConfirm && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
+            >
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={40} className="text-red-500" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-2xl font-serif">Excluir {deleteConfirm.type === 'character' ? 'Personagem' : 'Campanha'}?</h3>
+                <p className="text-parchment/60">
+                  Tem certeza que deseja excluir <span className="text-white font-bold">"{deleteConfirm.name}"</span>? 
+                  Esta ação não pode ser desfeita.
+                </p>
+                {deleteConfirm.type === 'session' && (
+                  <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest mt-4">
+                    Nota: Talentos, perícias e configurações globais serão preservados.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-4">
+                <button 
+                  onClick={() => setDeleteConfirm(null)}
+                  className="py-4 glass rounded-2xl font-bold hover:bg-white/5 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => {
+                    if (deleteConfirm.type === 'character') {
+                      handleDeleteCharacter(deleteConfirm.id);
+                    } else {
+                      handleDeleteSession();
+                    }
+                  }}
+                  className="py-4 bg-red-500 text-white rounded-2xl font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
     </div>
   );
