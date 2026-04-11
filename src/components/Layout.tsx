@@ -15,11 +15,14 @@ import {
   LogOut
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth, signOut } from '../firebase';
+import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot } from '../firebase';
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const user = auth.currentUser;
+  const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
+  const [playedCount, setPlayedCount] = React.useState(0);
+  const [masteredCount, setMasteredCount] = React.useState(0);
 
   // Handle sidebar state on resize
   React.useEffect(() => {
@@ -38,6 +41,40 @@ export default function Layout() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  React.useEffect(() => {
+    if (!user) return;
+
+    // Fetch user role
+    const fetchUserRole = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserRole(userDoc.data().role || 'user');
+        }
+      } catch (error) {
+        console.error('Error fetching user role:', error);
+      }
+    };
+    fetchUserRole();
+
+    // Fetch mastered campaigns count
+    const qMastered = query(collection(db, 'gameSessions'), where('gmId', '==', user.uid));
+    const unsubscribeMastered = onSnapshot(qMastered, (snapshot) => {
+      setMasteredCount(snapshot.size);
+    });
+
+    // Fetch played campaigns count
+    const qPlayed = query(collection(db, 'gameSessions'), where('playerIds', 'array-contains', user.uid));
+    const unsubscribePlayed = onSnapshot(qPlayed, (snapshot) => {
+      setPlayedCount(snapshot.size);
+    });
+
+    return () => {
+      unsubscribeMastered();
+      unsubscribePlayed();
+    };
+  }, [user]);
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -53,6 +90,8 @@ export default function Layout() {
     { to: '/create', icon: UserPlus, label: 'Criação de Personagem' },
     { to: '/sheet', icon: ScrollText, label: 'Ficha Geral' },
   ];
+
+  const userLevel = userRole === 'gm' ? masteredCount : playedCount;
 
   return (
     <div className="min-h-screen flex flex-col bg-obsidian text-parchment">
@@ -97,7 +136,7 @@ export default function Layout() {
           <div className="flex items-center gap-3 pl-2 lg:pl-4 border-l border-white/10">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium">{user?.displayName || 'Arquivista'}</p>
-              <p className="text-xs text-parchment/40 font-mono">Nível 12</p>
+              <p className="text-xs text-parchment/40 font-mono">Nível {userLevel}</p>
             </div>
             <div className="group relative">
               <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-full bg-gradient-to-br from-arcane/40 to-ember/40 border border-white/20 overflow-hidden">

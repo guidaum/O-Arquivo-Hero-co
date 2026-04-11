@@ -25,9 +25,11 @@ import {
   ArrowLeft,
   Dice6,
   Sparkles,
-  Coins
+  Coins,
+  X,
+  Filter
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, evaluateFormula } from '../lib/utils';
 import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove } from '../firebase';
 
 const iconMap: Record<string, any> = {
@@ -47,13 +49,17 @@ export default function CharacterSheet() {
   const [loading, setLoading] = React.useState(true);
 
   const [inventory, setInventory] = React.useState<any[]>([]);
-  const [skills, setSkills] = React.useState<any[]>([]);
+  const [characterSkills, setCharacterSkills] = React.useState<string[]>([]);
+  const [characterPowers, setCharacterPowers] = React.useState<string[]>([]);
+  const [availableSkills, setAvailableSkills] = React.useState<any[]>([]);
+  const [availablePowers, setAvailablePowers] = React.useState<any[]>([]);
   const [currentPV, setCurrentPV] = React.useState(0);
   const [currentATP, setCurrentATP] = React.useState(0);
   const [protecao, setProtecao] = React.useState(0);
   const [sanidade, setSanidade] = React.useState(7);
   const [despertar, setDespertar] = React.useState(0);
   const [stats, setStats] = React.useState<Record<string, number>>({});
+  const [attributePoints, setAttributePoints] = React.useState(0);
   const [statsMods, setStatsMods] = React.useState<Record<string, number>>({});
   const [canEditStats, setCanEditStats] = React.useState(false);
   const [talentMods, setTalentMods] = React.useState<Record<string, number>>({});
@@ -64,7 +70,7 @@ export default function CharacterSheet() {
 
   const isGM = userRole === 'gm';
   const isOwner = character?.ownerId === auth.currentUser?.uid;
-  const canPlayerEdit = canEditStats || isGM || isOwner;
+  const canPlayerEdit = isGM || (isOwner && canEditStats);
 
   const [newEquip, setNewEquip] = React.useState({
     name: '',
@@ -76,6 +82,43 @@ export default function CharacterSheet() {
     equipped: false
   });
 
+  const [isAddingSkill, setIsAddingSkill] = React.useState(false);
+  const [isAddingPower, setIsAddingPower] = React.useState(false);
+  const [newSkill, setNewSkill] = React.useState({
+    name: '',
+    type: 'Luta',
+    atp: 0,
+    damage: '',
+    description: ''
+  });
+
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [typeFilter, setTypeFilter] = React.useState('Todos');
+
+  const filteredAvailableSkills = availableSkills.filter(s => 
+    !characterSkills.includes(s.id) &&
+    (searchTerm === '' || s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.description.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (typeFilter === 'Todos' || s.type === typeFilter)
+  );
+
+  const filteredAvailablePowers = availablePowers.filter(p => 
+    !characterPowers.includes(p.id) &&
+    (searchTerm === '' || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.description.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (typeFilter === 'Todos' || p.type === typeFilter)
+  );
+
+  const [globalSettings, setGlobalSettings] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    const settingsRef = doc(db, 'globalSettings', 'config');
+    const unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
+      if (doc.exists()) {
+        setGlobalSettings(doc.data());
+      }
+    });
+    return () => unsubscribeSettings();
+  }, []);
+
   React.useEffect(() => {
     if (!characterId) {
       setLoading(false);
@@ -86,6 +129,11 @@ export default function CharacterSheet() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setCharacter(data);
+        
+        // Initialize baseStats for older characters to prevent point farming
+        if (!data.baseStats && data.stats) {
+          updateDoc(doc(db, 'characters', characterId), { baseStats: data.stats });
+        }
         
         // Fetch session if linked
         if (data.sessionId) {
@@ -114,24 +162,39 @@ export default function CharacterSheet() {
         }));
         setInventory(loadedInventory);
         
-        const loadedSkills = (data.skills || []).map((skill: any) => ({
-          ...skill,
-          id: skill.id || Math.random().toString(36).substring(2, 9)
-        }));
-        setSkills(loadedSkills);
+        setCharacterSkills(data.skills || []);
+        setCharacterPowers(data.powers || []);
         
         // Initial values if not present
         const charStats = data.stats || {};
         const charStatsMods = data.statsMods || {};
         setStats(charStats);
+        setAttributePoints(data.attributePoints || 0);
         setStatsMods(charStatsMods);
         setCanEditStats(data.canEditStats ?? false);
         setTalentMods(data.talentMods || {});
 
         const getVal = (id: string) => (charStats[id] || 0) + (charStatsMods[id] || 0);
         
-        const maxPV = Math.floor(((getVal('for') / 2) + getVal('con')) * 10);
-        const maxATP = (getVal('int') + 3) * 3;
+        // Use global settings for max PV/ATP if available
+        const pvFormula = globalSettings?.pvFormula || '((FOR / 2) + CON) * 10';
+        const atpFormula = globalSettings?.atpFormula || '(INT + 3) * 3';
+        
+        const statsForFormula: Record<string, number> = {
+          FOR: getVal('for'),
+          CON: getVal('con'),
+          AGI: getVal('agi'),
+          PER: getVal('per'),
+          VEL: getVal('vel'),
+          INI: getVal('ini'),
+          INT: getVal('int'),
+          COR: getVal('cor'),
+          LUTA: (data.skills || []).length, // Simplified for initial calc
+          MISTICA: (data.skills || []).length, // Simplified for initial calc
+        };
+
+        const maxPV = evaluateFormula(pvFormula, statsForFormula);
+        const maxATP = evaluateFormula(atpFormula, statsForFormula);
         
         setCurrentPV(data.currentPV ?? maxPV);
         setCurrentATP(data.currentATP ?? maxATP);
@@ -146,7 +209,7 @@ export default function CharacterSheet() {
     });
 
     return () => unsubscribe();
-  }, [characterId]);
+  }, [characterId, globalSettings]);
 
   const armorItems = inventory.filter(item => item.equipped && (item.category === 'armor' || item.category === 'Armadura' || item.defense > 0));
   const armorBonus = armorItems.reduce((acc, item) => acc + (item.defense || 0), 0);
@@ -163,16 +226,7 @@ export default function CharacterSheet() {
   }, [armorBonus, protecao]);
 
   React.useEffect(() => {
-    if (!session?.id) {
-      setTalents([]);
-      return;
-    }
-
-    const talentsQuery = query(
-      collection(db, 'talents'),
-      where('sessionId', '==', session.id)
-    );
-
+    const talentsQuery = query(collection(db, 'talents'));
     const unsubscribeTalents = onSnapshot(talentsQuery, (snapshot) => {
       const talentData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -183,28 +237,57 @@ export default function CharacterSheet() {
       handleFirestoreError(error, OperationType.LIST, 'talents');
     });
 
-    return () => unsubscribeTalents();
-  }, [session?.id]);
+    const skillsQuery = query(collection(db, 'skills'));
+    const unsubscribeSkills = onSnapshot(skillsQuery, (snapshot) => {
+      const skillData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAvailableSkills(skillData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'skills');
+    });
+
+    const powersQuery = query(collection(db, 'powers'));
+    const unsubscribePowers = onSnapshot(powersQuery, (snapshot) => {
+      const powerData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAvailablePowers(powerData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'powers');
+    });
+
+    return () => {
+      unsubscribeTalents();
+      unsubscribeSkills();
+      unsubscribePowers();
+    };
+  }, []);
 
   const handleSave = async (updatedData?: any) => {
     if (!characterId || !character) return;
     try {
-      const dataToSave = {
-        ...character,
+      // Use updateDoc to only update the fields that changed, 
+      // preventing overwriting points added by GM if character state is stale.
+      const dataToUpdate = {
         equipment: inventory,
-        skills,
+        skills: characterSkills,
+        powers: characterPowers,
         currentPV,
         currentATP,
         protecao,
         sanidade,
         despertar,
         stats,
+        attributePoints,
         statsMods,
         canEditStats,
         talentMods,
         ...updatedData
       };
-      await setDoc(doc(db, 'characters', characterId), dataToSave, { merge: true });
+      await updateDoc(doc(db, 'characters', characterId), dataToUpdate);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `characters/${characterId}`);
     }
@@ -247,6 +330,70 @@ export default function CharacterSheet() {
     const updatedInventory = inventory.filter(item => item.id !== id);
     setInventory(updatedInventory);
     await handleSave({ equipment: updatedInventory });
+  };
+
+  const handleAddSkillFromLibrary = async (skillId: string) => {
+    const skill = availableSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const currentPoints = character.skillPoints || 0;
+    if (currentPoints < skill.purchaseCost) {
+      alert('Pontos de perícia insuficientes!');
+      return;
+    }
+
+    const newSkills = [...characterSkills, skillId];
+    setCharacterSkills(newSkills);
+    await handleSave({ 
+      skills: newSkills,
+      skillPoints: currentPoints - skill.purchaseCost
+    });
+  };
+
+  const handleRemoveSkill = async (skillId: string) => {
+    const skill = availableSkills.find(s => s.id === skillId);
+    const newSkills = characterSkills.filter(id => id !== skillId);
+    setCharacterSkills(newSkills);
+    
+    const currentPoints = character.skillPoints || 0;
+    const refund = skill ? skill.purchaseCost : 0;
+
+    await handleSave({ 
+      skills: newSkills,
+      skillPoints: currentPoints + refund
+    });
+  };
+
+  const handleAddPowerFromLibrary = async (powerId: string) => {
+    const power = availablePowers.find(p => p.id === powerId);
+    if (!power) return;
+
+    const currentPoints = character.powerPoints || 0;
+    if (currentPoints < power.purchaseCost) {
+      alert('Pontos de poder insuficientes!');
+      return;
+    }
+
+    const newPowers = [...characterPowers, powerId];
+    setCharacterPowers(newPowers);
+    await handleSave({ 
+      powers: newPowers,
+      powerPoints: currentPoints - power.purchaseCost
+    });
+  };
+
+  const handleRemovePower = async (powerId: string) => {
+    const power = availablePowers.find(p => p.id === powerId);
+    const newPowers = characterPowers.filter(id => id !== powerId);
+    setCharacterPowers(newPowers);
+
+    const currentPoints = character.powerPoints || 0;
+    const refund = power ? power.purchaseCost : 0;
+
+    await handleSave({ 
+      powers: newPowers,
+      powerPoints: currentPoints + refund
+    });
   };
 
   const handleJoinSession = async (sessionId: string) => {
@@ -336,7 +483,7 @@ export default function CharacterSheet() {
     // Permission check
     const isOwner = character.ownerId === auth.currentUser?.uid;
     const isGM = userRole === 'gm';
-    const canEdit = canEditStats || isGM || isOwner;
+    const canEdit = isGM || (isOwner && canEditStats);
     
     if (!canEdit) {
       alert('Você não tem permissão para editar a imagem deste personagem.');
@@ -366,6 +513,7 @@ export default function CharacterSheet() {
 
   const equippedItems = inventory.filter(i => i.equipped);
 
+
   const getAttr = (id: string) => {
     const attr = attributes.find(a => a.id === id);
     return (attr?.value || 0) + (attr?.mod || 0);
@@ -378,18 +526,49 @@ export default function CharacterSheet() {
   const VEL = getAttr('vel');
   const INT = getAttr('int');
 
-  const lutaCount = skills.filter(s => s.type === 'Luta').length;
-  const misticaCount = skills.filter(s => s.type === 'Mística').length;
+  const resolvedSkills = availableSkills
+    .filter(s => characterSkills.includes(s.id))
+    .map(s => ({
+      ...s,
+      type: character?.skillOverrides?.[s.id]?.type || s.type,
+      descriptionOverride: character?.skillOverrides?.[s.id]?.description,
+      level: character?.skillOverrides?.[s.id]?.level || 1
+    }));
 
-  const maxPV = Math.floor(((FOR / 2) + CON) * 10);
-  const maxATP = (INT + 3) * 3;
+  const resolvedPowers = availablePowers
+    .filter(p => characterPowers.includes(p.id))
+    .map(p => ({
+      ...p,
+      type: character?.powerOverrides?.[p.id]?.type || p.type,
+      descriptionOverride: character?.powerOverrides?.[p.id]?.description,
+      level: character?.powerOverrides?.[p.id]?.level || 1
+    }));
 
-  const soco = FOR;
-  const chute = Math.floor(FOR + (FOR / 2));
-  const en = 20 - ((AGI + (PER / 2)) + (lutaCount * 2));
-  const dm = 20 - ((AGI + (PER / 2)) + (misticaCount * 2));
-  const defesa = Math.floor(CON + (AGI / 2) + (lutaCount * 2));
-  const esquiva = Math.floor((CON + AGI + (VEL / 2)) + (lutaCount * 2));
+  const lutaCount = resolvedSkills.filter(s => s.type === 'Luta').length;
+  const misticaCount = resolvedSkills.filter(s => s.type === 'Mística').length;
+
+  const statsForFormula: Record<string, number> = {
+    FOR: getAttr('for'),
+    CON: getAttr('con'),
+    AGI: getAttr('agi'),
+    PER: getAttr('per'),
+    VEL: getAttr('vel'),
+    INI: getAttr('ini'),
+    INT: getAttr('int'),
+    COR: getAttr('cor'),
+    LUTA: lutaCount,
+    MISTICA: misticaCount,
+  };
+
+  const maxPV = evaluateFormula(globalSettings?.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
+  const maxATP = evaluateFormula(globalSettings?.atpFormula || '(INT + 3) * 3', statsForFormula);
+
+  const soco = evaluateFormula(globalSettings?.socoFormula || 'FOR', statsForFormula);
+  const chute = evaluateFormula(globalSettings?.chuteFormula || 'FOR + (FOR / 2)', statsForFormula);
+  const en = evaluateFormula(globalSettings?.enFormula || '20 - ((AGI + (PER / 2)) + (LUTA * 2))', statsForFormula);
+  const dm = evaluateFormula(globalSettings?.dmFormula || '20 - ((AGI + (PER / 2)) + (MISTICA * 2))', statsForFormula);
+  const defesa = evaluateFormula(globalSettings?.defesaFormula || 'CON + (AGI / 2) + (LUTA * 2)', statsForFormula);
+  const esquiva = evaluateFormula(globalSettings?.esquivaFormula || '(CON + AGI + (VEL / 2)) + (LUTA * 2)', statsForFormula);
 
   const calculateDamage = (damage: string) => {
     if (!damage) return '-';
@@ -423,16 +602,15 @@ export default function CharacterSheet() {
   const categories = [
     { id: 'geral', label: 'Ficha Geral', icon: Scroll },
     { id: 'inventory', label: 'Inventário', icon: Backpack },
-    { id: 'chronicles', label: 'Crônicas', icon: History },
   ];
 
   const sections = [
     { id: 'stats', label: 'Atributos', icon: Sword, category: 'geral' },
     { id: 'combat', label: 'Status de Combate', icon: Shield, category: 'geral' },
     { id: 'skills', label: 'Perícias e Disciplinas', icon: Scroll, category: 'geral' },
+    { id: 'powers', label: 'Poderes e Mágias', icon: Flame, category: 'geral' },
     { id: 'talents', label: 'Talentos', icon: Sparkles, category: 'geral' },
     { id: 'inventory', label: 'Inventário', icon: Backpack, category: 'inventory' },
-    { id: 'chronicles', label: 'Crônicas', icon: History, category: 'chronicles' },
   ];
 
   const activeSections = sections.filter(s => s.category === activeCategory);
@@ -689,6 +867,12 @@ export default function CharacterSheet() {
 
             <div className="flex items-center justify-between px-2 sm:px-4 pt-4">
               <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Atributos</h3>
+              {attributePoints > 0 && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-ember/20 border border-ember/30 rounded-full animate-pulse">
+                  <Sparkles size={12} className="text-ember" />
+                  <span className="text-[10px] font-bold text-ember uppercase tracking-wider">{attributePoints} Pontos Disponíveis</span>
+                </div>
+              )}
             </div>
             <div className="space-y-2 sm:space-y-3">
               {attributes.map((attr, idx) => (
@@ -708,16 +892,54 @@ export default function CharacterSheet() {
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       {canPlayerEdit ? (
-                        <input 
-                          type="number"
-                          value={attr.value}
-                          onChange={(e) => {
-                            const newStats = { ...stats, [attr.id]: parseInt(e.target.value) || 0 };
-                            setStats(newStats);
-                            handleSave({ stats: newStats });
-                          }}
-                          className="w-10 sm:w-12 bg-white/5 border border-white/10 rounded text-center text-lg sm:text-xl font-serif text-glow-arcane focus:outline-none focus:border-arcane/50"
-                        />
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-1">
+                            <input 
+                              type="number"
+                              value={attr.value}
+                              onChange={(e) => {
+                                const newValue = parseInt(e.target.value) || 0;
+                                const oldValue = stats[attr.id] || 0;
+                                const baseValue = character.baseStats?.[attr.id] ?? 0;
+                                
+                                // Prevent going below base for players
+                                if (!isGM && newValue < baseValue) {
+                                  return;
+                                }
+
+                                const diff = newValue - oldValue;
+                                const currentPoints = attributePoints;
+                                
+                                if (!isGM && diff > currentPoints) {
+                                  alert('Pontos de atributo insuficientes!');
+                                  return;
+                                }
+                                
+                                const newStats = { ...stats, [attr.id]: newValue };
+                                setStats(newStats);
+                                
+                                // Calculate new points
+                                let newPoints = currentPoints;
+                                if (diff > 0) {
+                                  // Spending points
+                                  newPoints = Math.max(0, currentPoints - diff);
+                                } else if (diff < 0) {
+                                  // Refunding points
+                                  // Only refund points that were above base
+                                  const refundAmount = Math.min(Math.abs(diff), Math.max(0, oldValue - baseValue));
+                                  newPoints = currentPoints + refundAmount;
+                                }
+
+                                setAttributePoints(newPoints);
+                                handleSave({ 
+                                  stats: newStats,
+                                  attributePoints: newPoints
+                                });
+                              }}
+                              className="w-10 sm:w-12 bg-white/5 border border-white/10 rounded text-center text-lg sm:text-xl font-serif text-glow-arcane focus:outline-none focus:border-arcane/50"
+                            />
+                          </div>
+                        </div>
                       ) : (
                         <p className="text-lg sm:text-xl font-serif text-glow-arcane leading-none">{attr.value}</p>
                       )}
@@ -918,19 +1140,39 @@ export default function CharacterSheet() {
                 <Scroll className="text-arcane" size={24} />
                 Perícias & Disciplinas
               </h3>
-              <button className="p-2 glass rounded-xl hover:bg-white/10 transition-colors">
-                <Plus size={16} />
-              </button>
+              {canPlayerEdit && (
+                <button 
+                  onClick={() => {
+                    setSearchTerm('');
+                    setTypeFilter('Todos');
+                    setIsAddingSkill(true);
+                  }}
+                  className="p-2 glass rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
             </div>
             <div className="space-y-4">
-              {skills.map((skill, idx) => (
+              {resolvedSkills.map((skill, idx) => (
                 <motion.div
-                  key={skill.id || skill.name}
+                  key={skill.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 + idx * 0.1 }}
-                  className="glass p-5 rounded-3xl space-y-3 group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30 cursor-pointer"
+                  className="glass p-5 rounded-3xl space-y-3 group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30 cursor-pointer relative"
                 >
+                  {canPlayerEdit && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveSkill(skill.id);
+                      }}
+                      className="absolute top-4 right-4 p-1.5 glass rounded-lg opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className={cn(
@@ -940,7 +1182,10 @@ export default function CharacterSheet() {
                         {skill.type === 'Luta' ? <Sword size={18} /> : skill.type === 'Mística' ? <Flame size={18} /> : <Activity size={18} />}
                       </div>
                       <div>
-                        <h5 className="font-serif text-lg">{skill.name}</h5>
+                        <h5 className="font-serif text-lg">
+                          {skill.name}
+                          <span className="text-xs text-parchment/40 ml-2">Nvl {skill.level}</span>
+                        </h5>
                         <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-wider">{skill.type}</span>
                       </div>
                     </div>
@@ -953,11 +1198,113 @@ export default function CharacterSheet() {
                         <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dano</p>
                         <p className="text-base font-serif text-ember">{calculateDamage(skill.damage)}</p>
                       </div>
+                      {skill.difficultyFormula && (
+                        <div>
+                          <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dificuldade</p>
+                          <p className="text-base font-serif text-gold">{evaluateFormula(skill.difficultyFormula, statsForFormula)}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <p className="text-xs text-parchment/60 leading-relaxed">{skill.description}</p>
+                  <p className="text-xs text-parchment/60 leading-relaxed">
+                    {skill.description}
+                    {skill.descriptionOverride && (
+                      <span className="block mt-2 pt-2 border-t border-white/5 text-arcane/80 italic">
+                        {skill.descriptionOverride}
+                      </span>
+                    )}
+                  </p>
                 </motion.div>
               ))}
+              {resolvedSkills.length === 0 && (
+                <div className="text-center py-10 glass rounded-3xl border border-dashed border-white/10">
+                  <p className="text-sm text-parchment/20 italic">Nenhuma perícia ou disciplina cadastrada</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Poderes Section */}
+          <section className={cn("space-y-6", activeSection !== 'powers' && "hidden lg:block")}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-serif flex items-center gap-3">
+                <Flame className="text-ember" size={24} />
+                Poderes e Mágias
+              </h3>
+              {canPlayerEdit && (
+                <button 
+                  onClick={() => {
+                    setSearchTerm('');
+                    setTypeFilter('Todos');
+                    setIsAddingPower(true);
+                  }}
+                  className="p-2 glass rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
+            <div className="space-y-4">
+              {resolvedPowers.map((power, idx) => (
+                <motion.div
+                  key={power.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + idx * 0.1 }}
+                  className="glass p-5 rounded-3xl space-y-3 group hover:bg-white/10 transition-all border border-white/10 hover:border-ember/30 cursor-pointer relative"
+                >
+                  {canPlayerEdit && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemovePower(power.id);
+                      }}
+                      className="absolute top-4 right-4 p-1.5 glass rounded-lg opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/10 text-ember">
+                        <Sparkles size={18} />
+                      </div>
+                      <div>
+                        <h5 className="font-serif text-lg">
+                          {power.name}
+                          <span className="text-xs text-parchment/40 ml-2">Nvl {power.level}</span>
+                        </h5>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-wider">{power.type}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6 text-right">
+                      <div>
+                        <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Custo</p>
+                        <p className="text-base font-serif text-gold">{power.purchaseCost} pts</p>
+                      </div>
+                      {power.difficultyFormula && (
+                        <div>
+                          <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dificuldade</p>
+                          <p className="text-base font-serif text-arcane">{evaluateFormula(power.difficultyFormula, statsForFormula)}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-parchment/60 leading-relaxed">
+                    {power.description}
+                    {power.descriptionOverride && (
+                      <span className="block mt-2 pt-2 border-t border-white/5 text-ember/80 italic">
+                        {power.descriptionOverride}
+                      </span>
+                    )}
+                  </p>
+                </motion.div>
+              ))}
+              {resolvedPowers.length === 0 && (
+                <div className="text-center py-10 glass rounded-3xl border border-dashed border-white/10">
+                  <p className="text-sm text-parchment/20 italic">Nenhum poder ou mágia cadastrado</p>
+                </div>
+              )}
             </div>
           </section>
 
@@ -1048,10 +1395,10 @@ export default function CharacterSheet() {
           )}
         </div>
 
-        {/* Right Column: Inventory & History */}
+        {/* Right Column: Inventory */}
         <div className={cn(
           "lg:col-span-3 space-y-10",
-          activeSection !== 'inventory' && activeSection !== 'chronicles' && "hidden lg:block"
+          activeSection !== 'inventory' && "hidden lg:block"
         )}>
           {/* Equipped Items */}
           <section className={cn("space-y-6", activeSection !== 'inventory' && "hidden lg:block")}>
@@ -1153,33 +1500,195 @@ export default function CharacterSheet() {
               </button>
             </div>
           </section>
-
-          {/* Recent History */}
-          <section className={cn("space-y-6", activeSection !== 'chronicles' && "hidden lg:block")}>
-            <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Crônicas</h3>
-            <div className="space-y-4">
-              {[
-                { title: 'O Portão de Ferro', date: '15 Mar' },
-                { title: 'Bosque Sussurrante', date: '10 Mar' },
-              ].map((session, idx) => (
-                <motion.div
-                  key={session.title}
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.6 + idx * 0.1 }}
-                  className="glass p-4 rounded-2xl flex items-center justify-between group cursor-pointer hover:bg-white/10 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <History size={16} className="text-ember" />
-                    <span className="font-serif text-base">{session.title}</span>
-                  </div>
-                  <span className="text-[10px] font-mono text-parchment/40">{session.date}</span>
-                </motion.div>
-              ))}
-            </div>
-          </section>
         </div>
       </div>
+
+      {/* Add Skill Modal (Library) */}
+      <AnimatePresence>
+        {isAddingSkill && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddingSkill(false)}
+              className="absolute inset-0 bg-obsidian/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl max-h-[80vh] flex flex-col"
+            >
+              <button 
+                onClick={() => setIsAddingSkill(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40"
+              >
+                <X size={20} />
+              </button>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-serif">Biblioteca de Perícias</h3>
+                <div className="flex items-center gap-2 px-4 py-2 glass rounded-2xl border border-arcane/20">
+                  <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Disponíveis:</span>
+                  <span className="text-lg font-serif text-arcane">{character.skillPoints || 0}</span>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="flex-1 relative">
+                  <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/40" size={16} />
+                  <input 
+                    type="text"
+                    placeholder="Buscar perícia..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50"
+                  />
+                </div>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50 appearance-none"
+                >
+                  <option value="Todos">Todos os Tipos</option>
+                  <option value="Conhecimento">Conhecimento</option>
+                  <option value="Artes">Artes</option>
+                  <option value="Treinamento">Treinamento</option>
+                  <option value="Ocultismo">Ocultismo</option>
+                  <option value="Empírico">Empírico</option>
+                  <option value="Luta">Luta</option>
+                  <option value="Mística">Mística</option>
+                </select>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                {filteredAvailableSkills.map((skill) => (
+                  <div 
+                    key={skill.id}
+                    className="glass p-4 rounded-2xl border border-white/5 hover:border-arcane/30 transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-serif text-lg text-parchment group-hover:text-arcane transition-colors">{skill.name}</h4>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{skill.type}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleAddSkillFromLibrary(skill.id)}
+                        className="p-2 bg-arcane/10 text-arcane rounded-xl hover:bg-arcane hover:text-obsidian transition-all"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-parchment/60 line-clamp-2 mb-3">{skill.description}</p>
+                    <div className="flex items-center gap-4 text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      <span>Custo: <span className="text-gold">{skill.purchaseCost} pts</span></span>
+                      <span>ATP: <span className="text-arcane">{skill.atp}</span></span>
+                      <span>Dano: <span className="text-ember">{skill.damage}</span></span>
+                    </div>
+                  </div>
+                ))}
+                {filteredAvailableSkills.length === 0 && (
+                  <div className="text-center py-12 glass rounded-3xl border border-dashed border-white/10">
+                    <p className="text-sm text-parchment/20 italic">Nenhuma perícia disponível para adicionar</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Power Modal (Library) */}
+      <AnimatePresence>
+        {isAddingPower && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddingPower(false)}
+              className="absolute inset-0 bg-obsidian/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl max-h-[80vh] flex flex-col"
+            >
+              <button 
+                onClick={() => setIsAddingPower(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40"
+              >
+                <X size={20} />
+              </button>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-serif">Biblioteca de Poderes</h3>
+                <div className="flex items-center gap-2 px-4 py-2 glass rounded-2xl border border-ember/20">
+                  <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Disponíveis:</span>
+                  <span className="text-lg font-serif text-ember">{character.powerPoints || 0}</span>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="flex-1 relative">
+                  <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/40" size={16} />
+                  <input 
+                    type="text"
+                    placeholder="Buscar poder..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50"
+                  />
+                </div>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50 appearance-none"
+                >
+                  <option value="Todos">Todos os Tipos</option>
+                  <option value="Físico">Físico</option>
+                  <option value="Elemental">Elemental</option>
+                  <option value="Defesa">Defesa</option>
+                  <option value="Buff">Buff</option>
+                  <option value="Debuff">Debuff</option>
+                  <option value="Gerais">Gerais</option>
+                </select>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                {filteredAvailablePowers.map((power) => (
+                  <div 
+                    key={power.id}
+                    className="glass p-4 rounded-2xl border border-white/5 hover:border-ember/30 transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-serif text-lg text-parchment group-hover:text-ember transition-colors">{power.name}</h4>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{power.type}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleAddPowerFromLibrary(power.id)}
+                        className="p-2 bg-ember/10 text-ember rounded-xl hover:bg-ember hover:text-obsidian transition-all"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+                    <p className="text-xs text-parchment/60 line-clamp-2 mb-3">{power.description}</p>
+                    <div className="flex items-center gap-4 text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      <span>Custo: <span className="text-gold">{power.purchaseCost} pts</span></span>
+                    </div>
+                  </div>
+                ))}
+                {filteredAvailablePowers.length === 0 && (
+                  <div className="text-center py-12 glass rounded-3xl border border-dashed border-white/10">
+                    <p className="text-sm text-parchment/20 italic">Nenhum poder disponível para adicionar</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Join Session Modal */}
       <AnimatePresence>
@@ -1238,25 +1747,5 @@ export default function CharacterSheet() {
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-function X({ size, className }: { size: number, className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
   );
 }

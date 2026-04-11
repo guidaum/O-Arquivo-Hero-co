@@ -61,6 +61,16 @@
           "type": "object",
           "description": "Map of talentId to modifier value"
         },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of skill IDs assigned to the character"
+        },
+        "powers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of power IDs assigned to the character"
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "name", "class", "level", "stats"]
@@ -124,6 +134,8 @@
         "name": { "type": "string" },
         "code": { "type": "string" },
         "maxAttributePoints": { "type": "integer" },
+        "initialSkillPoints": { "type": "integer" },
+        "initialPowerPoints": { "type": "integer" },
         "description": { "type": "string" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
@@ -136,8 +148,6 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "sessionId": { "type": "string" },
-        "gmId": { "type": "string" },
         "name": { "type": "string" },
         "description": { "type": "string" },
         "composition": {
@@ -147,7 +157,78 @@
         },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["sessionId", "gmId", "name", "composition"]
+      "required": ["name", "composition"]
+    },
+    "Skill": {
+      "title": "Skill",
+      "description": "A skill that can be assigned to characters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["Luta", "Mística", "Geral", "Conhecimento", "Artes", "Treinamento", "Ocultismo", "Empírico"] },
+        "atpCost": { "type": "integer" },
+        "damage": { "type": "string" },
+        "description": { "type": "string" },
+        "purchaseCost": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "purchaseCost"]
+    },
+    "Power": {
+      "title": "Power",
+      "description": "A power or spell that can be assigned to characters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["Físico", "Elemental", "Defesa", "Buff", "Debuff", "Geral"] },
+        "cost": { "type": "string" },
+        "effect": { "type": "string" },
+        "description": { "type": "string" },
+        "purchaseCost": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "purchaseCost"]
+    },
+    "GlobalSettings": {
+      "title": "GlobalSettings",
+      "description": "Global RPG system settings and formulas",
+      "type": "object",
+      "properties": {
+        "maxAttributePoints": { "type": "integer" },
+        "maxSingleAttributeValue": { "type": "integer" },
+        "initialSkillPoints": { "type": "integer" },
+        "initialPowerPoints": { "type": "integer" },
+        "pvFormula": { "type": "string" },
+        "atpFormula": { "type": "string" },
+        "socoFormula": { "type": "string" },
+        "chuteFormula": { "type": "string" },
+        "defesaFormula": { "type": "string" },
+        "esquivaFormula": { "type": "string" },
+        "enFormula": { "type": "string" },
+        "dmFormula": { "type": "string" },
+        "skillCostFormula": { "type": "string" },
+        "powerCostFormula": { "type": "string" },
+        "skillTypeVars": { "type": "object" },
+        "powerTypeVars": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Suggestion": {
+      "title": "Suggestion",
+      "description": "Player suggestion for a new skill or power",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["skill", "power"] },
+        "data": { "type": "object" },
+        "suggestedBy": { "type": "string" },
+        "suggestedByName": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "data", "suggestedBy", "status"]
     }
   },
   "firestore": {
@@ -169,7 +250,23 @@
     },
     "/talents/{talentId}": {
       "schema": "Talent",
-      "description": "Talents created by GMs"
+      "description": "Global talents"
+    },
+    "/skills/{skillId}": {
+      "schema": "Skill",
+      "description": "Global skills"
+    },
+    "/powers/{powerId}": {
+      "schema": "Power",
+      "description": "Global powers and spells"
+    },
+    "/globalSettings/config": {
+      "schema": "GlobalSettings",
+      "description": "Global system configuration"
+    },
+    "/suggestions/{suggestionId}": {
+      "schema": "Suggestion",
+      "description": "Player suggestions for skills or powers"
     }
   }
 }

@@ -158,7 +158,7 @@ export default function Dashboard() {
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-mono text-parchment/40">
               <span>PROGRESSO DE XP</span>
-              <span>{char.xp.toLocaleString()} / {char.xpMax.toLocaleString()}</span>
+              <span>{(char.xp ?? 0).toLocaleString()} / {(char.xpMax ?? 0).toLocaleString()}</span>
             </div>
             <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
               <motion.div 

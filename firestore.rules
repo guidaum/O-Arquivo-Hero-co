@@ -70,6 +70,31 @@ service cloud.firestore {
     //   - composition: list (required)
     //   - createdAt: string (optional, date-time)
     //
+    // Collection: skills
+    // Document ID: skillId
+    // Fields:
+    //   - id: string (optional)
+    //   - sessionId: string (required)
+    //   - gmId: string (required)
+    //   - name: string (required)
+    //   - type: string (required, ['Luta', 'Mística', 'Geral'])
+    //   - atpCost: integer (optional)
+    //   - damage: string (optional)
+    //   - description: string (optional)
+    //   - createdAt: string (optional, date-time)
+    //
+    // Collection: powers
+    // Document ID: powerId
+    // Fields:
+    //   - id: string (optional)
+    //   - sessionId: string (required)
+    //   - gmId: string (required)
+    //   - name: string (required)
+    //   - cost: string (optional)
+    //   - effect: string (optional)
+    //   - description: string (optional)
+    //   - createdAt: string (optional, date-time)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -155,6 +180,8 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.code is string && data.code.size() > 0 &&
              (!('maxAttributePoints' in data) || data.maxAttributePoints is int) &&
+             (!('initialSkillPoints' in data) || data.initialSkillPoints is int) &&
+             (!('initialPowerPoints' in data) || data.initialPowerPoints is int) &&
              (!('playerIds' in data) || data.playerIds is list) &&
              (!('description' in data) || data.description is string) &&
              (!('active' in data) || data.active is bool) &&
@@ -162,12 +189,46 @@ service cloud.firestore {
     }
 
     function isValidTalent(data) {
-      return data.keys().hasAll(['sessionId', 'gmId', 'name', 'composition']) &&
-             data.gmId == request.auth.uid &&
-             data.sessionId is string &&
+      return data.keys().hasAll(['name', 'composition']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              (!('description' in data) || data.description is string) &&
              data.composition is list && data.composition.size() > 0;
+    }
+
+    function isValidSkill(data) {
+      return data.keys().hasAll(['name', 'type', 'purchaseCost']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['Luta', 'Mística', 'Geral', 'Conhecimento', 'Artes', 'Treinamento', 'Ocultismo', 'Empírico'] &&
+             data.purchaseCost is int &&
+             (!('atpCost' in data) || data.atpCost is int) &&
+             (!('damage' in data) || data.damage is string) &&
+             (!('description' in data) || data.description is string);
+    }
+
+    function isValidPower(data) {
+      return data.keys().hasAll(['name', 'type', 'purchaseCost']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['Físico', 'Elemental', 'Defesa', 'Buff', 'Debuff', 'Geral'] &&
+             data.purchaseCost is int &&
+             (!('cost' in data) || data.cost is string) &&
+             (!('effect' in data) || data.effect is string) &&
+             (!('description' in data) || data.description is string);
+    }
+
+    function isValidGlobalSettings(data) {
+      return isAuthenticated(); // Basic check, could be more strict
+    }
+
+    function isValidSuggestion(data) {
+      return data.keys().hasAll(['type', 'data', 'suggestedBy', 'status']) &&
+             data.type in ['skill', 'power'] &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.suggestedBy == request.auth.uid &&
+             data.data is map;
+    }
+
+    function isGM() {
+      return isAuthenticated() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gm' || isAdmin());
     }
 
     // ===============================================================
@@ -212,10 +273,36 @@ service cloud.firestore {
     }
 
     match /talents/{talentId} {
-      allow read: if isAuthenticated() && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId));
-      allow create: if isAuthenticated() && isGMOfSession(request.resource.data.sessionId) && isValidTalent(request.resource.data);
-      allow update: if isAuthenticated() && isGMOfSession(resource.data.sessionId) && isValidTalent(request.resource.data);
-      allow delete: if isAuthenticated() && isGMOfSession(resource.data.sessionId);
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isGM();
+    }
+
+    match /skills/{skillId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isGM();
+    }
+
+    match /powers/{powerId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isGM();
+    }
+
+    match /globalSettings/{config} {
+      allow read: if isAuthenticated();
+      allow write: if isGM();
+    }
+
+    match /suggestions/{suggestionId} {
+      allow read: if isAuthenticated() && (resource.data.suggestedBy == request.auth.uid || isGM());
+      allow create: if isAuthenticated() && isValidSuggestion(request.resource.data) && request.resource.data.status == 'pending';
+      allow update: if isGM() && 
+        request.resource.data.suggestedBy == resource.data.suggestedBy &&
+        request.resource.data.type == resource.data.type &&
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'data'])
+        );
+      allow delete: if isGM() || (isAuthenticated() && resource.data.suggestedBy == request.auth.uid && resource.data.status == 'pending');
     }
 
     // Default deny
