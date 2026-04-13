@@ -69,6 +69,7 @@ export default function CharacterSheet() {
   const [activeCategory, setActiveCategory] = React.useState('geral');
   const [activeSection, setActiveSection] = React.useState('stats');
   const [isInventoryOpen, setIsInventoryOpen] = React.useState(false);
+  const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, attr: string } | null>(null);
 
   const isGM = userRole === 'gm';
   const isOwner = character?.ownerId === auth.currentUser?.uid;
@@ -540,6 +541,13 @@ export default function CharacterSheet() {
     );
   }
 
+  const handleQuickRoll = (attrLabel: string, attrValue: number) => {
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const total = roll + attrValue;
+    setQuickRoll({ result: roll, total, attr: attrLabel });
+    setTimeout(() => setQuickRoll(null), 5000);
+  };
+
   const attributes = [
     { id: 'for', label: 'Força', icon: Sword, value: stats.for || 0, mod: statsMods.for || 0, traitMod: traitStatsMods.for || 0, color: 'text-ember' },
     { id: 'con', label: 'Constituição', icon: Shield, value: stats.con || 0, mod: statsMods.con || 0, traitMod: traitStatsMods.con || 0, color: 'text-ember' },
@@ -932,6 +940,13 @@ export default function CharacterSheet() {
                     <span className="font-serif text-base sm:text-lg">{attr.label}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleQuickRoll(attr.label, attr.value + attr.mod + attr.traitMod)}
+                      className="p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
+                      title="Rolar D20"
+                    >
+                      <Dice6 size={16} />
+                    </button>
                     <div className="text-right">
                       {canPlayerEdit ? (
                         <div className="flex flex-col items-center gap-1">
@@ -1845,6 +1860,28 @@ export default function CharacterSheet() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Roll Result Notification */}
+      <AnimatePresence>
+        {quickRoll && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border border-arcane/30 shadow-2xl flex items-center gap-4"
+          >
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.attr}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-serif text-glow-arcane">{quickRoll.total}</span>
+                <span className="text-xs text-parchment/40 font-mono">(1d20: {quickRoll.result})</span>
+              </div>
+            </div>
+            {quickRoll.result === 20 && <Sparkles className="text-gold animate-bounce" size={20} />}
+            {quickRoll.result === 1 && <Zap className="text-ember animate-pulse" size={20} />}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

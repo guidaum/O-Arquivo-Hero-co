@@ -91,6 +91,7 @@ interface Character {
     [key: string]: number;
   };
   isNPC?: boolean;
+  traits?: string[];
   skillOverrides?: Record<string, { type: string; description?: string; level?: number }>;
   powerOverrides?: Record<string, { type: string; description?: string; level?: number }>;
 }
@@ -235,11 +236,14 @@ export default function GMDashboard() {
   // NPC Generator State
   const [isGeneratingNPC, setIsGeneratingNPC] = React.useState(false);
   const [npcConfig, setNpcConfig] = React.useState({
+    level: 1,
     skillPoints: 10,
     powerPoints: 5,
+    traitCount: 0,
     minAttrValue: 0,
     maxAttrValue: 100,
-    archetype: 'random' as 'combat' | 'scholar' | 'common' | 'random'
+    archetype: 'random' as 'combat' | 'scholar' | 'common' | 'random',
+    useSessionDefaults: true
   });
 
   const generateRandomName = () => {
@@ -254,7 +258,7 @@ export default function GMDashboard() {
 
     try {
       const name = generateRandomName();
-      const level = 1;
+      const level = npcConfig.level || 1;
       const archetype = npcConfig.archetype === 'random' 
         ? (['combat', 'scholar', 'common'][Math.floor(Math.random() * 3)] as any)
         : npcConfig.archetype;
@@ -292,7 +296,7 @@ export default function GMDashboard() {
 
       // Pick Skills
       const selectedSkills: string[] = [];
-      let remainingSkillPoints = npcConfig.skillPoints;
+      let remainingSkillPoints = npcConfig.useSessionDefaults ? (session.initialSkillPoints || 0) : npcConfig.skillPoints;
       const availableSkillsForNPC = [...skills].sort(() => Math.random() - 0.5);
 
       for (const skill of availableSkillsForNPC) {
@@ -304,13 +308,22 @@ export default function GMDashboard() {
 
       // Pick Powers
       const selectedPowers: string[] = [];
-      let remainingPowerPoints = npcConfig.powerPoints;
+      let remainingPowerPoints = npcConfig.useSessionDefaults ? (session.initialPowerPoints || 0) : npcConfig.powerPoints;
       const availablePowersForNPC = [...powers].sort(() => Math.random() - 0.5);
 
       for (const power of availablePowersForNPC) {
         if (remainingPowerPoints >= power.purchaseCost) {
           selectedPowers.push(power.id);
           remainingPowerPoints -= power.purchaseCost;
+        }
+      }
+
+      // Pick Traits
+      const selectedTraits: string[] = [];
+      if (npcConfig.traitCount > 0) {
+        const availableTraitsForNPC = [...traits].sort(() => Math.random() - 0.5);
+        for (let i = 0; i < Math.min(npcConfig.traitCount, availableTraitsForNPC.length); i++) {
+          selectedTraits.push(availableTraitsForNPC[i].id);
         }
       }
 
@@ -341,6 +354,7 @@ export default function GMDashboard() {
         statsMods: {},
         skills: selectedSkills,
         powers: selectedPowers,
+        traits: selectedTraits,
         skillPoints: remainingSkillPoints,
         powerPoints: remainingPowerPoints,
         currentPV: maxPV,
@@ -405,6 +419,15 @@ export default function GMDashboard() {
     modifierType: 'for',
     type: 'advantage' as 'advantage' | 'disadvantage'
   });
+
+  const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string, attr: string } | null>(null);
+
+  const handleQuickRoll = (name: string, attrLabel: string, attrValue: number) => {
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const total = roll + attrValue;
+    setQuickRoll({ result: roll, total, name, attr: attrLabel });
+    setTimeout(() => setQuickRoll(null), 5000);
+  };
 
   const filteredAndSortedCharacters = React.useMemo(() => {
     return characters
@@ -1186,18 +1209,27 @@ export default function GMDashboard() {
 
                     {/* Quick Stats Grid */}
                     <div className="grid grid-cols-3 gap-3 relative z-10">
-                      <div className="bg-white/5 p-3 rounded-2xl text-center border border-white/5">
-                        <p className="text-[10px] text-parchment/40 font-mono mb-1">FOR</p>
+                      <button 
+                        onClick={() => handleQuickRoll(char.name, 'FOR', char.stats.for)}
+                        className="bg-white/5 p-3 rounded-2xl text-center border border-white/5 hover:bg-arcane/10 hover:border-arcane/30 transition-all group/stat"
+                      >
+                        <p className="text-[10px] text-parchment/40 font-mono mb-1 group-hover/stat:text-arcane">FOR</p>
                         <p className="text-lg font-serif">{char.stats.for}</p>
-                      </div>
-                      <div className="bg-white/5 p-3 rounded-2xl text-center border border-white/5">
-                        <p className="text-[10px] text-parchment/40 font-mono mb-1">AGI</p>
+                      </button>
+                      <button 
+                        onClick={() => handleQuickRoll(char.name, 'AGI', char.stats.agi)}
+                        className="bg-white/5 p-3 rounded-2xl text-center border border-white/5 hover:bg-arcane/10 hover:border-arcane/30 transition-all group/stat"
+                      >
+                        <p className="text-[10px] text-parchment/40 font-mono mb-1 group-hover/stat:text-arcane">AGI</p>
                         <p className="text-lg font-serif">{char.stats.agi}</p>
-                      </div>
-                      <div className="bg-white/5 p-3 rounded-2xl text-center border border-white/5">
-                        <p className="text-[10px] text-parchment/40 font-mono mb-1">CON</p>
+                      </button>
+                      <button 
+                        onClick={() => handleQuickRoll(char.name, 'CON', char.stats.con)}
+                        className="bg-white/5 p-3 rounded-2xl text-center border border-white/5 hover:bg-arcane/10 hover:border-arcane/30 transition-all group/stat"
+                      >
+                        <p className="text-[10px] text-parchment/40 font-mono mb-1 group-hover/stat:text-arcane">CON</p>
                         <p className="text-lg font-serif">{char.stats.con}</p>
-                      </div>
+                      </button>
                     </div>
 
                       <div className="mt-6 flex items-center justify-between relative z-10">
@@ -2654,6 +2686,27 @@ export default function GMDashboard() {
               </div>
 
               <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Nível do NPC</label>
+                    <input 
+                      type="number"
+                      value={npcConfig.level}
+                      onChange={(e) => setNpcConfig(prev => ({ ...prev, level: parseInt(e.target.value) || 1 }))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Qtd. de Vantagens</label>
+                    <input 
+                      type="number"
+                      value={npcConfig.traitCount}
+                      onChange={(e) => setNpcConfig(prev => ({ ...prev, traitCount: parseInt(e.target.value) || 0 }))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                    />
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Arquétipo do NPC</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -2680,6 +2733,48 @@ export default function GMDashboard() {
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Usar Padrões da Campanha</p>
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest">Usa pontos iniciais da sessão</p>
+                  </div>
+                  <button
+                    onClick={() => setNpcConfig(prev => ({ ...prev, useSessionDefaults: !prev.useSessionDefaults }))}
+                    className={cn(
+                      "w-12 h-6 rounded-full transition-colors relative",
+                      npcConfig.useSessionDefaults ? "bg-arcane" : "bg-white/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                      npcConfig.useSessionDefaults ? "left-7" : "left-1"
+                    )} />
+                  </button>
+                </div>
+
+                {!npcConfig.useSessionDefaults && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Perícia</label>
+                      <input 
+                        type="number"
+                        value={npcConfig.skillPoints}
+                        onChange={(e) => setNpcConfig(prev => ({ ...prev, skillPoints: parseInt(e.target.value) || 0 }))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Poder</label>
+                      <input 
+                        type="number"
+                        value={npcConfig.powerPoints}
+                        onChange={(e) => setNpcConfig(prev => ({ ...prev, powerPoints: parseInt(e.target.value) || 0 }))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Atributo Mínimo</label>
@@ -2696,27 +2791,6 @@ export default function GMDashboard() {
                       type="number"
                       value={npcConfig.maxAttrValue}
                       onChange={(e) => setNpcConfig(prev => ({ ...prev, maxAttrValue: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Perícia</label>
-                    <input 
-                      type="number"
-                      value={npcConfig.skillPoints}
-                      onChange={(e) => setNpcConfig(prev => ({ ...prev, skillPoints: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Poder</label>
-                    <input 
-                      type="number"
-                      value={npcConfig.powerPoints}
-                      onChange={(e) => setNpcConfig(prev => ({ ...prev, powerPoints: parseInt(e.target.value) || 0 }))}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
                     />
                   </div>
@@ -2949,6 +3023,28 @@ export default function GMDashboard() {
           </div>
         )}
       </div>
+
+      {/* Quick Roll Result Notification */}
+      <AnimatePresence>
+        {quickRoll && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border border-arcane/30 shadow-2xl flex items-center gap-4"
+          >
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.name} • {quickRoll.attr}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-serif text-glow-arcane">{quickRoll.total}</span>
+                <span className="text-xs text-parchment/40 font-mono">(1d20: {quickRoll.result})</span>
+              </div>
+            </div>
+            {quickRoll.result === 20 && <Sparkles className="text-gold animate-bounce" size={20} />}
+            {quickRoll.result === 1 && <Zap className="text-ember animate-pulse" size={20} />}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

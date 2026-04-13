@@ -17,7 +17,9 @@ import {
   X,
   ArrowLeft,
   Minus,
-  Check
+  Check,
+  Dice6,
+  Sparkles
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { db, doc, getDoc, setDoc, updateDoc } from '../firebase';
@@ -58,6 +60,38 @@ export default function Inventory() {
     defense: 0,
     equipped: false
   });
+
+  const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string } | null>(null);
+
+  const handleQuickRoll = (name: string, damage: string) => {
+    // Simple damage parser (e.g., "1d6+2")
+    try {
+      const match = damage.match(/(\d+)d(\d+)([+-]\d+)?/i);
+      if (match) {
+        const qty = parseInt(match[1]);
+        const die = parseInt(match[2]);
+        const mod = parseInt(match[3] || '0');
+        
+        let total = 0;
+        for (let i = 0; i < qty; i++) {
+          total += Math.floor(Math.random() * die) + 1;
+        }
+        total += mod;
+        
+        setQuickRoll({ result: total, total, name });
+        setTimeout(() => setQuickRoll(null), 5000);
+      } else {
+        // If not a standard dice notation, just roll a d20 for check
+        const roll = Math.floor(Math.random() * 20) + 1;
+        setQuickRoll({ result: roll, total: roll, name });
+        setTimeout(() => setQuickRoll(null), 5000);
+      }
+    } catch (e) {
+      const roll = Math.floor(Math.random() * 20) + 1;
+      setQuickRoll({ result: roll, total: roll, name });
+      setTimeout(() => setQuickRoll(null), 5000);
+    }
+  };
 
   React.useEffect(() => {
     const fetchCharacter = async () => {
@@ -410,6 +444,16 @@ export default function Inventory() {
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
+                        handleQuickRoll(item.name, item.damage || '');
+                      }}
+                      className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-arcane"
+                      title="Rolar Dano"
+                    >
+                      <Dice6 size={16} />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
                         toggleEquip(item.id);
                       }}
                       className={cn(
@@ -673,6 +717,27 @@ export default function Inventory() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Quick Roll Result Notification */}
+      <AnimatePresence>
+        {quickRoll && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border border-arcane/30 shadow-2xl flex items-center gap-4"
+          >
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.name}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-serif text-glow-arcane">{quickRoll.total}</span>
+                <span className="text-xs text-parchment/40 font-mono">Resultado</span>
+              </div>
+            </div>
+            <Sparkles className="text-gold animate-bounce" size={20} />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot } from '../firebase';
+import DiceRoller from './DiceRoller';
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
@@ -246,6 +247,7 @@ export default function Layout() {
           </NavLink>
         </nav>
       </div>
+      <DiceRoller />
     </div>
   );
 }
