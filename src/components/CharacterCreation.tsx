@@ -193,6 +193,7 @@ export default function CharacterCreation() {
     );
   }, [sessions, sessionSearch]);
 
+  const [baseGlobalSettings, setBaseGlobalSettings] = React.useState<any>(null);
   const [globalSettings, setGlobalSettings] = React.useState<any>(null);
 
   React.useEffect(() => {
@@ -202,6 +203,7 @@ export default function CharacterCreation() {
         const settingsDoc = await getDoc(doc(db, 'globalSettings', 'config'));
         if (settingsDoc.exists()) {
           const data = settingsDoc.data();
+          setBaseGlobalSettings(data);
           setGlobalSettings(data);
           setMaxPoints(data.maxAttributePoints ?? 120);
           setMaxSingleAttr(data.maxSingleAttributeValue ?? 100);
@@ -237,13 +239,27 @@ export default function CharacterCreation() {
   React.useEffect(() => {
     if (basics.sessionId) {
       const session = sessions.find(s => s.id === basics.sessionId);
-      // We still use session for some context, but settings are now global
+      if (session) {
+        setGlobalSettings({ ...baseGlobalSettings, ...session });
+        setMaxPoints(session.maxAttributePoints ?? baseGlobalSettings?.maxAttributePoints ?? 120);
+        setMaxSingleAttr(session.maxSingleAttributeValue ?? baseGlobalSettings?.maxSingleAttributeValue ?? 100);
+        setInitialSkillPoints(session.initialSkillPoints ?? baseGlobalSettings?.initialSkillPoints ?? 0);
+        setInitialPowerPoints(session.initialPowerPoints ?? baseGlobalSettings?.initialPowerPoints ?? 0);
+      }
+    } else {
+      setGlobalSettings(baseGlobalSettings);
+      if (baseGlobalSettings) {
+        setMaxPoints(baseGlobalSettings.maxAttributePoints ?? 120);
+        setMaxSingleAttr(baseGlobalSettings.maxSingleAttributeValue ?? 100);
+        setInitialSkillPoints(baseGlobalSettings.initialSkillPoints ?? 0);
+        setInitialPowerPoints(baseGlobalSettings.initialPowerPoints ?? 0);
+      }
     }
     setValues({ for: 0, con: 0, agi: 0, per: 0, vel: 0, ini: 0, int: 0, cor: 0 });
     setSkills([]);
     setPowers([]);
     setSelectedTraits([]);
-  }, [basics.sessionId, sessions]);
+  }, [basics.sessionId, sessions, baseGlobalSettings]);
 
   const availableIcons = [
     { id: 'Shield', icon: Shield },
@@ -297,21 +313,9 @@ export default function CharacterCreation() {
     
     const typeVarValue = typeVars[type] || '1';
     
-    // Resolve typeVarValue if it's an attribute
-    let resolvedVar = 1;
-    const attrMap: Record<string, string> = {
-      'FOR': 'for', 'CON': 'con', 'AGI': 'agi', 'PER': 'per', 
-      'VEL': 'vel', 'INI': 'ini', 'INT': 'int', 'COR': 'cor'
-    };
-
-    if (attrMap[typeVarValue.toUpperCase()]) {
-      resolvedVar = values[attrMap[typeVarValue.toUpperCase()]] || 1;
-    } else {
-      resolvedVar = parseFloat(typeVarValue) || 1;
-    }
-
-    // Ensure resolvedVar is at least 1 to avoid division by zero or negative costs
-    resolvedVar = Math.max(1, resolvedVar);
+    // Resolve typeVarValue dynamically using evaluateFormula
+    // This allows typeVarValue to be an attribute name or a complex formula
+    const resolvedVar = Math.max(1, evaluateFormula(typeVarValue, values));
 
     try {
       let evalFormula = formula.toUpperCase();
