@@ -95,6 +95,18 @@ service cloud.firestore {
     //   - description: string (optional)
     //   - createdAt: string (optional, date-time)
     //
+    // Collection: traits
+    // Document ID: traitId
+    // Fields:
+    //   - id: string (optional)
+    //   - name: string (required)
+    //   - description: string (optional)
+    //   - effect: string (optional)
+    //   - modifier: integer (optional)
+    //   - modifierType: string (optional)
+    //   - type: string (required, ['advantage', 'disadvantage'])
+    //   - createdAt: string (optional, date-time)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -215,6 +227,16 @@ service cloud.firestore {
              (!('description' in data) || data.description is string);
     }
 
+    function isValidTrait(data) {
+      return data.keys().hasAll(['name', 'type']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['advantage', 'disadvantage'] &&
+             (!('modifier' in data) || data.modifier is int) &&
+             (!('modifierType' in data) || data.modifierType is string) &&
+             (!('effect' in data) || data.effect is string) &&
+             (!('description' in data) || data.description is string);
+    }
+
     function isValidGlobalSettings(data) {
       return isAuthenticated(); // Basic check, could be more strict
     }
@@ -283,6 +305,11 @@ service cloud.firestore {
     }
 
     match /powers/{powerId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isGM();
+    }
+
+    match /traits/{traitId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isGM();
     }

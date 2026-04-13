@@ -53,6 +53,8 @@ export default function CharacterSheet() {
   const [characterPowers, setCharacterPowers] = React.useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = React.useState<any[]>([]);
   const [availablePowers, setAvailablePowers] = React.useState<any[]>([]);
+  const [availableTraits, setAvailableTraits] = React.useState<any[]>([]);
+  const [characterTraits, setCharacterTraits] = React.useState<string[]>([]);
   const [currentPV, setCurrentPV] = React.useState(0);
   const [currentATP, setCurrentATP] = React.useState(0);
   const [protecao, setProtecao] = React.useState(0);
@@ -164,6 +166,7 @@ export default function CharacterSheet() {
         
         setCharacterSkills(data.skills || []);
         setCharacterPowers(data.powers || []);
+        setCharacterTraits(data.traits || []);
         
         // Initial values if not present
         const charStats = data.stats || {};
@@ -259,10 +262,22 @@ export default function CharacterSheet() {
       handleFirestoreError(error, OperationType.LIST, 'powers');
     });
 
+    const traitsQuery = query(collection(db, 'traits'));
+    const unsubscribeTraits = onSnapshot(traitsQuery, (snapshot) => {
+      const traitData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAvailableTraits(traitData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'traits');
+    });
+
     return () => {
       unsubscribeTalents();
       unsubscribeSkills();
       unsubscribePowers();
+      unsubscribeTraits();
     };
   }, []);
 
@@ -437,29 +452,6 @@ export default function CharacterSheet() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-obsidian flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-arcane/20 border-t-arcane rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!character) {
-    return (
-      <div className="min-h-screen bg-obsidian flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-3xl font-serif mb-4">Lenda não encontrada</h2>
-        <button 
-          onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-arcane hover:underline"
-        >
-          <ArrowLeft size={20} />
-          Voltar para o Dashboard
-        </button>
-      </div>
-    );
-  }
-
   const handleShare = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -500,23 +492,70 @@ export default function CharacterSheet() {
     }
   };
 
+  const resolvedTraits = availableTraits
+    .filter(t => characterTraits.includes(t.id));
+
+  const traitStatsMods = React.useMemo(() => {
+    const mods: Record<string, number> = {};
+    resolvedTraits.forEach(trait => {
+      const type = trait.modifierType?.toLowerCase();
+      if (['for', 'con', 'agi', 'per', 'vel', 'ini', 'int', 'cor'].includes(type)) {
+        mods[type] = (mods[type] || 0) + trait.modifier;
+      }
+    });
+    return mods;
+  }, [resolvedTraits]);
+
+  const traitTalentMods = React.useMemo(() => {
+    const mods: Record<string, number> = {};
+    resolvedTraits.forEach(trait => {
+      const type = trait.modifierType?.toLowerCase();
+      if (!['for', 'con', 'agi', 'per', 'vel', 'ini', 'int', 'cor'].includes(type)) {
+        mods[trait.modifierType] = (mods[trait.modifierType] || 0) + trait.modifier;
+      }
+    });
+    return mods;
+  }, [resolvedTraits]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-obsidian flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-arcane/20 border-t-arcane rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!character) {
+    return (
+      <div className="min-h-screen bg-obsidian flex flex-col items-center justify-center p-6 text-center">
+        <h2 className="text-3xl font-serif mb-4">Lenda não encontrada</h2>
+        <button 
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-arcane hover:underline"
+        >
+          <ArrowLeft size={20} />
+          Voltar para o Dashboard
+        </button>
+      </div>
+    );
+  }
+
   const attributes = [
-    { id: 'for', label: 'Força', icon: Sword, value: stats.for || 0, mod: statsMods.for || 0, color: 'text-ember' },
-    { id: 'con', label: 'Constituição', icon: Shield, value: stats.con || 0, mod: statsMods.con || 0, color: 'text-ember' },
-    { id: 'agi', label: 'Agilidade', icon: Zap, value: stats.agi || 0, mod: statsMods.agi || 0, color: 'text-arcane' },
-    { id: 'per', label: 'Percepção', icon: Eye, value: stats.per || 0, mod: statsMods.per || 0, color: 'text-gold' },
-    { id: 'vel', label: 'Velocidade', icon: Zap, value: stats.vel || 0, mod: statsMods.vel || 0, color: 'text-arcane' },
-    { id: 'ini', label: 'Iniciativa', icon: Zap, value: stats.ini || 0, mod: statsMods.ini || 0, color: 'text-gold' },
-    { id: 'int', label: 'Inteligência', icon: Brain, value: stats.int || 0, mod: statsMods.int || 0, color: 'text-arcane' },
-    { id: 'cor', label: 'Coragem', icon: Heart, value: stats.cor || 0, mod: statsMods.cor || 0, color: 'text-ember' },
+    { id: 'for', label: 'Força', icon: Sword, value: stats.for || 0, mod: statsMods.for || 0, traitMod: traitStatsMods.for || 0, color: 'text-ember' },
+    { id: 'con', label: 'Constituição', icon: Shield, value: stats.con || 0, mod: statsMods.con || 0, traitMod: traitStatsMods.con || 0, color: 'text-ember' },
+    { id: 'agi', label: 'Agilidade', icon: Zap, value: stats.agi || 0, mod: statsMods.agi || 0, traitMod: traitStatsMods.agi || 0, color: 'text-arcane' },
+    { id: 'per', label: 'Percepção', icon: Eye, value: stats.per || 0, mod: statsMods.per || 0, traitMod: traitStatsMods.per || 0, color: 'text-gold' },
+    { id: 'vel', label: 'Velocidade', icon: Zap, value: stats.vel || 0, mod: statsMods.vel || 0, traitMod: traitStatsMods.vel || 0, color: 'text-arcane' },
+    { id: 'ini', label: 'Iniciativa', icon: Zap, value: stats.ini || 0, mod: statsMods.ini || 0, traitMod: traitStatsMods.ini || 0, color: 'text-gold' },
+    { id: 'int', label: 'Inteligência', icon: Brain, value: stats.int || 0, mod: statsMods.int || 0, traitMod: traitStatsMods.int || 0, color: 'text-arcane' },
+    { id: 'cor', label: 'Coragem', icon: Heart, value: stats.cor || 0, mod: statsMods.cor || 0, traitMod: traitStatsMods.cor || 0, color: 'text-ember' },
   ];
 
   const equippedItems = inventory.filter(i => i.equipped);
 
-
   const getAttr = (id: string) => {
     const attr = attributes.find(a => a.id === id);
-    return (attr?.value || 0) + (attr?.mod || 0);
+    return (attr?.value || 0) + (attr?.mod || 0) + (traitStatsMods[id] || 0);
   };
   
   const FOR = getAttr('for');
@@ -595,8 +634,10 @@ export default function CharacterSheet() {
     return result;
   };
 
-  const calculateTalentValue = (composition: string[]) => {
-    return composition.reduce((acc, attrId) => acc + getAttr(attrId), 0);
+  const calculateTalentValue = (talent: any) => {
+    const baseValue = talent.composition.reduce((acc: number, attrId: string) => acc + getAttr(attrId), 0);
+    const traitMod = traitTalentMods[talent.id] || traitTalentMods[talent.name] || 0;
+    return baseValue + traitMod;
   };
 
   const categories = [
@@ -607,6 +648,7 @@ export default function CharacterSheet() {
   const sections = [
     { id: 'stats', label: 'Atributos', icon: Sword, category: 'geral' },
     { id: 'combat', label: 'Status de Combate', icon: Shield, category: 'geral' },
+    { id: 'traits', label: 'Vantagens e Defeitos', icon: Star, category: 'geral' },
     { id: 'skills', label: 'Perícias e Disciplinas', icon: Scroll, category: 'geral' },
     { id: 'powers', label: 'Poderes e Mágias', icon: Flame, category: 'geral' },
     { id: 'talents', label: 'Talentos', icon: Sparkles, category: 'geral' },
@@ -962,6 +1004,15 @@ export default function CharacterSheet() {
                       )}
                       <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">MOD.</p>
                     </div>
+                    <div className="text-right">
+                      <p className={cn(
+                        "text-lg sm:text-xl font-serif leading-none",
+                        attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
+                      )}>
+                        {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
+                      </p>
+                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">TRAÇO</p>
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -1005,11 +1056,11 @@ export default function CharacterSheet() {
         {/* Middle Column: Status Sliders & Perícias */}
         <div className={cn(
           "lg:col-span-6 space-y-10",
-          activeSection !== 'stats' && activeSection !== 'skills' && activeSection !== 'talents' && "hidden lg:block"
+          activeSection !== 'combat' && activeSection !== 'skills' && activeSection !== 'powers' && activeSection !== 'talents' && "hidden lg:block"
         )}>
           {/* Status Sliders */}
-          <section className={cn("grid grid-cols-1 md:grid-cols-2 gap-6", activeSection !== 'stats' && "hidden lg:block")}>
-            <div className="glass p-6 rounded-[2.5rem] space-y-4 md:col-span-2">
+          <section className={cn("flex flex-col gap-16", activeSection !== 'combat' && "hidden lg:block")}>
+            <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Heart size={18} className="text-ember" />
@@ -1027,7 +1078,7 @@ export default function CharacterSheet() {
               />
             </div>
 
-            <div className="glass p-6 rounded-[2.5rem] space-y-4 md:col-span-2">
+            <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Zap size={18} className="text-arcane" />
@@ -1045,7 +1096,7 @@ export default function CharacterSheet() {
               />
             </div>
 
-            <div className="glass p-6 rounded-[2.5rem] space-y-4 md:col-span-2">
+            <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Shield size={18} className="text-gold" />
@@ -1096,7 +1147,7 @@ export default function CharacterSheet() {
               </div>
             </div>
 
-            <div className="glass p-6 rounded-[2.5rem] space-y-4">
+            <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Brain size={18} className="text-ember" />
@@ -1216,15 +1267,64 @@ export default function CharacterSheet() {
                   </p>
                 </motion.div>
               ))}
-              {resolvedSkills.length === 0 && (
-                <div className="text-center py-10 glass rounded-3xl border border-dashed border-white/10">
-                  <p className="text-sm text-parchment/20 italic">Nenhuma perícia ou disciplina cadastrada</p>
+            </div>
+          </section>
+
+          {/* Vantagens & Defeitos Section */}
+          <section className={cn("space-y-6", activeSection !== 'traits' && "hidden lg:block")}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-2xl font-serif flex items-center gap-3">
+                <Star className="text-gold" size={24} />
+                Vantagens e Defeitos
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {resolvedTraits.map((trait, idx) => (
+                <motion.div
+                  key={trait.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2 + idx * 0.1 }}
+                  className={cn(
+                    "glass p-5 rounded-3xl border transition-all group",
+                    trait.type === 'advantage' ? "border-arcane/20 hover:border-arcane/50" : "border-ember/20 hover:border-ember/50"
+                  )}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h5 className={cn(
+                        "font-serif text-lg",
+                        trait.type === 'advantage' ? "text-arcane" : "text-ember"
+                      )}>
+                        {trait.name}
+                      </h5>
+                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                        {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
+                      </span>
+                    </div>
+                    <div className={cn(
+                      "px-3 py-1 rounded-lg font-serif text-xl border",
+                      trait.modifier > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
+                    )}>
+                      {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier}
+                    </div>
+                  </div>
+                  <p className="text-xs text-parchment/60 mb-2">{trait.description}</p>
+                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Efeito: {trait.effect}</span>
+                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Modifica: {trait.modifierType?.toUpperCase()}</span>
+                  </div>
+                </motion.div>
+              ))}
+              {resolvedTraits.length === 0 && (
+                <div className="col-span-full text-center py-10 glass rounded-3xl border border-dashed border-white/10">
+                  <p className="text-sm text-parchment/20 italic">Nenhuma vantagem ou defeito selecionado</p>
                 </div>
               )}
             </div>
           </section>
 
-          {/* Poderes Section */}
+          {/* Perícias & Disciplinas */}
           <section className={cn("space-y-6", activeSection !== 'powers' && "hidden lg:block")}>
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif flex items-center gap-3">
@@ -1319,9 +1419,10 @@ export default function CharacterSheet() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {talents.map((talent, idx) => {
-                  const baseValue = calculateTalentValue(talent.composition);
-                  const modValue = talentMods[talent.id] || 0;
-                  const totalValue = baseValue + modValue;
+                  const baseValue = talent.composition.reduce((acc: number, attrId: string) => acc + getAttr(attrId), 0);
+                  const traitMod = traitTalentMods[talent.id] || traitTalentMods[talent.name] || 0;
+                  const modValue = (talentMods[talent.id] || 0) + traitMod;
+                  const totalValue = calculateTalentValue(talent);
                   
                   return (
                     <motion.div

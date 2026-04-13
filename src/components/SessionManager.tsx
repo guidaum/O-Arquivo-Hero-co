@@ -262,6 +262,7 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
   const [isJoining, setIsJoining] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
   const [joinCode, setJoinCode] = React.useState('');
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -481,9 +482,16 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
                     type="text" 
                     value={newSessionName}
                     onChange={e => setNewSessionName(e.target.value)}
+                    onBlur={() => setTouched(prev => ({ ...prev, newSessionName: true }))}
                     placeholder="Ex: As Crônicas de Eldoria"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    className={cn(
+                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors",
+                      touched.newSessionName && !newSessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                    )}
                   />
+                  {touched.newSessionName && !newSessionName.trim() && (
+                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
+                  )}
                 </div>
                 <button 
                   onClick={handleCreateSession}
@@ -525,9 +533,16 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
                     type="text" 
                     value={joinCode}
                     onChange={e => setJoinCode(e.target.value.toUpperCase())}
+                    onBlur={() => setTouched(prev => ({ ...prev, joinCode: true }))}
                     placeholder="Ex: ABC123"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-ember/50 transition-colors font-mono tracking-widest text-center text-xl"
+                    className={cn(
+                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors font-mono tracking-widest text-center text-xl",
+                      touched.joinCode && !joinCode.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-ember/50"
+                    )}
                   />
+                  {touched.joinCode && !joinCode.trim() && (
+                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O código é obrigatório</p>
+                  )}
                 </div>
                 <button 
                   onClick={handleJoinSession}

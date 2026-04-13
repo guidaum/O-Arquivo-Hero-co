@@ -43,6 +43,7 @@ export default function Inventory() {
   const [isMoneyModalOpen, setIsMoneyModalOpen] = React.useState(false);
   const [saveStatus, setSaveStatus] = React.useState<string | null>(null);
   const [moneyAmount, setMoneyAmount] = React.useState(0);
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [newItem, setNewItem] = React.useState({
     name: '',
     category: 'misc',
@@ -568,9 +569,16 @@ export default function Inventory() {
                       type="text"
                       value={newItem.name}
                       onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                      onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
                       placeholder="Ex: Escudo de Escamas de Dragão"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-arcane/50"
+                      className={cn(
+                        "w-full bg-white/5 border rounded-xl px-4 py-2 text-sm focus:outline-none transition-colors",
+                        touched.name && !newItem.name.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                      )}
                     />
+                    {touched.name && !newItem.name.trim() && (
+                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome do item é obrigatório</p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

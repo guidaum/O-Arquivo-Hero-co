@@ -20,7 +20,9 @@ import {
   Scroll,
   Check,
   Search,
-  Filter
+  Filter,
+  Target,
+  Star
 } from 'lucide-react';
 import { cn, evaluateFormula } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
@@ -30,7 +32,9 @@ export default function CharacterCreation() {
   const [step, setStep] = React.useState(1);
   const [loading, setLoading] = React.useState(false);
   const [sessions, setSessions] = React.useState<any[]>([]);
-  const steps = ['Origens', 'Atributos', 'Perícias', 'Poderes', 'Equipamento', 'Revisão'];
+  const [sessionSearch, setSessionSearch] = React.useState('');
+  const [showSessionList, setShowSessionList] = React.useState(false);
+  const steps = ['Origens', 'Atributos', 'Vantagens/Defeitos', 'Perícias', 'Poderes', 'Equipamento', 'Revisão'];
 
   const [basics, setBasics] = React.useState({
     name: '',
@@ -41,10 +45,14 @@ export default function CharacterCreation() {
     sessionId: ''
   });
 
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+
   const [availableSkills, setAvailableSkills] = React.useState<any[]>([]);
   const [availablePowers, setAvailablePowers] = React.useState<any[]>([]);
+  const [availableTraits, setAvailableTraits] = React.useState<any[]>([]);
   const [skillPoints, setSkillPoints] = React.useState(0);
   const [powerPoints, setPowerPoints] = React.useState(0);
+  const [traitPoints, setTraitPoints] = React.useState(0);
   const [initialSkillPoints, setInitialSkillPoints] = React.useState(0);
   const [initialPowerPoints, setInitialPowerPoints] = React.useState(0);
 
@@ -52,12 +60,16 @@ export default function CharacterCreation() {
   const [skillTypeFilter, setSkillTypeFilter] = React.useState('all');
   const [powerSearch, setPowerSearch] = React.useState('');
   const [powerTypeFilter, setPowerTypeFilter] = React.useState('all');
+  const [traitSearch, setTraitSearch] = React.useState('');
+  const [traitTypeFilter, setTraitTypeFilter] = React.useState('all');
 
   const [skills, setSkills] = React.useState<any[]>([]);
   const [powers, setPowers] = React.useState<any[]>([]);
+  const [selectedTraits, setSelectedTraits] = React.useState<any[]>([]);
 
   const [showSkillSuggestion, setShowSkillSuggestion] = React.useState(false);
   const [showPowerSuggestion, setShowPowerSuggestion] = React.useState(false);
+  const [showTraitSuggestion, setShowTraitSuggestion] = React.useState(false);
   const [suggestionData, setSuggestionData] = React.useState({
     name: '',
     type: '',
@@ -66,10 +78,12 @@ export default function CharacterCreation() {
     atpCost: 0,
     damage: '',
     cost: '',
-    effect: ''
+    effect: '',
+    modifier: 0,
+    modifierType: 'for'
   });
 
-  const handleSaveSuggestion = async (type: 'skill' | 'power') => {
+  const handleSaveSuggestion = async (type: 'skill' | 'power' | 'trait') => {
     if (!auth.currentUser) return;
     try {
       const suggestionId = crypto.randomUUID();
@@ -77,10 +91,12 @@ export default function CharacterCreation() {
         type,
         data: {
           name: suggestionData.name,
-          type: suggestionData.type || (type === 'skill' ? 'Geral' : 'Geral'),
+          type: suggestionData.type || (type === 'skill' ? 'Geral' : type === 'power' ? 'Geral' : 'advantage'),
           description: suggestionData.description,
           purchaseCost: suggestionData.purchaseCost,
-          ...(type === 'skill' ? { atpCost: suggestionData.atpCost, damage: suggestionData.damage } : { cost: suggestionData.cost, effect: suggestionData.effect }),
+          ...(type === 'skill' ? { atpCost: suggestionData.atpCost, damage: suggestionData.damage } : {}),
+          ...(type === 'power' ? { cost: suggestionData.cost, effect: suggestionData.effect } : {}),
+          ...(type === 'trait' ? { modifier: suggestionData.modifier, modifierType: suggestionData.modifierType, effect: suggestionData.effect } : {}),
           createdAt: new Date().toISOString()
         },
         suggestedBy: auth.currentUser.uid,
@@ -91,7 +107,8 @@ export default function CharacterCreation() {
       await setDoc(doc(db, 'suggestions', suggestionId), data);
       setShowSkillSuggestion(false);
       setShowPowerSuggestion(false);
-      setSuggestionData({ name: '', type: '', description: '', purchaseCost: 1, atpCost: 0, damage: '', cost: '', effect: '' });
+      setShowTraitSuggestion(false);
+      setSuggestionData({ name: '', type: '', description: '', purchaseCost: 1, atpCost: 0, damage: '', cost: '', effect: '', modifier: 0, modifierType: 'for' });
       alert('Sugestão enviada para o mestre!');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'suggestions');
@@ -131,24 +148,50 @@ export default function CharacterCreation() {
 
   React.useEffect(() => {
     const fetchSessions = async () => {
-      if (!auth.currentUser) return;
       try {
-        const qPlayer = query(collection(db, 'gameSessions'), where('playerIds', 'array-contains', auth.currentUser.uid));
-        const playerSnapshot = await getDocs(qPlayer);
-        const playerSessions = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), role: 'player' }));
+        const sessionsSnap = await getDocs(collection(db, 'gameSessions'));
+        const sessionsData = sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const gmIds = [...new Set(sessionsData.map((s: any) => s.gmId))];
+        const gmNames: Record<string, string> = {};
+        
+        // Fetch GM names
+        await Promise.all(gmIds.map(async (gmId) => {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', gmId));
+            if (userDoc.exists()) {
+              gmNames[gmId] = userDoc.data().displayName || 'Mestre Desconhecido';
+            } else {
+              gmNames[gmId] = 'Mestre Desconhecido';
+            }
+          } catch (e) {
+            gmNames[gmId] = 'Mestre Desconhecido';
+          }
+        }));
 
-        const qGm = query(collection(db, 'gameSessions'), where('gmId', '==', auth.currentUser.uid));
-        const gmSnapshot = await getDocs(qGm);
-        const gmSessions = gmSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), role: 'gm' }));
+        const formattedSessions = sessionsData.map((s: any) => ({
+          ...s,
+          gmName: gmNames[s.gmId] || 'Mestre Desconhecido',
+          displayText: `${s.code} - ${s.name} (${gmNames[s.gmId] || 'Mestre Desconhecido'})`
+        }));
 
-        const allSessions = [...playerSessions, ...gmSessions];
-        setSessions(allSessions);
+        setSessions(formattedSessions);
       } catch (error) {
         console.error('Error fetching sessions:', error);
       }
     };
     fetchSessions();
   }, []);
+
+  const filteredSessions = React.useMemo(() => {
+    if (!sessionSearch) return [];
+    const searchLower = sessionSearch.toLowerCase();
+    return sessions.filter(s => 
+      s.name.toLowerCase().includes(searchLower) || 
+      s.code.toLowerCase().includes(searchLower) ||
+      s.gmName.toLowerCase().includes(searchLower)
+    );
+  }, [sessions, sessionSearch]);
 
   const [globalSettings, setGlobalSettings] = React.useState<any>(null);
 
@@ -181,6 +224,9 @@ export default function CharacterCreation() {
 
         const powersSnap = await getDocs(collection(db, 'powers'));
         setAvailablePowers(powersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        const traitsSnap = await getDocs(collection(db, 'traits'));
+        setAvailableTraits(traitsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) {
         console.error('Error fetching library:', error);
       }
@@ -196,6 +242,7 @@ export default function CharacterCreation() {
     setValues({ for: 0, con: 0, agi: 0, per: 0, vel: 0, ini: 0, int: 0, cor: 0 });
     setSkills([]);
     setPowers([]);
+    setSelectedTraits([]);
   }, [basics.sessionId, sessions]);
 
   const availableIcons = [
@@ -287,6 +334,12 @@ export default function CharacterCreation() {
     return powers.reduce((acc, p) => acc + calculateCost(p.purchaseCost || 1, p.level || 1, p.typeOverride || p.type, true), 0);
   }, [powers, calculateCost]);
 
+  const traitBalance = React.useMemo(() => {
+    const disadvantages = selectedTraits.filter(t => t.type === 'disadvantage').reduce((acc, t) => acc + Math.abs(t.modifier || 0), 0);
+    const advantages = selectedTraits.filter(t => t.type === 'advantage').reduce((acc, t) => acc + Math.abs(t.modifier || 0), 0);
+    return disadvantages - advantages;
+  }, [selectedTraits]);
+
   React.useEffect(() => {
     setSkillPoints(initialSkillPoints - totalSkillPointsSpent);
   }, [totalSkillPointsSpent, initialSkillPoints]);
@@ -313,6 +366,17 @@ export default function CharacterCreation() {
       return matchesSearch && matchesType;
     });
   }, [availablePowers, powerSearch, powerTypeFilter]);
+
+  const filteredTraits = React.useMemo(() => {
+    return availableTraits.filter(t => {
+      const searchLower = traitSearch.toLowerCase();
+      const matchesSearch = t.name.toLowerCase().includes(searchLower) || 
+                           (t.description && t.description.toLowerCase().includes(searchLower)) ||
+                           (t.effect && t.effect.toLowerCase().includes(searchLower));
+      const matchesType = traitTypeFilter === 'all' || t.type === traitTypeFilter;
+      return matchesSearch && matchesType;
+    });
+  }, [availableTraits, traitSearch, traitTypeFilter]);
 
   const toggleSkill = (skill: any) => {
     const isSelected = skills.some(s => s.id === skill.id);
@@ -358,6 +422,23 @@ export default function CharacterCreation() {
       const cost = calculateCost(power.purchaseCost || 1, 1, power.type, true);
       if (powerPoints >= cost) {
         setPowers([...powers, { ...power, level: 1, typeOverride: power.type, descriptionOverride: '' }]);
+      }
+    }
+  };
+
+  const toggleTrait = (trait: any) => {
+    const isSelected = selectedTraits.some(t => t.id === trait.id);
+    if (isSelected) {
+      setSelectedTraits(selectedTraits.filter(t => t.id !== trait.id));
+    } else {
+      if (trait.type === 'disadvantage') {
+        setSelectedTraits([...selectedTraits, trait]);
+      } else {
+        // Advantage cost check
+        const cost = Math.abs(trait.modifier || 0);
+        if (traitBalance >= cost) {
+          setSelectedTraits([...selectedTraits, trait]);
+        }
       }
     }
   };
@@ -440,6 +521,7 @@ export default function CharacterCreation() {
           };
           return acc;
         }, {} as any),
+        traits: selectedTraits.map(t => t.id),
         equipment,
         attributePoints: 0,
         skillPoints: 0,
@@ -512,9 +594,16 @@ export default function CharacterCreation() {
                         type="text" 
                         value={basics.name}
                         onChange={e => setBasics({...basics, name: e.target.value})}
+                        onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
                         placeholder="Ex: Aethelgard, o Destemido"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none focus:border-arcane/50 transition-colors"
+                        className={cn(
+                          "w-full bg-white/5 border rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none transition-colors",
+                          touched.name && !basics.name ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                        )}
                       />
+                      {touched.name && !basics.name && (
+                        <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome é obrigatório</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -528,25 +617,61 @@ export default function CharacterCreation() {
                       />
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 relative">
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Vincular a uma Campanha (Obrigatório)</label>
-                      <select 
-                        value={basics.sessionId}
-                        onChange={e => setBasics({...basics, sessionId: e.target.value})}
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none focus:border-arcane/50 transition-colors appearance-none"
-                        required
-                      >
-                        <option value="" className="bg-obsidian">Selecione uma Campanha...</option>
-                        {sessions.map(session => (
-                          <option key={session.id} value={session.id} className="bg-obsidian">
-                            {session.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
+                        <input 
+                          type="text" 
+                          value={sessionSearch}
+                          onChange={e => {
+                            setSessionSearch(e.target.value);
+                            setShowSessionList(true);
+                            if (basics.sessionId) setBasics({...basics, sessionId: ''});
+                          }}
+                          onFocus={() => setShowSessionList(true)}
+                          onBlur={() => setTimeout(() => setTouched(prev => ({ ...prev, sessionId: true })), 200)}
+                          placeholder="Busque por código ou nome da campanha..."
+                          className={cn(
+                            "w-full bg-white/5 border rounded-2xl pl-12 pr-6 py-4 text-xl font-serif focus:outline-none transition-colors",
+                            touched.sessionId && !basics.sessionId ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                          )}
+                        />
+                        {touched.sessionId && !basics.sessionId && (
+                          <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">Selecione uma campanha</p>
+                        )}
+                        {showSessionList && sessionSearch && (
+                          <div className="absolute z-50 w-full mt-2 glass rounded-2xl border border-white/10 overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar">
+                            {filteredSessions.length > 0 ? (
+                              filteredSessions.map(session => (
+                                <button
+                                  key={session.id}
+                                  onClick={() => {
+                                    setBasics({...basics, sessionId: session.id});
+                                    setSessionSearch(session.displayText);
+                                    setShowSessionList(false);
+                                  }}
+                                  className="w-full px-6 py-4 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none"
+                                >
+                                  <p className="font-serif text-lg">{session.displayText}</p>
+                                </button>
+                              ))
+                            ) : (
+                              <div className="px-6 py-4 text-parchment/40 font-mono text-xs uppercase tracking-widest">Nenhuma campanha encontrada</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {basics.sessionId && !showSessionList && (
+                        <div className="flex items-center gap-2 px-2">
+                          <Check size={14} className="text-arcane" />
+                          <span className="text-[10px] text-arcane font-mono uppercase tracking-widest">Campanha Selecionada</span>
+                        </div>
+                      )}
                       {sessions.length === 0 ? (
-                        <p className="text-[10px] text-ember font-mono px-2">Você não está em nenhuma campanha. Entre em uma campanha no Dashboard primeiro.</p>
+                        <p className="text-[10px] text-ember font-mono px-2">Nenhuma campanha disponível no sistema.</p>
                       ) : (
-                        <p className="text-[10px] text-parchment/40 font-mono px-2">Você deve selecionar uma campanha para que os limites de atributos sejam aplicados.</p>
+                        <p className="text-[10px] text-parchment/40 font-mono px-2">Busque pelo código ou nome para selecionar a campanha.</p>
                       )}
                     </div>
 
@@ -619,9 +744,17 @@ export default function CharacterCreation() {
 
                   <div className="flex justify-end pt-6">
                     <button 
-                      onClick={() => setStep(2)}
-                      disabled={!basics.sessionId || !basics.name}
-                      className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50"
+                      onClick={() => {
+                        if (!basics.name || !basics.sessionId) {
+                          setTouched({ name: true, sessionId: true });
+                          return;
+                        }
+                        setStep(2);
+                      }}
+                      className={cn(
+                        "px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform",
+                        (!basics.name || !basics.sessionId) && "opacity-50"
+                      )}
                     >
                       <span>Continuar para Atributos</span>
                       <ChevronRight size={18} />
@@ -709,7 +842,7 @@ export default function CharacterCreation() {
                     onClick={() => setStep(3)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
-                    <span>Continuar para Perícias</span>
+                    <span>Continuar para Vantagens/Defeitos</span>
                     <ChevronRight size={18} />
                   </button>
                 </div>
@@ -726,8 +859,141 @@ export default function CharacterCreation() {
               >
                 <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
+                    <h2 className="text-4xl font-serif mb-2">Vantagens & Defeitos</h2>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: Traços de Personalidade e Destino</p>
+                  </div>
+                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Saldo de Modificadores</p>
+                      <p className={cn(
+                        "text-2xl font-serif",
+                        traitBalance >= 0 ? "text-arcane" : "text-ember"
+                      )}>
+                        {traitBalance > 0 ? `+${traitBalance}` : traitBalance}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
+                      <Sparkles size={24} />
+                    </div>
+                  </div>
+                </header>
+
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
+                    <input 
+                      type="text"
+                      placeholder="Buscar vantagem ou defeito..."
+                      value={traitSearch}
+                      onChange={e => setTraitSearch(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-4 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="sm:w-48 relative">
+                    <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
+                    <select
+                      value={traitTypeFilter}
+                      onChange={e => setTraitTypeFilter(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-4 focus:outline-none focus:border-arcane/50 transition-colors appearance-none"
+                    >
+                      <option value="all" className="bg-obsidian">Todos</option>
+                      <option value="advantage" className="bg-obsidian">Vantagens</option>
+                      <option value="disadvantage" className="bg-obsidian">Defeitos</option>
+                    </select>
+                  </div>
+                  <button 
+                    onClick={() => setShowTraitSuggestion(true)}
+                    className="px-6 py-4 bg-arcane/10 hover:bg-arcane/20 text-arcane rounded-2xl font-mono text-xs uppercase tracking-widest border border-arcane/30 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus size={16} />
+                    Sugerir Defeito
+                  </button>
+                </div>
+
+                {/* Trait Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
+                  {filteredTraits.map((trait) => {
+                    const isSelected = selectedTraits.some(t => t.id === trait.id);
+                    const isAdvantage = trait.type === 'advantage';
+                    return (
+                      <button
+                        key={trait.id}
+                        onClick={() => toggleTrait(trait)}
+                        className={cn(
+                          "glass p-6 rounded-3xl text-left transition-all border group relative",
+                          isSelected 
+                            ? (isAdvantage ? "border-arcane bg-arcane/10" : "border-ember bg-ember/10") 
+                            : "border-white/10 hover:border-white/20"
+                        )}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-serif text-xl group-hover:text-arcane transition-colors">{trait.name}</h4>
+                          <div className={cn(
+                            "px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest",
+                            isAdvantage ? "bg-arcane text-obsidian" : "bg-ember text-obsidian"
+                          )}>
+                            {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier} pts
+                          </div>
+                        </div>
+                        <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{trait.description}</p>
+                        <div className="flex items-center gap-4 text-[10px] font-mono text-parchment/60 uppercase tracking-wider">
+                          <span className="flex items-center gap-1">
+                            <Activity size={12} /> 
+                            {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
+                          </span>
+                          {trait.modifierType && (
+                            <span className="flex items-center gap-1">
+                              <Target size={12} /> 
+                              {trait.modifierType.toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        {isSelected && (
+                          <div className={cn(
+                            "absolute top-2 right-2",
+                            isAdvantage ? "text-arcane" : "text-ember"
+                          )}>
+                            <Check size={16} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {filteredTraits.length === 0 && (
+                    <div className="col-span-full py-20 text-center space-y-4">
+                      <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto text-parchment/20">
+                        <Sparkles size={32} />
+                      </div>
+                      <p className="text-parchment/40 font-mono text-sm">Nenhum traço encontrado com esses filtros.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end pt-6">
+                  <button 
+                    onClick={() => setStep(4)}
+                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                  >
+                    <span>Continuar para Perícias</span>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 4 && (
+              <motion.div
+                key="step4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                  <div>
                     <h2 className="text-4xl font-serif mb-2">Escolha suas Perícias</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: Talentos e Especialidades</p>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 04: Talentos e Especialidades</p>
                   </div>
                   <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
                     <div className="text-right">
@@ -789,11 +1055,14 @@ export default function CharacterCreation() {
                   {filteredSkills.map((skill) => {
                     const isSelected = skills.some(s => s.id === skill.id);
                     return (
-                      <button
+                      <div
                         key={skill.id}
                         onClick={() => toggleSkill(skill)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleSkill(skill); }}
+                        role="button"
+                        tabIndex={0}
                         className={cn(
-                          "glass p-6 rounded-3xl text-left transition-all border group relative",
+                          "glass p-6 rounded-3xl text-left transition-all border group relative cursor-pointer",
                           isSelected ? "border-arcane bg-arcane/10" : "border-white/10 hover:border-white/20"
                         )}
                       >
@@ -879,7 +1148,7 @@ export default function CharacterCreation() {
                             <Check size={16} />
                           </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                   {filteredSkills.length === 0 && (
@@ -894,7 +1163,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(4)}
+                    onClick={() => setStep(5)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Poderes</span>
@@ -904,9 +1173,9 @@ export default function CharacterCreation() {
               </motion.div>
             )}
 
-            {step === 4 && (
+            {step === 5 && (
               <motion.div
-                key="step4"
+                key="step5"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -915,7 +1184,7 @@ export default function CharacterCreation() {
                 <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
                     <h2 className="text-4xl font-serif mb-2">Escolha seus Poderes</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 04: Dons e Habilidades Especiais</p>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Dons e Habilidades Especiais</p>
                   </div>
                   <div className="glass px-6 py-3 rounded-2xl border border-ember/30 bg-ember/5 flex items-center gap-4">
                     <div className="text-right">
@@ -975,11 +1244,14 @@ export default function CharacterCreation() {
                   {filteredPowers.map((power) => {
                     const isSelected = powers.some(p => p.id === power.id);
                     return (
-                      <button
+                      <div
                         key={power.id}
                         onClick={() => togglePower(power)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') togglePower(power); }}
+                        role="button"
+                        tabIndex={0}
                         className={cn(
-                          "glass p-6 rounded-3xl text-left transition-all border group relative",
+                          "glass p-6 rounded-3xl text-left transition-all border group relative cursor-pointer",
                           isSelected ? "border-ember bg-ember/10" : "border-white/10 hover:border-white/20"
                         )}
                       >
@@ -1062,7 +1334,7 @@ export default function CharacterCreation() {
                             <Check size={16} />
                           </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                   {filteredPowers.length === 0 && (
@@ -1077,7 +1349,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(5)}
+                    onClick={() => setStep(6)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Equipamento</span>
@@ -1087,9 +1359,9 @@ export default function CharacterCreation() {
               </motion.div>
             )}
 
-            {step === 5 && (
+            {step === 6 && (
               <motion.div
-                key="step5"
+                key="step6"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -1097,7 +1369,7 @@ export default function CharacterCreation() {
               >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Equipamento & Inventário</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Preparação para a Jornada</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Preparação para a Jornada</p>
                 </header>
 
                 {/* Equipment Form */}
@@ -1225,7 +1497,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(6)}
+                    onClick={() => setStep(7)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Revisar Personagem</span>
@@ -1234,9 +1506,9 @@ export default function CharacterCreation() {
                 </div>
               </motion.div>
             )}
-            {step === 6 && (
+            {step === 7 && (
               <motion.div
-                key="step6"
+                key="step7"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -1244,7 +1516,7 @@ export default function CharacterCreation() {
               >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Revisão Final</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Selando o Destino</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Selando o Destino</p>
                 </header>
 
                 <div className="glass p-8 rounded-[2.5rem] border border-white/10 space-y-8">
@@ -1269,6 +1541,24 @@ export default function CharacterCreation() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
+                      <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Vantagens & Defeitos</h4>
+                      <div className="space-y-2">
+                        {selectedTraits.map(t => (
+                          <div key={t.id} className="flex justify-between text-sm">
+                            <span className={cn(
+                              t.type === 'advantage' ? "text-arcane" : "text-ember"
+                            )}>
+                              {t.name}
+                            </span>
+                            <span className="text-parchment/40">
+                              {t.modifier > 0 ? `+${t.modifier}` : t.modifier} {t.modifierType?.toUpperCase()}
+                            </span>
+                          </div>
+                        ))}
+                        {selectedTraits.length === 0 && <p className="text-sm text-parchment/20">Nenhum traço selecionado.</p>}
+                      </div>
+                    </div>
+                    <div className="space-y-4">
                       <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Perícias</h4>
                       <div className="space-y-2">
                         {skills.map(s => (
@@ -1287,6 +1577,9 @@ export default function CharacterCreation() {
                         {skills.length === 0 && <p className="text-sm text-parchment/20">Nenhuma perícia selecionada.</p>}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
                       <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Poderes</h4>
                       <div className="space-y-2">
@@ -1306,14 +1599,13 @@ export default function CharacterCreation() {
                         {powers.length === 0 && <p className="text-sm text-parchment/20">Nenhum poder selecionado.</p>}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Resumo de Inventário</h4>
-                    <p className="text-sm text-parchment/60 leading-relaxed">
-                      {equipment.length} itens no inventário. 
-                      Pronto para enfrentar os desafios que aguardam.
-                    </p>
+                    <div className="space-y-4">
+                      <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Resumo de Inventário</h4>
+                      <p className="text-sm text-parchment/60 leading-relaxed">
+                        {equipment.length} itens no inventário. 
+                        Pronto para enfrentar os desafios que aguardam.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -1378,10 +1670,11 @@ export default function CharacterCreation() {
                 >
                   <span>
                     {step === 1 ? 'Continuar para Atributos' : 
-                     step === 2 ? 'Continuar para Perícias' : 
-                     step === 3 ? 'Continuar para Poderes' : 
-                     step === 4 ? 'Continuar para Equipamento' : 
-                     step === 5 ? 'Revisar Personagem' : 
+                     step === 2 ? 'Continuar para Vantagens/Defeitos' : 
+                     step === 3 ? 'Continuar para Perícias' : 
+                     step === 4 ? 'Continuar para Poderes' : 
+                     step === 5 ? 'Continuar para Equipamento' : 
+                     step === 6 ? 'Revisar Personagem' : 
                      'Próximo Passo'}
                   </span>
                   <ChevronRight size={18} />
@@ -1410,13 +1703,13 @@ export default function CharacterCreation() {
 
       {/* Suggestion Modals */}
       <AnimatePresence>
-        {(showSkillSuggestion || showPowerSuggestion) && (
+        {(showSkillSuggestion || showPowerSuggestion || showTraitSuggestion) && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => { setShowSkillSuggestion(false); setShowPowerSuggestion(false); }}
+              onClick={() => { setShowSkillSuggestion(false); setShowPowerSuggestion(false); setShowTraitSuggestion(false); }}
               className="absolute inset-0 bg-obsidian/80 backdrop-blur-md"
             />
             <motion.div
@@ -1426,7 +1719,7 @@ export default function CharacterCreation() {
               className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 space-y-6 overflow-y-auto max-h-[90vh]"
             >
               <header>
-                <h3 className="text-3xl font-serif">Sugerir {showSkillSuggestion ? 'Perícia' : 'Poder'}</h3>
+                <h3 className="text-3xl font-serif">Sugerir {showSkillSuggestion ? 'Perícia' : showPowerSuggestion ? 'Poder' : 'Vantagem/Defeito'}</h3>
                 <p className="text-parchment/40 font-mono text-xs uppercase tracking-widest">Sua sugestão será enviada para aprovação do mestre</p>
               </header>
 
@@ -1437,9 +1730,16 @@ export default function CharacterCreation() {
                     type="text" 
                     value={suggestionData.name}
                     onChange={e => setSuggestionData({...suggestionData, name: e.target.value})}
+                    onBlur={() => setTouched(prev => ({ ...prev, suggestionName: true }))}
                     placeholder="Ex: Golpe de Misericórdia"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    className={cn(
+                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors",
+                      touched.suggestionName && !suggestionData.name.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                    )}
                   />
+                  {touched.suggestionName && !suggestionData.name.trim() && (
+                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome é obrigatório</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo</label>
@@ -1460,7 +1760,7 @@ export default function CharacterCreation() {
                         <option value="Ocultismo" className="bg-obsidian">Ocultismo</option>
                         <option value="Empírico" className="bg-obsidian">Empírico</option>
                       </>
-                    ) : (
+                    ) : showPowerSuggestion ? (
                       <>
                         <option value="Físico" className="bg-obsidian">Físico</option>
                         <option value="Elemental" className="bg-obsidian">Elemental</option>
@@ -1469,18 +1769,54 @@ export default function CharacterCreation() {
                         <option value="Debuff" className="bg-obsidian">Debuff</option>
                         <option value="Geral" className="bg-obsidian">Geral</option>
                       </>
+                    ) : (
+                      <>
+                        <option value="advantage" className="bg-obsidian">Vantagem</option>
+                        <option value="disadvantage" className="bg-obsidian">Defeito</option>
+                      </>
                     )}
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Compra (Pontos)</label>
-                  <input 
-                    type="number" 
-                    value={suggestionData.purchaseCost}
-                    onChange={e => setSuggestionData({...suggestionData, purchaseCost: parseInt(e.target.value) || 1})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                  />
-                </div>
+                {showTraitSuggestion ? (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificador (Ex: -2 ou 2)</label>
+                      <input 
+                        type="number" 
+                        value={suggestionData.modifier}
+                        onChange={e => setSuggestionData({...suggestionData, modifier: parseInt(e.target.value) || 0})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo de Modificador</label>
+                      <select 
+                        value={suggestionData.modifierType}
+                        onChange={e => setSuggestionData({...suggestionData, modifierType: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors appearance-none"
+                      >
+                        <option value="for" className="bg-obsidian">FOR</option>
+                        <option value="con" className="bg-obsidian">CON</option>
+                        <option value="agi" className="bg-obsidian">AGI</option>
+                        <option value="per" className="bg-obsidian">PER</option>
+                        <option value="vel" className="bg-obsidian">VEL</option>
+                        <option value="ini" className="bg-obsidian">INI</option>
+                        <option value="int" className="bg-obsidian">INT</option>
+                        <option value="cor" className="bg-obsidian">COR</option>
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Compra (Pontos)</label>
+                    <input 
+                      type="number" 
+                      value={suggestionData.purchaseCost}
+                      onChange={e => setSuggestionData({...suggestionData, purchaseCost: parseInt(e.target.value) || 1})}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                )}
                 {showSkillSuggestion ? (
                   <>
                     <div className="space-y-2">
@@ -1503,7 +1839,7 @@ export default function CharacterCreation() {
                       />
                     </div>
                   </>
-                ) : (
+                ) : showPowerSuggestion ? (
                   <>
                     <div className="space-y-2">
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Uso (Ex: 5 ATP)</label>
@@ -1526,31 +1862,51 @@ export default function CharacterCreation() {
                       />
                     </div>
                   </>
+                ) : (
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Efeito</label>
+                    <input 
+                      type="text" 
+                      value={suggestionData.effect}
+                      onChange={e => setSuggestionData({...suggestionData, effect: e.target.value})}
+                      placeholder="Ex: +2 em testes de FOR"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
                 )}
                 <div className="md:col-span-2 space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição</label>
                   <textarea 
                     value={suggestionData.description}
                     onChange={e => setSuggestionData({...suggestionData, description: e.target.value})}
+                    onBlur={() => setTouched(prev => ({ ...prev, suggestionDescription: true }))}
                     placeholder="Descreva detalhadamente o funcionamento..."
                     rows={4}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors resize-none"
+                    className={cn(
+                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors resize-none",
+                      touched.suggestionDescription && !suggestionData.description.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                    )}
                   />
+                  {touched.suggestionDescription && !suggestionData.description.trim() && (
+                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">A descrição é obrigatória</p>
+                  )}
                 </div>
               </div>
 
               <div className="flex gap-4 pt-4">
                 <button 
-                  onClick={() => { setShowSkillSuggestion(false); setShowPowerSuggestion(false); }}
+                  onClick={() => { setShowSkillSuggestion(false); setShowPowerSuggestion(false); setShowTraitSuggestion(false); }}
                   className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-parchment rounded-2xl font-bold transition-all border border-white/10"
                 >
                   Cancelar
                 </button>
                 <button 
-                  onClick={() => handleSaveSuggestion(showSkillSuggestion ? 'skill' : 'power')}
+                  onClick={() => handleSaveSuggestion(showSkillSuggestion ? 'skill' : showPowerSuggestion ? 'power' : 'trait')}
                   className={cn(
                     "flex-1 py-4 rounded-2xl font-bold transition-all border",
-                    showSkillSuggestion ? "bg-arcane/10 hover:bg-arcane/20 text-arcane border-arcane/30" : "bg-ember/10 hover:bg-ember/20 text-ember border-ember/30"
+                    showSkillSuggestion ? "bg-arcane/10 hover:bg-arcane/20 text-arcane border-arcane/30" : 
+                    showPowerSuggestion ? "bg-ember/10 hover:bg-ember/20 text-ember border-ember/30" :
+                    "bg-gold/10 hover:bg-gold/20 text-gold border-gold/30"
                   )}
                 >
                   Enviar Sugestão

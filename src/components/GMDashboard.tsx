@@ -26,7 +26,8 @@ import {
   Filter,
   ArrowUpDown,
   Flame,
-  Check
+  Check,
+  Star
 } from 'lucide-react';
 import { 
   auth,
@@ -131,11 +132,22 @@ interface Power {
 
 interface Suggestion {
   id: string;
-  type: 'skill' | 'power';
+  type: 'skill' | 'power' | 'trait';
   data: any;
   suggestedBy: string;
   suggestedByName: string;
   status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+interface Trait {
+  id: string;
+  name: string;
+  description: string;
+  effect: string;
+  modifier: number;
+  modifierType: string;
+  type: 'advantage' | 'disadvantage';
   createdAt: string;
 }
 
@@ -159,10 +171,11 @@ export default function GMDashboard() {
   const [talents, setTalents] = React.useState<Talent[]>([]);
   const [skills, setSkills] = React.useState<Skill[]>([]);
   const [powers, setPowers] = React.useState<Power[]>([]);
+  const [traits, setTraits] = React.useState<Trait[]>([]);
   const [suggestions, setSuggestions] = React.useState<Suggestion[]>([]);
   const [editingSuggestion, setEditingSuggestion] = React.useState<Suggestion | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions'>('characters');
+  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits'>('characters');
   const [gmNotes, setGmNotes] = React.useState('');
   const [maxAttributePoints, setMaxAttributePoints] = React.useState(120);
   const [maxSingleAttributeValue, setMaxSingleAttributeValue] = React.useState(100);
@@ -198,6 +211,7 @@ export default function GMDashboard() {
   });
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
+  const [touched, setTouched] = React.useState<Record<string, boolean>>({});
 
   const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
 
@@ -380,6 +394,18 @@ export default function GMDashboard() {
     difficultyFormula: ''
   });
 
+  // Trait Form State
+  const [isCreatingTrait, setIsCreatingTrait] = React.useState(false);
+  const [editingTraitId, setEditingTraitId] = React.useState<string | null>(null);
+  const [newTrait, setNewTrait] = React.useState({
+    name: '',
+    description: '',
+    effect: '',
+    modifier: 0,
+    modifierType: 'for',
+    type: 'advantage' as 'advantage' | 'disadvantage'
+  });
+
   const filteredAndSortedCharacters = React.useMemo(() => {
     return characters
       .filter(char => {
@@ -535,6 +561,18 @@ export default function GMDashboard() {
       handleFirestoreError(error, OperationType.LIST, 'suggestions');
     });
 
+    // Global Traits
+    const traitsQuery = query(collection(db, 'traits'));
+    const unsubscribeTraits = onSnapshot(traitsQuery, (snapshot) => {
+      const traitData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Trait[];
+      setTraits(traitData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'traits');
+    });
+
     return () => {
       unsubscribeSession();
       unsubscribeSettings();
@@ -543,6 +581,7 @@ export default function GMDashboard() {
       unsubscribeSkills();
       unsubscribePowers();
       unsubscribeSuggestions();
+      unsubscribeTraits();
     };
   }, [sessionId]);
 
@@ -741,11 +780,59 @@ export default function GMDashboard() {
     }
   };
 
+  const handleCreateTrait = async () => {
+    if (!user || !newTrait.name) return;
+    try {
+      if (editingTraitId) {
+        await updateDoc(doc(db, 'traits', editingTraitId), {
+          ...newTrait,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        await addDoc(collection(db, 'traits'), {
+          ...newTrait,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setNewTrait({ name: '', description: '', effect: '', modifier: 0, modifierType: 'for', type: 'advantage' });
+      setIsCreatingTrait(false);
+      setEditingTraitId(null);
+    } catch (err) {
+      console.error('Error saving trait:', err);
+      handleFirestoreError(err, editingTraitId ? OperationType.UPDATE : OperationType.CREATE, 'traits');
+    }
+  };
+
+  const handleEditTrait = (trait: Trait) => {
+    setNewTrait({
+      name: trait.name,
+      description: trait.description,
+      effect: trait.effect,
+      modifier: trait.modifier,
+      modifierType: trait.modifierType,
+      type: trait.type
+    });
+    setEditingTraitId(trait.id);
+    setIsCreatingTrait(true);
+  };
+
+  const handleDeleteTrait = async (traitId: string) => {
+    try {
+      await deleteDoc(doc(db, 'traits', traitId));
+    } catch (err) {
+      console.error('Error deleting trait:', err);
+      handleFirestoreError(err, OperationType.DELETE, `traits/${traitId}`);
+    }
+  };
+
   const handleApproveSuggestion = async (suggestion: Suggestion, updatedData?: any) => {
     try {
-      const collectionName = suggestion.type === 'skill' ? 'skills' : 'powers';
+      let collectionName = 'skills';
+      if (suggestion.type === 'power') collectionName = 'powers';
+      if (suggestion.type === 'trait') collectionName = 'traits';
+      
       const dataToSave = updatedData || suggestion.data;
-      // Create the actual skill/power
+      // Create the actual skill/power/trait
       await addDoc(collection(db, collectionName), {
         ...dataToSave,
         createdAt: new Date().toISOString()
@@ -873,7 +960,7 @@ export default function GMDashboard() {
             </div>
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-2 lg:pb-0 no-scrollbar -mx-6 px-6 lg:mx-0 lg:px-0">
+          <div className="flex flex-wrap gap-2 pb-2 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 lg:justify-end">
             <button 
               onClick={() => setActiveTab('characters')}
               className={cn(
@@ -918,6 +1005,15 @@ export default function GMDashboard() {
               )}
             >
               Poderes
+            </button>
+            <button 
+              onClick={() => setActiveTab('traits')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
+                activeTab === 'traits' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
+              )}
+            >
+              Vantagens/Defeitos
             </button>
             <button 
               onClick={() => setActiveTab('notes')}
@@ -1761,8 +1857,15 @@ export default function GMDashboard() {
                     type="text" 
                     value={sessionName}
                     onChange={e => setSessionName(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    onBlur={() => setTouched(prev => ({ ...prev, sessionName: true }))}
+                    className={cn(
+                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors",
+                      touched.sessionName && !sessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                    )}
                   />
+                  {touched.sessionName && !sessionName.trim() && (
+                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
@@ -1998,14 +2101,22 @@ export default function GMDashboard() {
                         <div className="flex items-center gap-3">
                           <div className={cn(
                             "p-3 rounded-2xl",
-                            suggestion.type === 'skill' ? "bg-arcane/20 text-arcane" : "bg-ember/20 text-ember"
+                            suggestion.type === 'skill' ? "bg-arcane/20 text-arcane" : 
+                            suggestion.type === 'power' ? "bg-ember/20 text-ember" :
+                            "bg-gold/20 text-gold"
                           )}>
-                            {suggestion.type === 'skill' ? <Sword size={24} /> : <Zap size={24} />}
+                            {suggestion.type === 'skill' ? <Sword size={24} /> : 
+                             suggestion.type === 'power' ? <Zap size={24} /> :
+                             <Star size={24} />}
                           </div>
                           <div>
                             <h4 className="text-2xl font-serif">{suggestion.data.name}</h4>
                             <p className="text-xs font-mono text-parchment/40 uppercase tracking-widest">
-                              Sugerido por {suggestion.suggestedByName} • {suggestion.type === 'skill' ? 'Perícia' : 'Poder'}
+                              Sugerido por {suggestion.suggestedByName} • {
+                                suggestion.type === 'skill' ? 'Perícia' : 
+                                suggestion.type === 'power' ? 'Poder' :
+                                'Vantagem/Defeito'
+                              }
                             </p>
                           </div>
                         </div>
@@ -2015,11 +2126,13 @@ export default function GMDashboard() {
                             <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Tipo</span>
                             <p className="text-sm font-medium">{suggestion.data.type}</p>
                           </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Custo de Compra</span>
-                            <p className="text-sm font-medium">{suggestion.data.purchaseCost} Pontos</p>
-                          </div>
-                          {suggestion.type === 'skill' ? (
+                          {suggestion.type !== 'trait' && (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Custo de Compra</span>
+                              <p className="text-sm font-medium">{suggestion.data.purchaseCost} Pontos</p>
+                            </div>
+                          )}
+                          {suggestion.type === 'skill' && (
                             <>
                               <div className="space-y-1">
                                 <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Custo ATP</span>
@@ -2030,7 +2143,8 @@ export default function GMDashboard() {
                                 <p className="text-sm font-medium">{suggestion.data.damage || '-'}</p>
                               </div>
                             </>
-                          ) : (
+                          )}
+                          {suggestion.type === 'power' && (
                             <>
                               <div className="space-y-1">
                                 <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Custo Uso</span>
@@ -2039,6 +2153,18 @@ export default function GMDashboard() {
                               <div className="space-y-1">
                                 <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Efeito</span>
                                 <p className="text-sm font-medium">{suggestion.data.effect || '-'}</p>
+                              </div>
+                            </>
+                          )}
+                          {suggestion.type === 'trait' && (
+                            <>
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Modificador</span>
+                                <p className="text-sm font-medium">{suggestion.data.modifier || 0}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-mono text-parchment/30 uppercase tracking-widest">Modifica</span>
+                                <p className="text-sm font-medium">{suggestion.data.modifierType || '-'}</p>
                               </div>
                             </>
                           )}
@@ -2091,6 +2217,191 @@ export default function GMDashboard() {
               </div>
             </motion.div>
           )}
+
+          {activeTab === 'traits' && (
+            <motion.div
+              key="traits"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-serif">Vantagens e Defeitos</h3>
+                  <p className="text-sm text-parchment/40">Gerencie as vantagens e defeitos disponíveis para os personagens.</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    if (isCreatingTrait) {
+                      setIsCreatingTrait(false);
+                      setEditingTraitId(null);
+                      setNewTrait({ name: '', description: '', effect: '', modifier: 0, modifierType: 'for', type: 'advantage' });
+                    } else {
+                      setIsCreatingTrait(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-6 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] transition-all font-bold"
+                >
+                  <Plus size={18} />
+                  {isCreatingTrait ? 'Cancelar' : 'Nova Vantagem/Defeito'}
+                </button>
+              </div>
+
+              {isCreatingTrait && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="glass p-8 rounded-[2.5rem] space-y-6 overflow-hidden"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome</label>
+                        <input 
+                          type="text" 
+                          value={newTrait.name}
+                          onChange={e => setNewTrait(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="Ex: Visão Noturna"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo</label>
+                          <select 
+                            value={newTrait.type}
+                            onChange={e => setNewTrait(prev => ({ ...prev, type: e.target.value as any }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          >
+                            <option value="advantage">Vantagem</option>
+                            <option value="disadvantage">Defeito</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificador</label>
+                          <input 
+                            type="number" 
+                            value={newTrait.modifier}
+                            onChange={e => setNewTrait(prev => ({ ...prev, modifier: Number(e.target.value) }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo de Modificador</label>
+                        <select 
+                          value={newTrait.modifierType}
+                          onChange={e => setNewTrait(prev => ({ ...prev, modifierType: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        >
+                          <optgroup label="Atributos">
+                            {ATTRIBUTES.map(attr => (
+                              <option key={attr.id} value={attr.id}>{attr.label}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Talentos">
+                            {talents.map(talent => (
+                              <option key={talent.id} value={talent.id}>{talent.name}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Efeito</label>
+                        <input 
+                          type="text" 
+                          value={newTrait.effect}
+                          onChange={e => setNewTrait(prev => ({ ...prev, effect: e.target.value }))}
+                          placeholder="Ex: +2 em testes de Percepção no escuro"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição</label>
+                        <textarea 
+                          value={newTrait.description}
+                          onChange={e => setNewTrait(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Detalhes sobre a vantagem ou defeito..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors h-24 resize-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button 
+                      onClick={handleCreateTrait}
+                      disabled={!newTrait.name}
+                      className="flex items-center gap-2 px-8 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] transition-all font-bold disabled:opacity-50 disabled:hover:scale-100"
+                    >
+                      <Save size={18} />
+                      {editingTraitId ? 'Salvar Alterações' : 'Criar Vantagem/Defeito'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {traits.length === 0 ? (
+                  <div className="col-span-full glass p-20 rounded-[3rem] text-center border-dashed border-white/10">
+                    <Activity size={48} className="mx-auto text-parchment/10 mb-6" />
+                    <h4 className="text-xl font-serif mb-2">Nenhuma vantagem ou defeito cadastrado</h4>
+                    <p className="text-parchment/40 max-w-xs mx-auto">Crie vantagens e defeitos para que seus jogadores possam usá-los em suas fichas.</p>
+                  </div>
+                ) : (
+                  traits.map((trait) => (
+                    <div key={trait.id} className="glass p-6 rounded-[2.5rem] border border-white/10 hover:border-arcane/30 transition-all group relative">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h4 className="text-xl font-serif text-glow-arcane mb-1">{trait.name}</h4>
+                          <span className={cn(
+                            "text-[10px] font-mono uppercase tracking-widest",
+                            trait.type === 'advantage' ? "text-arcane" : "text-ember"
+                          )}>
+                            {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => handleEditTrait(trait)}
+                            className="p-2 text-parchment/20 hover:text-arcane transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteTrait(trait.id)}
+                            className="p-2 text-parchment/20 hover:text-red-400 transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <div className={cn(
+                          "flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold",
+                          trait.type === 'advantage' ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
+                        )}>
+                          {trait.modifier > 0 ? '+' : ''}{trait.modifier} {
+                            ATTRIBUTES.find(a => a.id === trait.modifierType)?.label || 
+                            talents.find(t => t.id === trait.modifierType)?.name || 
+                            trait.modifierType
+                          }
+                        </div>
+                      </div>
+                      <p className="text-sm text-parchment/60 mb-4 line-clamp-2">{trait.effect}</p>
+                      <p className="text-xs text-parchment/40 line-clamp-3 italic">"{trait.description}"</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* NPC Generator Modal */}
@@ -2138,8 +2449,15 @@ export default function GMDashboard() {
                       type="text" 
                       value={editingSuggestion.data.name}
                       onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, name: e.target.value}})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                      onBlur={() => setTouched(prev => ({ ...prev, editSuggestionName: true }))}
+                      className={cn(
+                        "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors",
+                        touched.editSuggestionName && !editingSuggestion.data.name.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                      )}
                     />
+                    {touched.editSuggestionName && !editingSuggestion.data.name.trim() && (
+                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome é obrigatório</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo</label>
@@ -2159,7 +2477,7 @@ export default function GMDashboard() {
                           <option value="Ocultismo">Ocultismo</option>
                           <option value="Empírico">Empírico</option>
                         </>
-                      ) : (
+                      ) : editingSuggestion.type === 'power' ? (
                         <>
                           <option value="Físico">Físico</option>
                           <option value="Elemental">Elemental</option>
@@ -2168,19 +2486,26 @@ export default function GMDashboard() {
                           <option value="Debuff">Debuff</option>
                           <option value="Geral">Geral</option>
                         </>
+                      ) : (
+                        <>
+                          <option value="advantage">Vantagem</option>
+                          <option value="disadvantage">Defeito</option>
+                        </>
                       )}
                     </select>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Compra (XP/Pontos)</label>
-                    <input 
-                      type="number" 
-                      value={editingSuggestion.data.purchaseCost}
-                      onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, purchaseCost: parseInt(e.target.value) || 0}})}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                    />
-                  </div>
-                  {editingSuggestion.type === 'skill' ? (
+                  {editingSuggestion.type !== 'trait' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Compra (XP/Pontos)</label>
+                      <input 
+                        type="number" 
+                        value={editingSuggestion.data.purchaseCost}
+                        onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, purchaseCost: parseInt(e.target.value) || 0}})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                      />
+                    </div>
+                  )}
+                  {editingSuggestion.type === 'skill' && (
                     <>
                       <div className="space-y-2">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo ATP</label>
@@ -2201,7 +2526,8 @@ export default function GMDashboard() {
                         />
                       </div>
                     </>
-                  ) : (
+                  )}
+                  {editingSuggestion.type === 'power' && (
                     <>
                       <div className="space-y-2">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Custo de Uso</label>
@@ -2213,6 +2539,47 @@ export default function GMDashboard() {
                         />
                       </div>
                       <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Efeito</label>
+                        <input 
+                          type="text" 
+                          value={editingSuggestion.data.effect || ''}
+                          onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, effect: e.target.value}})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {editingSuggestion.type === 'trait' && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificador</label>
+                        <input 
+                          type="number" 
+                          value={editingSuggestion.data.modifier || 0}
+                          onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, modifier: parseInt(e.target.value) || 0}})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Tipo de Modificador</label>
+                        <select 
+                          value={editingSuggestion.data.modifierType}
+                          onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, modifierType: e.target.value}})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        >
+                          <optgroup label="Atributos">
+                            {ATTRIBUTES.map(attr => (
+                              <option key={attr.id} value={attr.id}>{attr.label}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Talentos">
+                            {talents.map(talent => (
+                              <option key={talent.id} value={talent.id}>{talent.name}</option>
+                            ))}
+                          </optgroup>
+                        </select>
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Efeito</label>
                         <input 
                           type="text" 

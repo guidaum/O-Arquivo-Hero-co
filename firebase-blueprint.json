@@ -71,6 +71,11 @@
           "items": { "type": "string" },
           "description": "List of power IDs assigned to the character"
         },
+        "traits": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of trait IDs assigned to the character"
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "name", "class", "level", "stats"]
@@ -217,11 +222,11 @@
     },
     "Suggestion": {
       "title": "Suggestion",
-      "description": "Player suggestion for a new skill or power",
+      "description": "Player suggestion for a new skill, power, or trait",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "type": { "type": "string", "enum": ["skill", "power"] },
+        "type": { "type": "string", "enum": ["skill", "power", "trait"] },
         "data": { "type": "object" },
         "suggestedBy": { "type": "string" },
         "suggestedByName": { "type": "string" },
@@ -229,6 +234,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["type", "data", "suggestedBy", "status"]
+    },
+    "Trait": {
+      "title": "Trait",
+      "description": "Advantages and Disadvantages (Vantagens e Defeitos)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "effect": { "type": "string" },
+        "modifier": { "type": "integer" },
+        "modifierType": { "type": "string" },
+        "type": { "type": "string", "enum": ["advantage", "disadvantage"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type"]
     }
   },
   "firestore": {
@@ -267,6 +288,10 @@
     "/suggestions/{suggestionId}": {
       "schema": "Suggestion",
       "description": "Player suggestions for skills or powers"
+    },
+    "/traits/{traitId}": {
+      "schema": "Trait",
+      "description": "Global advantages and disadvantages"
     }
   }
 }
