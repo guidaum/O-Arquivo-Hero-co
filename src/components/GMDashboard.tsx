@@ -27,7 +27,11 @@ import {
   ArrowUpDown,
   Flame,
   Check,
-  Star
+  Star,
+  Info,
+  Search,
+  Target,
+  UserPlus
 } from 'lucide-react';
 import { 
   auth,
@@ -45,8 +49,9 @@ import {
   OperationType, 
   handleFirestoreError 
 } from '../firebase';
-import { cn, evaluateFormula } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
 import SessionJournal from './SessionJournal';
+import SessionChat from './SessionChat';
 
 interface GameSession {
   id: string;
@@ -71,6 +76,10 @@ interface GameSession {
   powerCostFormula?: string;
   skillTypeVars?: Record<string, string>;
   powerTypeVars?: Record<string, string>;
+  diffEasyMod?: number;
+  diffHardDiv?: number;
+  diffExtremeDiv?: number;
+  attributes?: { id: string; label: string; icon: string; color: string }[];
 }
 
 interface Character {
@@ -91,6 +100,7 @@ interface Character {
     [key: string]: number;
   };
   isNPC?: boolean;
+  ownerId?: string;
   traits?: string[];
   skillOverrides?: Record<string, { type: string; description?: string; level?: number }>;
   powerOverrides?: Record<string, { type: string; description?: string; level?: number }>;
@@ -103,12 +113,13 @@ interface Talent {
   composition: string[];
   sessionId: string;
   gmId: string;
+  category?: string;
 }
 
 interface Skill {
   id: string;
   name: string;
-  type: 'Luta' | 'Mística' | 'Geral' | 'Conhecimento' | 'Artes' | 'Treinamento' | 'Ocultismo' | 'Empírico';
+  type: string;
   atpCost: number;
   damage: string;
   description: string;
@@ -121,7 +132,7 @@ interface Skill {
 interface Power {
   id: string;
   name: string;
-  type: 'Físico' | 'Elemental' | 'Defesa' | 'Buff' | 'Debuff' | 'Geral';
+  type: string;
   cost: string;
   effect: string;
   description: string;
@@ -152,16 +163,24 @@ interface Trait {
   createdAt: string;
 }
 
-const ATTRIBUTES = [
-  { id: 'for', label: 'Força', icon: Sword, color: 'text-ember' },
-  { id: 'con', label: 'Constituição', icon: Shield, color: 'text-ember' },
-  { id: 'agi', label: 'Agilidade', icon: Zap, color: 'text-arcane' },
-  { id: 'per', label: 'Percepção', icon: Eye, color: 'text-gold' },
-  { id: 'vel', label: 'Velocidade', icon: Zap, color: 'text-arcane' },
-  { id: 'ini', label: 'Iniciativa', icon: Zap, color: 'text-gold' },
-  { id: 'int', label: 'Inteligência', icon: Brain, color: 'text-arcane' },
-  { id: 'cor', label: 'Coragem', icon: Heart, color: 'text-ember' },
+const DEFAULT_ATTRIBUTES = [
+  { id: 'for', label: 'Força', icon: 'Sword', color: 'text-ember' },
+  { id: 'con', label: 'Constituição', icon: 'Shield', color: 'text-ember' },
+  { id: 'agi', label: 'Agilidade', icon: 'Zap', color: 'text-arcane' },
+  { id: 'per', label: 'Percepção', icon: 'Eye', color: 'text-gold' },
+  { id: 'vel', label: 'Velocidade', icon: 'Zap', color: 'text-arcane' },
+  { id: 'ini', label: 'Iniciativa', icon: 'Zap', color: 'text-gold' },
+  { id: 'int', label: 'Inteligência', icon: 'Brain', color: 'text-arcane' },
+  { id: 'cor', label: 'Coragem', icon: 'Heart', color: 'text-ember' },
 ];
+
+// Helper to get icon component from name
+const getIcon = (name: string) => {
+  const icons: Record<string, any> = {
+    Sword, Shield, Zap, Eye, Brain, Heart, Users, Dice6, Activity, Scroll, Plus, History, Sparkles, Save, Trash2, Edit2, Flame, Star, Info, Target, Search, Filter, X, UserPlus
+  };
+  return icons[name] || Shield;
+};
 
 export default function GMDashboard() {
   const { sessionId } = useParams();
@@ -169,6 +188,7 @@ export default function GMDashboard() {
   const user = auth.currentUser;
   const [session, setSession] = React.useState<GameSession | null>(null);
   const [characters, setCharacters] = React.useState<Character[]>([]);
+  const [attributes, setAttributes] = React.useState(DEFAULT_ATTRIBUTES);
   const [talents, setTalents] = React.useState<Talent[]>([]);
   const [skills, setSkills] = React.useState<Skill[]>([]);
   const [powers, setPowers] = React.useState<Power[]>([]);
@@ -176,12 +196,20 @@ export default function GMDashboard() {
   const [suggestions, setSuggestions] = React.useState<Suggestion[]>([]);
   const [editingSuggestion, setEditingSuggestion] = React.useState<Suggestion | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits'>('characters');
+  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits' | 'vars' | 'categories'>('characters');
   const [gmNotes, setGmNotes] = React.useState('');
   const [maxAttributePoints, setMaxAttributePoints] = React.useState(120);
   const [maxSingleAttributeValue, setMaxSingleAttributeValue] = React.useState(100);
   const [initialSkillPoints, setInitialSkillPoints] = React.useState(0);
   const [initialPowerPoints, setInitialPowerPoints] = React.useState(0);
+  const [attrPointsPerLevel, setAttrPointsPerLevel] = React.useState(10);
+  const [skillPointsPerLevel, setSkillPointsPerLevel] = React.useState(5);
+  const [powerPointsPerLevel, setPowerPointsPerLevel] = React.useState(2);
+  const [npcDefaultMinAttr, setNpcDefaultMinAttr] = React.useState(0);
+  const [npcDefaultMaxAttr, setNpcDefaultMaxAttr] = React.useState(100);
+  const [npcDefaultAttrPoints, setNpcDefaultAttrPoints] = React.useState(120);
+  const [npcDefaultSkillPoints, setNpcDefaultSkillPoints] = React.useState(10);
+  const [npcDefaultPowerPoints, setNpcDefaultPowerPoints] = React.useState(5);
   const [pvFormula, setPvFormula] = React.useState('((FOR / 2) + CON) * 10');
   const [atpFormula, setAtpFormula] = React.useState('(INT + 3) * 3');
   const [socoFormula, setSocoFormula] = React.useState('FOR');
@@ -192,6 +220,18 @@ export default function GMDashboard() {
   const [dmFormula, setDmFormula] = React.useState('20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
   const [skillCostFormula, setSkillCostFormula] = React.useState('(COST * LVL) / VAR');
   const [powerCostFormula, setPowerCostFormula] = React.useState('(COST * LVL) / VAR');
+  const [calculationVars, setCalculationVars] = React.useState<Record<string, string>>({});
+  const [showNewVarInput, setShowNewVarInput] = React.useState(false);
+  const [newVarName, setNewVarName] = React.useState('');
+  const [talentCategories, setTalentCategories] = React.useState<string[]>([]);
+  const [showNewTalentCatInput, setShowNewTalentCatInput] = React.useState(false);
+  const [newTalentCatName, setNewTalentCatName] = React.useState('');
+  const [showNewPowerTypeInput, setShowNewPowerTypeInput] = React.useState(false);
+  const [newPowerTypeName, setNewPowerTypeName] = React.useState('');
+  const [showNewSkillTypeInput, setShowNewSkillTypeInput] = React.useState(false);
+  const [newSkillTypeName, setNewSkillTypeName] = React.useState('');
+  const [showNewAttrInput, setShowNewAttrInput] = React.useState(false);
+  const [newAttr, setNewAttr] = React.useState({ label: '', icon: 'Shield', color: 'text-arcane' });
   const [skillTypeVars, setSkillTypeVars] = React.useState<Record<string, string>>({
     'Geral': '1',
     'Luta': 'FOR',
@@ -210,9 +250,17 @@ export default function GMDashboard() {
     'Buff': 'COR',
     'Debuff': 'INI'
   });
+  const [diffEasyMod, setDiffEasyMod] = React.useState(2);
+  const [diffHardDiv, setDiffHardDiv] = React.useState(2);
+  const [diffExtremeDiv, setDiffExtremeDiv] = React.useState(5);
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+  const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
+  const [editingSkillType, setEditingSkillType] = React.useState<string | null>(null);
+  const [editingSkillTypeName, setEditingSkillTypeName] = React.useState('');
+  const [editingPowerType, setEditingPowerType] = React.useState<string | null>(null);
+  const [editingPowerTypeName, setEditingPowerTypeName] = React.useState('');
 
   const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
 
@@ -220,14 +268,18 @@ export default function GMDashboard() {
     try {
       await deleteDoc(doc(db, 'characters', id));
       setDeleteConfirm(null);
+      setSaveStatus({ type: 'success', message: 'Personagem excluído com sucesso!' });
     } catch (error) {
+      setSaveStatus({ type: 'error', message: 'Erro ao excluir personagem.' });
       handleFirestoreError(error, OperationType.DELETE, `characters/${id}`);
     }
   };
   const [filterClass, setFilterClass] = React.useState<string>('all');
   const [filterLevel, setFilterLevel] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
+  const [filterType, setFilterType] = React.useState<'all' | 'player' | 'npc'>('all');
   const [sortBy, setSortBy] = React.useState<'name' | 'level'>('name');
+  const [userPresence, setUserPresence] = React.useState<Record<string, any>>({});
 
   // Character Management State
   const [managingCharacter, setManagingCharacter] = React.useState<Character | null>(null);
@@ -239,6 +291,7 @@ export default function GMDashboard() {
     level: 1,
     skillPoints: 10,
     powerPoints: 5,
+    attributePoints: 120,
     traitCount: 0,
     minAttrValue: 0,
     maxAttrValue: 100,
@@ -265,38 +318,82 @@ export default function GMDashboard() {
 
       // Distribute Attributes
       const stats: Record<string, number> = {};
-      const minVal = npcConfig.minAttrValue || 0;
-      const maxVal = Math.min(npcConfig.maxAttrValue || 100, session.maxSingleAttributeValue || 100);
+      const minVal = npcConfig.useSessionDefaults ? npcDefaultMinAttr : (npcConfig.minAttrValue || 0);
+      const maxVal = npcConfig.useSessionDefaults ? npcDefaultMaxAttr : Math.min(npcConfig.maxAttrValue || 100, session.maxSingleAttributeValue || 100);
       
-      ATTRIBUTES.forEach(attr => stats[attr.id] = minVal);
+      attributes.forEach(attr => stats[attr.id] = minVal);
       
-      let remainingAttrPoints = (session.maxAttributePoints || 120) - (minVal * ATTRIBUTES.length);
+      const baseAttrPoints = npcConfig.useSessionDefaults ? npcDefaultAttrPoints : npcConfig.attributePoints;
+      const levelBonusAttr = (attrPointsPerLevel || 0) * (level - 1);
+      let totalPool = baseAttrPoints + levelBonusAttr;
+      
+      // Ensure we don't exceed the total possible (all attributes at maxVal)
+      totalPool = Math.min(totalPool, maxVal * attributes.length);
+      
+      let remainingAttrPoints = totalPool - (minVal * attributes.length);
       if (remainingAttrPoints < 0) remainingAttrPoints = 0;
 
       const priorities: Record<string, string[]> = {
         combat: ['for', 'con', 'agi', 'ini', 'vel'],
         scholar: ['int', 'per', 'cor', 'ini'],
-        common: ATTRIBUTES.map(a => a.id)
+        common: attributes.map(a => a.id)
       };
 
       const currentPriorities = priorities[archetype] || priorities.common;
 
-      // Simple distribution logic
-      while (remainingAttrPoints > 0) {
-        const attrId = currentPriorities[Math.floor(Math.random() * currentPriorities.length)];
-        if (stats[attrId] < maxVal) {
-          const add = Math.min(remainingAttrPoints, Math.floor(Math.random() * 10) + 1);
-          stats[attrId] += add;
+      // Stochastic weighted distribution for true randomness
+      const weights: Record<string, number> = {};
+      attributes.forEach(attr => {
+        // Random base weight between 1 and 10
+        let weight = Math.floor(Math.random() * 10) + 1;
+        // Significant boost for priority attributes
+        if (currentPriorities.includes(attr.id)) {
+          weight *= (Math.random() * 3 + 2); // 2x to 5x boost
+        }
+        weights[attr.id] = weight;
+      });
+
+      // Distribute points in chunks using weighted selection
+      let iterations = 0;
+      const maxIterations = 5000; // High limit to ensure all points are spent
+      
+      while (remainingAttrPoints > 0 && iterations < maxIterations) {
+        iterations++;
+        
+        // Filter attributes that can still receive points
+        const available = attributes.filter(a => stats[a.id] < maxVal);
+        if (available.length === 0) break;
+
+        // Calculate total weight of available attributes
+        const currentTotalWeight = available.reduce((sum, a) => sum + weights[a.id], 0);
+        
+        // Pick one attribute based on weights
+        let random = Math.random() * currentTotalWeight;
+        let selectedAttr = available[0];
+        
+        for (const attr of available) {
+          random -= weights[attr.id];
+          if (random <= 0) {
+            selectedAttr = attr;
+            break;
+          }
+        }
+
+        // Add a random chunk (1 to 10% of maxVal, or at least 1)
+        const maxChunk = Math.max(1, Math.floor(maxVal * 0.1));
+        const add = Math.min(remainingAttrPoints, maxVal - stats[selectedAttr.id], Math.floor(Math.random() * maxChunk) + 1);
+        
+        if (add > 0) {
+          stats[selectedAttr.id] += add;
           remainingAttrPoints -= add;
         }
-        
-        // Safety break if all maxed
-        if (ATTRIBUTES.every(a => stats[a.id] >= maxVal)) break;
       }
 
       // Pick Skills
       const selectedSkills: string[] = [];
-      let remainingSkillPoints = npcConfig.useSessionDefaults ? (session.initialSkillPoints || 0) : npcConfig.skillPoints;
+      const baseSkillPoints = npcConfig.useSessionDefaults ? npcDefaultSkillPoints : npcConfig.skillPoints;
+      const levelBonusSkills = (skillPointsPerLevel || 0) * (level - 1);
+      let remainingSkillPoints = baseSkillPoints + levelBonusSkills;
       const availableSkillsForNPC = [...skills].sort(() => Math.random() - 0.5);
 
       for (const skill of availableSkillsForNPC) {
@@ -308,7 +405,9 @@ export default function GMDashboard() {
 
       // Pick Powers
       const selectedPowers: string[] = [];
-      let remainingPowerPoints = npcConfig.useSessionDefaults ? (session.initialPowerPoints || 0) : npcConfig.powerPoints;
+      const basePowerPoints = npcConfig.useSessionDefaults ? npcDefaultPowerPoints : npcConfig.powerPoints;
+      const levelBonusPowers = (powerPointsPerLevel || 0) * (level - 1);
+      let remainingPowerPoints = basePowerPoints + levelBonusPowers;
       const availablePowersForNPC = [...powers].sort(() => Math.random() - 0.5);
 
       for (const power of availablePowersForNPC) {
@@ -327,15 +426,19 @@ export default function GMDashboard() {
         }
       }
 
-      // Calculate PV and ATP using dynamic formulas
-      const statsForFormula: Record<string, number> = {};
-      ATTRIBUTES.forEach(attr => {
-        statsForFormula[attr.id.toUpperCase()] = stats[attr.id] || 0;
-      });
-      // NPCs start with 0 LUTA/MISTICA for formula calculation unless we want to count their skills
       const npcSkills = skills.filter(s => selectedSkills.includes(s.id));
-      statsForFormula['LUTA'] = npcSkills.filter(s => s.type === 'Luta').length;
-      statsForFormula['MISTICA'] = npcSkills.filter(s => s.type === 'Mística').length;
+      
+      const baseStatsForFormula: Record<string, number> = {};
+      attributes.forEach(attr => {
+        baseStatsForFormula[attr.id.toUpperCase()] = stats[attr.id] || 0;
+      });
+      
+      Object.keys(skillTypeVars).forEach(cat => {
+        const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+        baseStatsForFormula[normalizedCat] = npcSkills.filter(s => s.type === cat).length;
+      });
+
+      const statsForFormula = resolveStatsWithVars(baseStatsForFormula, calculationVars);
 
       const maxPV = evaluateFormula(session.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
       const maxATP = evaluateFormula(session.atpFormula || '(INT + 3) * 3', statsForFormula);
@@ -379,7 +482,8 @@ export default function GMDashboard() {
   const [newTalent, setNewTalent] = React.useState({
     name: '',
     description: '',
-    composition: [] as string[]
+    composition: [] as string[],
+    category: ''
   });
 
   // Skill Form State
@@ -420,13 +524,23 @@ export default function GMDashboard() {
     type: 'advantage' as 'advantage' | 'disadvantage'
   });
 
-  const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string, attr: string } | null>(null);
+  const [quickRoll, setQuickRoll] = React.useState<{ result: number, success: boolean, name: string, attr: string } | null>(null);
 
   const handleQuickRoll = (name: string, attrLabel: string, attrValue: number) => {
-    const roll = Math.floor(Math.random() * 20) + 1;
-    const total = roll + attrValue;
-    setQuickRoll({ result: roll, total, name, attr: attrLabel });
+    const result = rollDiceFormula('1D10', {});
+    const naturalRoll = result.rolls[0]?.values[0] || 0;
+    const success = naturalRoll <= attrValue;
+    setQuickRoll({ result: naturalRoll, success, name, attr: attrLabel });
     setTimeout(() => setQuickRoll(null), 5000);
+  };
+
+  const isOnline = (uid?: string) => {
+    if (!uid) return false;
+    const lastActive = userPresence[uid];
+    if (!lastActive) return false;
+    const now = Date.now();
+    const activeTime = lastActive.toMillis ? lastActive.toMillis() : new Date(lastActive).getTime();
+    return (now - activeTime) < 300000; // 5 minutes
   };
 
   const filteredAndSortedCharacters = React.useMemo(() => {
@@ -434,9 +548,12 @@ export default function GMDashboard() {
       .filter(char => {
         const matchesClass = filterClass === 'all' || char.class === filterClass;
         const matchesLevel = filterLevel === 'all' || char.level.toString() === filterLevel;
-        // Mock status filter for now, as we don't have real presence yet
-        const matchesStatus = filterStatus === 'all' || (filterStatus === 'online' ? true : false);
-        return matchesClass && matchesLevel && matchesStatus;
+        const matchesType = filterType === 'all' || (filterType === 'npc' ? char.isNPC : !char.isNPC);
+        
+        const online = isOnline(char.ownerId);
+        const matchesStatus = filterStatus === 'all' || (filterStatus === 'online' ? online : !online);
+        
+        return matchesClass && matchesLevel && matchesStatus && matchesType;
       })
       .sort((a, b) => {
         if (sortBy === 'name') {
@@ -445,7 +562,7 @@ export default function GMDashboard() {
           return b.level - a.level;
         }
       });
-  }, [characters, filterClass, filterLevel, filterStatus, sortBy]);
+  }, [characters, filterClass, filterLevel, filterStatus, filterType, sortBy, userPresence]);
 
   const uniqueClasses = React.useMemo(() => {
     const classes = new Set(characters.map(c => c.class));
@@ -491,6 +608,15 @@ export default function GMDashboard() {
         setMaxSingleAttributeValue(data.maxSingleAttributeValue || 100);
         setInitialSkillPoints(data.initialSkillPoints || 0);
         setInitialPowerPoints(data.initialPowerPoints || 0);
+        setAttributes(data.attributes || DEFAULT_ATTRIBUTES);
+        setAttrPointsPerLevel(data.attrPointsPerLevel || 10);
+        setSkillPointsPerLevel(data.skillPointsPerLevel || 5);
+        setPowerPointsPerLevel(data.powerPointsPerLevel || 2);
+        setNpcDefaultMinAttr(data.npcDefaultMinAttr || 0);
+        setNpcDefaultMaxAttr(data.npcDefaultMaxAttr || 100);
+        setNpcDefaultAttrPoints(data.npcDefaultAttrPoints || 120);
+        setNpcDefaultSkillPoints(data.npcDefaultSkillPoints || 10);
+        setNpcDefaultPowerPoints(data.npcDefaultPowerPoints || 5);
         setPvFormula(data.pvFormula || '((FOR / 2) + CON) * 10');
         setAtpFormula(data.atpFormula || '(INT + 3) * 3');
         setSocoFormula(data.socoFormula || 'FOR');
@@ -501,6 +627,8 @@ export default function GMDashboard() {
         setDmFormula(data.dmFormula || '20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
         setSkillCostFormula(data.skillCostFormula || '(COST * LVL) / VAR');
         setPowerCostFormula(data.powerCostFormula || '(COST * LVL) / VAR');
+        setCalculationVars(data.calculationVars || {});
+        setTalentCategories(data.talentCategories || []);
         setSkillTypeVars(data.skillTypeVars || {
           'Geral': '1',
           'Luta': 'FOR',
@@ -519,6 +647,9 @@ export default function GMDashboard() {
           'Buff': 'COR',
           'Debuff': 'INI'
         });
+        setDiffEasyMod(data.diffEasyMod ?? 2);
+        setDiffHardDiv(data.diffHardDiv ?? 2);
+        setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
       }
     });
 
@@ -534,6 +665,16 @@ export default function GMDashboard() {
       setCharacters(charData);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'characters');
+    });
+
+    // Presence Listener
+    const usersQuery = query(collection(db, 'users'));
+    const unsubscribePresence = onSnapshot(usersQuery, (snapshot) => {
+      const presence: Record<string, any> = {};
+      snapshot.docs.forEach(doc => {
+        presence[doc.id] = doc.data().lastActive;
+      });
+      setUserPresence(presence);
     });
 
     // Global Talents
@@ -608,13 +749,22 @@ export default function GMDashboard() {
     };
   }, [sessionId]);
 
+  React.useEffect(() => {
+    if (saveStatus) {
+      const timer = setTimeout(() => setSaveStatus(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveStatus]);
+
   const handleSaveNotes = async () => {
     if (!sessionId) return;
     try {
       await updateDoc(doc(db, 'gameSessions', sessionId), {
         gmNotes: gmNotes
       });
+      setSaveStatus({ type: 'success', message: 'Notas do mestre salvas!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar notas.' });
       console.error('Error saving GM notes:', err);
     }
   };
@@ -634,6 +784,14 @@ export default function GMDashboard() {
         maxSingleAttributeValue: Number(maxSingleAttributeValue),
         initialSkillPoints: Number(initialSkillPoints),
         initialPowerPoints: Number(initialPowerPoints),
+        attrPointsPerLevel: Number(attrPointsPerLevel),
+        skillPointsPerLevel: Number(skillPointsPerLevel),
+        powerPointsPerLevel: Number(powerPointsPerLevel),
+        npcDefaultMinAttr: Number(npcDefaultMinAttr),
+        npcDefaultMaxAttr: Number(npcDefaultMaxAttr),
+        npcDefaultAttrPoints: Number(npcDefaultAttrPoints),
+        npcDefaultSkillPoints: Number(npcDefaultSkillPoints),
+        npcDefaultPowerPoints: Number(npcDefaultPowerPoints),
         pvFormula,
         atpFormula,
         socoFormula,
@@ -644,15 +802,78 @@ export default function GMDashboard() {
         dmFormula,
         skillCostFormula,
         powerCostFormula,
+        calculationVars,
+        talentCategories,
+        attributes,
         skillTypeVars,
         powerTypeVars,
+        diffEasyMod: Number(diffEasyMod),
+        diffHardDiv: Number(diffHardDiv),
+        diffExtremeDiv: Number(diffExtremeDiv),
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      alert('Configurações salvas com sucesso!');
+      setSaveStatus({ type: 'success', message: 'Configurações salvas com sucesso!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar configurações.' });
       console.error('Error saving settings:', err);
       handleFirestoreError(err, OperationType.UPDATE, `gameSessions/${sessionId}`);
+    }
+  };
+
+  const handleRenameSkillType = async (oldName: string, newName: string) => {
+    if (!newName.trim() || oldName === newName) {
+      setEditingSkillType(null);
+      return;
+    }
+    if (skillTypeVars[newName]) {
+      setSaveStatus({ type: 'error', message: 'Esta categoria já existe!' });
+      return;
+    }
+
+    const next = { ...skillTypeVars };
+    const formula = next[oldName];
+    delete next[oldName];
+    next[newName] = formula;
+    setSkillTypeVars(next);
+    setEditingSkillType(null);
+
+    // Update existing skills
+    const skillsToUpdate = skills.filter(s => s.type === oldName);
+    for (const skill of skillsToUpdate) {
+      try {
+        await updateDoc(doc(db, 'skills', skill.id), { type: newName });
+      } catch (err) {
+        console.error('Error updating skill type:', err);
+      }
+    }
+  };
+
+  const handleRenamePowerType = async (oldName: string, newName: string) => {
+    if (!newName.trim() || oldName === newName) {
+      setEditingPowerType(null);
+      return;
+    }
+    if (powerTypeVars[newName]) {
+      setSaveStatus({ type: 'error', message: 'Este tipo já existe!' });
+      return;
+    }
+
+    const next = { ...powerTypeVars };
+    const formula = next[oldName];
+    delete next[oldName];
+    next[newName] = formula;
+    setPowerTypeVars(next);
+    setEditingPowerType(null);
+
+    // Update existing powers
+    const powersToUpdate = powers.filter(p => p.type === oldName);
+    for (const power of powersToUpdate) {
+      try {
+        await updateDoc(doc(db, 'powers', power.id), { type: newName });
+      } catch (err) {
+        console.error('Error updating power type:', err);
+      }
     }
   };
 
@@ -683,10 +904,12 @@ export default function GMDashboard() {
           createdAt: new Date().toISOString()
         });
       }
-      setNewTalent({ name: '', description: '', composition: [] });
+      setNewTalent({ name: '', description: '', composition: [], category: '' });
       setIsCreatingTalent(false);
       setEditingTalentId(null);
+      setSaveStatus({ type: 'success', message: editingTalentId ? 'Talento atualizado!' : 'Talento criado!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar talento.' });
       console.error('Error saving talent:', err);
       handleFirestoreError(err, editingTalentId ? OperationType.UPDATE : OperationType.CREATE, 'talents');
     }
@@ -696,7 +919,8 @@ export default function GMDashboard() {
     setNewTalent({
       name: talent.name,
       description: talent.description,
-      composition: talent.composition
+      composition: talent.composition,
+      category: talent.category || ''
     });
     setEditingTalentId(talent.id);
     setIsCreatingTalent(true);
@@ -728,7 +952,9 @@ export default function GMDashboard() {
       setNewSkill({ name: '', type: 'Geral', atpCost: 0, damage: '', description: '', purchaseCost: 0, difficultyFormula: '' });
       setIsCreatingSkill(false);
       setEditingSkillId(null);
+      setSaveStatus({ type: 'success', message: editingSkillId ? 'Perícia atualizada!' : 'Perícia criada!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar perícia.' });
       console.error('Error saving skill:', err);
       handleFirestoreError(err, editingSkillId ? OperationType.UPDATE : OperationType.CREATE, 'skills');
     }
@@ -774,7 +1000,9 @@ export default function GMDashboard() {
       setNewPower({ name: '', type: 'Geral', cost: '', effect: '', description: '', purchaseCost: 0, difficultyFormula: '' });
       setIsCreatingPower(false);
       setEditingPowerId(null);
+      setSaveStatus({ type: 'success', message: editingPowerId ? 'Poder atualizado!' : 'Poder criado!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar poder.' });
       console.error('Error saving power:', err);
       handleFirestoreError(err, editingPowerId ? OperationType.UPDATE : OperationType.CREATE, 'powers');
     }
@@ -820,7 +1048,9 @@ export default function GMDashboard() {
       setNewTrait({ name: '', description: '', effect: '', modifier: 0, modifierType: 'for', type: 'advantage' });
       setIsCreatingTrait(false);
       setEditingTraitId(null);
+      setSaveStatus({ type: 'success', message: editingTraitId ? 'Vantagem/Defeito atualizado!' : 'Vantagem/Defeito criado!' });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar vantagem/defeito.' });
       console.error('Error saving trait:', err);
       handleFirestoreError(err, editingTraitId ? OperationType.UPDATE : OperationType.CREATE, 'traits');
     }
@@ -901,13 +1131,29 @@ export default function GMDashboard() {
   const handleLevelUp = async (char: Character, amount: number = 1) => {
     try {
       const newLevel = char.level + amount;
+      const attrGain = attrPointsPerLevel * amount;
+      const skillGain = skillPointsPerLevel * amount;
+      const powerGain = powerPointsPerLevel * amount;
+
       await updateDoc(doc(db, 'characters', char.id), {
-        level: newLevel
+        level: newLevel,
+        attributePoints: (char.attributePoints || 0) + attrGain,
+        skillPoints: (char.skillPoints || 0) + skillGain,
+        powerPoints: (char.powerPoints || 0) + powerGain
       });
+
       if (managingCharacter?.id === char.id) {
-        setManagingCharacter({ ...managingCharacter, level: newLevel });
+        setManagingCharacter({ 
+          ...managingCharacter, 
+          level: newLevel,
+          attributePoints: (managingCharacter.attributePoints || 0) + attrGain,
+          skillPoints: (managingCharacter.skillPoints || 0) + skillGain,
+          powerPoints: (managingCharacter.powerPoints || 0) + powerGain
+        });
       }
+      setSaveStatus({ type: 'success', message: `${char.name} subiu de nível!` });
     } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao subir de nível.' });
       console.error('Error leveling up:', err);
       handleFirestoreError(err, OperationType.UPDATE, `characters/${char.id}`);
     }
@@ -951,6 +1197,26 @@ export default function GMDashboard() {
 
   return (
     <div className="min-h-screen bg-obsidian text-parchment p-6 lg:p-10">
+      <AnimatePresence>
+        {saveStatus && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={cn(
+              "fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border backdrop-blur-xl",
+              saveStatus.type === 'success' ? "bg-arcane/90 border-arcane/20 text-obsidian" : 
+              saveStatus.type === 'error' ? "bg-ember/90 border-ember/20 text-white" : 
+              "bg-white/90 border-white/20 text-obsidian"
+            )}
+          >
+            {saveStatus.type === 'success' ? <Check size={20} /> : 
+             saveStatus.type === 'error' ? <X size={20} /> : 
+             <Info size={20} />}
+            <span className="font-medium">{saveStatus.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="max-w-7xl mx-auto space-y-10">
         {/* Header */}
         <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
@@ -971,7 +1237,7 @@ export default function GMDashboard() {
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(session.code);
-                    alert('Código da sessão copiado!');
+                    setSaveStatus({ type: 'success', message: 'Código da sessão copiado!' });
                   }}
                   className="text-arcane hover:text-arcane/80 transition-colors flex items-center gap-1"
                   title="Clique para copiar"
@@ -1046,6 +1312,24 @@ export default function GMDashboard() {
               )}
             >
               Notas
+            </button>
+            <button 
+              onClick={() => setActiveTab('vars')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
+                activeTab === 'vars' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
+              )}
+            >
+              Variáveis
+            </button>
+            <button 
+              onClick={() => setActiveTab('categories')}
+              className={cn(
+                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
+                activeTab === 'categories' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
+              )}
+            >
+              Categorias
             </button>
             <button 
               onClick={() => setActiveTab('settings')}
@@ -1135,6 +1419,16 @@ export default function GMDashboard() {
                     <option value="all">Todos os Status</option>
                     <option value="online">Online</option>
                     <option value="offline">Offline</option>
+                  </select>
+
+                  <select 
+                    value={filterType}
+                    onChange={(e) => setFilterType(e.target.value as 'all' | 'player' | 'npc')}
+                    className="bg-obsidian border border-white/10 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-arcane/50"
+                  >
+                    <option value="all">Todos os Tipos</option>
+                    <option value="player">Personagens Jogadores</option>
+                    <option value="npc">NPCs</option>
                   </select>
 
                   <div className="flex items-center gap-2 text-parchment/40 ml-auto">
@@ -1234,8 +1528,17 @@ export default function GMDashboard() {
 
                       <div className="mt-6 flex items-center justify-between relative z-10">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                          <span className="text-[10px] font-mono text-parchment/40 uppercase">Online</span>
+                          {isOnline(char.ownerId) ? (
+                            <>
+                              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                              <span className="text-[10px] font-mono text-parchment/40 uppercase">Online</span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-2 h-2 rounded-full bg-parchment/20" />
+                              <span className="text-[10px] font-mono text-parchment/20 uppercase">Offline</span>
+                            </>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <button 
@@ -1328,7 +1631,7 @@ export default function GMDashboard() {
                     if (isCreatingTalent) {
                       setIsCreatingTalent(false);
                       setEditingTalentId(null);
-                      setNewTalent({ name: '', description: '', composition: [] });
+                      setNewTalent({ name: '', description: '', composition: [], category: '' });
                     } else {
                       setIsCreatingTalent(true);
                     }
@@ -1359,6 +1662,19 @@ export default function GMDashboard() {
                         />
                       </div>
                       <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Categoria</label>
+                        <select 
+                          value={newTalent.category || ''}
+                          onChange={e => setNewTalent(prev => ({ ...prev, category: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        >
+                          <option value="">Sem Categoria</option>
+                          {talentCategories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição</label>
                         <textarea 
                           value={newTalent.description}
@@ -1379,7 +1695,7 @@ export default function GMDashboard() {
                             </div>
                           ) : (
                             newTalent.composition.map((attrId, index) => {
-                              const attr = ATTRIBUTES.find(a => a.id === attrId);
+                              const attr = attributes.find(a => a.id === attrId);
                               if (!attr) return null;
                               return (
                                 <motion.div 
@@ -1388,11 +1704,11 @@ export default function GMDashboard() {
                                   animate={{ opacity: 1, scale: 1 }}
                                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-arcane/10 border border-arcane/30 text-arcane text-xs font-medium"
                                 >
-                                  <attr.icon size={12} />
+                                  {React.createElement(getIcon(attr.icon), { size: 12 })}
                                   {attr.label}
                                   <button 
                                     onClick={() => removeAttributeFromTalent(index)}
-                                    className="hover:text-ember transition-colors ml-1"
+                                    className="p-1 hover:bg-ember/10 hover:text-ember transition-all rounded-md ml-1"
                                   >
                                     <X size={14} />
                                   </button>
@@ -1406,13 +1722,13 @@ export default function GMDashboard() {
                       <div className="space-y-4">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Adicionar Atributo</label>
                         <div className="grid grid-cols-2 gap-3">
-                          {ATTRIBUTES.map(attr => (
+                          {attributes.map(attr => (
                             <button
                               key={attr.id}
                               onClick={() => addAttributeToTalent(attr.id)}
                               className="flex items-center gap-3 p-3 rounded-xl border bg-white/5 border-white/10 text-parchment/40 hover:border-arcane/50 hover:text-parchment transition-all text-left group"
                             >
-                              <attr.icon size={16} className="group-hover:text-arcane transition-colors" />
+                              {React.createElement(getIcon(attr.icon), { size: 16, className: "group-hover:text-arcane transition-colors" })}
                               <span className="text-sm font-medium">{attr.label}</span>
                               <Plus size={14} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
@@ -1447,7 +1763,12 @@ export default function GMDashboard() {
                   talents.map((talent) => (
                     <div key={talent.id} className="glass p-6 rounded-[2.5rem] border border-white/10 hover:border-arcane/30 transition-all group relative">
                       <div className="flex justify-between items-start mb-4">
-                        <h4 className="text-xl font-serif text-glow-arcane">{talent.name}</h4>
+                        <div>
+                          <h4 className="text-xl font-serif text-glow-arcane">{talent.name}</h4>
+                          {talent.category && (
+                            <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{talent.category}</span>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <button 
                             onClick={() => handleEditTalent(talent)}
@@ -1469,11 +1790,11 @@ export default function GMDashboard() {
                       
                       <div className="flex flex-wrap gap-2">
                         {talent.composition.map(attrId => {
-                          const attr = ATTRIBUTES.find(a => a.id === attrId);
+                          const attr = attributes.find(a => a.id === attrId);
                           if (!attr) return null;
                           return (
                             <div key={attrId} className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-mono uppercase tracking-wider">
-                              <attr.icon size={10} className={attr.color} />
+                              {React.createElement(getIcon(attr.icon), { size: 10, className: attr.color })}
                               {attr.label}
                             </div>
                           );
@@ -1542,14 +1863,9 @@ export default function GMDashboard() {
                             onChange={e => setNewSkill(prev => ({ ...prev, type: e.target.value as any }))}
                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                           >
-                            <option value="Geral">Geral</option>
-                            <option value="Luta">Luta</option>
-                            <option value="Mística">Mística</option>
-                            <option value="Conhecimento">Conhecimento</option>
-                            <option value="Artes">Artes</option>
-                            <option value="Treinamento">Treinamento</option>
-                            <option value="Ocultismo">Ocultismo</option>
-                            <option value="Empírico">Empírico</option>
+                            {Object.keys(skillTypeVars).map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="space-y-2">
@@ -1730,12 +2046,9 @@ export default function GMDashboard() {
                           onChange={e => setNewPower(prev => ({ ...prev, type: e.target.value as any }))}
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                         >
-                          <option value="Físico">Físico</option>
-                          <option value="Elemental">Elemental</option>
-                          <option value="Defesa">Defesa</option>
-                          <option value="Buff">Buff</option>
-                          <option value="Debuff">Debuff</option>
-                          <option value="Geral">Geral</option>
+                          {Object.keys(powerTypeVars).map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="space-y-2">
@@ -1863,6 +2176,643 @@ export default function GMDashboard() {
             </motion.div>
           )}
 
+          {activeTab === 'categories' && (
+            <motion.div
+              key="categories"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="glass p-8 rounded-[2.5rem] space-y-8"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-serif">Categorias e Tipos</h3>
+                  <p className="text-sm text-parchment/40">Gerencie as categorias de talentos, tipos de poderes e perícias.</p>
+                </div>
+                <button 
+                  onClick={handleSaveSettings}
+                  className="flex items-center gap-2 px-6 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] transition-all font-bold"
+                >
+                  <Save size={18} />
+                  Salvar Alterações
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Attributes Section */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-arcane">
+                      <Activity size={20} />
+                      <h4 className="text-lg font-serif">Atributos</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowNewAttrInput(true)}
+                      className="p-2 bg-arcane/10 text-arcane rounded-xl hover:bg-arcane/20 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showNewAttrInput && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="glass p-4 rounded-2xl border border-arcane/30 space-y-4 overflow-hidden"
+                      >
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome</label>
+                            <input 
+                              type="text"
+                              value={newAttr.label}
+                              onChange={e => setNewAttr({ ...newAttr, label: e.target.value })}
+                              placeholder="Ex: Sorte"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-arcane/50 transition-colors text-sm"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Ícone</label>
+                            <select 
+                              value={newAttr.icon}
+                              onChange={e => setNewAttr({ ...newAttr, icon: e.target.value })}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-arcane/50 transition-colors text-sm"
+                            >
+                              <option value="Shield">Escudo</option>
+                              <option value="Sword">Espada</option>
+                              <option value="Zap">Raio</option>
+                              <option value="Brain">Cérebro</option>
+                              <option value="Heart">Coração</option>
+                              <option value="Eye">Olho</option>
+                              <option value="Activity">Atividade</option>
+                              <option value="Flame">Fogo</option>
+                              <option value="Star">Estrela</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              if (newAttr.label.trim()) {
+                                const id = newAttr.label.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").substring(0, 3);
+                                if (attributes.some(a => a.id === id)) {
+                                  setSaveStatus({ type: 'error', message: 'Um atributo com este ID já existe!' });
+                                  return;
+                                }
+                                setAttributes([...attributes, { ...newAttr, id }]);
+                                setNewAttr({ label: '', icon: 'Shield', color: 'text-arcane' });
+                                setShowNewAttrInput(false);
+                              }
+                            }}
+                            className="flex-1 py-2 bg-arcane text-obsidian rounded-xl font-bold text-xs hover:scale-[1.02] transition-all"
+                          >
+                            Adicionar
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setShowNewAttrInput(false);
+                              setNewAttr({ label: '', icon: 'Shield', color: 'text-arcane' });
+                            }}
+                            className="px-3 py-2 glass rounded-xl text-xs hover:bg-white/5 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="space-y-2">
+                    {attributes.map((attr, idx) => (
+                      <div key={attr.id} className="glass p-3 rounded-xl border border-white/5 flex items-center justify-between group">
+                        <div className="flex items-center gap-3">
+                          <div className={cn("p-1.5 rounded-lg bg-white/5", attr.color)}>
+                            {React.createElement(getIcon(attr.icon), { size: 14 })}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{attr.label}</span>
+                            <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-widest">{attr.id}</span>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            if (DEFAULT_ATTRIBUTES.some(a => a.id === attr.id)) {
+                              setSaveStatus({ type: 'error', message: 'Não é possível excluir atributos base!' });
+                              return;
+                            }
+                            setAttributes(attributes.filter((_, i) => i !== idx));
+                          }}
+                          className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Talent Categories */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-gold">
+                      <Sparkles size={20} />
+                      <h4 className="text-lg font-serif">Categorias de Talentos</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowNewTalentCatInput(true)}
+                      className="p-2 bg-gold/10 text-gold rounded-xl hover:bg-gold/20 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showNewTalentCatInput && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="glass p-4 rounded-2xl border border-gold/30 space-y-4 overflow-hidden"
+                      >
+                        <input 
+                          type="text"
+                          value={newTalentCatName}
+                          onChange={e => setNewTalentCatName(e.target.value)}
+                          placeholder="Nome da categoria..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-gold/50 transition-colors text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              if (newTalentCatName.trim()) {
+                                if (talentCategories.includes(newTalentCatName.trim())) {
+                                  setSaveStatus({ type: 'error', message: 'Esta categoria já existe!' });
+                                  return;
+                                }
+                                setTalentCategories([...talentCategories, newTalentCatName.trim()]);
+                                setNewTalentCatName('');
+                                setShowNewTalentCatInput(false);
+                              }
+                            }}
+                            className="flex-1 py-2 bg-gold text-obsidian rounded-xl font-bold text-xs hover:scale-[1.02] transition-all"
+                          >
+                            Adicionar
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setShowNewTalentCatInput(false);
+                              setNewTalentCatName('');
+                            }}
+                            className="px-3 py-2 glass rounded-xl text-xs hover:bg-white/5 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="space-y-2">
+                    {talentCategories.length === 0 ? (
+                      <p className="text-xs text-parchment/20 italic text-center py-4">Nenhuma categoria criada.</p>
+                    ) : (
+                      talentCategories.map((cat, idx) => (
+                        <div key={idx} className="glass p-3 rounded-xl border border-white/5 flex items-center justify-between group">
+                          <span className="text-sm">{cat}</span>
+                          <button 
+                            onClick={() => setTalentCategories(talentCategories.filter((_, i) => i !== idx))}
+                            className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Power Types */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-arcane">
+                      <Zap size={20} />
+                      <h4 className="text-lg font-serif">Tipos de Poderes</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowNewPowerTypeInput(true)}
+                      className="p-2 bg-arcane/10 text-arcane rounded-xl hover:bg-arcane/20 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showNewPowerTypeInput && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="glass p-4 rounded-2xl border border-arcane/30 space-y-4 overflow-hidden"
+                      >
+                        <input 
+                          type="text"
+                          value={newPowerTypeName}
+                          onChange={e => setNewPowerTypeName(e.target.value)}
+                          placeholder="Nome do tipo..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-arcane/50 transition-colors text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              if (newPowerTypeName.trim()) {
+                                if (powerTypeVars[newPowerTypeName.trim()]) {
+                                  setSaveStatus({ type: 'error', message: 'Este tipo já existe!' });
+                                  return;
+                                }
+                                setPowerTypeVars({ ...powerTypeVars, [newPowerTypeName.trim()]: '1' });
+                                setNewPowerTypeName('');
+                                setShowNewPowerTypeInput(false);
+                              }
+                            }}
+                            className="flex-1 py-2 bg-arcane text-obsidian rounded-xl font-bold text-xs hover:scale-[1.02] transition-all"
+                          >
+                            Adicionar
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setShowNewPowerTypeInput(false);
+                              setNewPowerTypeName('');
+                            }}
+                            className="px-3 py-2 glass rounded-xl text-xs hover:bg-white/5 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                    <div className="space-y-3">
+                      {Object.entries(powerTypeVars).map(([name, formula]) => (
+                        <div key={name} className="glass p-4 rounded-xl border border-white/5 space-y-3 group">
+                          <div className="flex items-center justify-between">
+                            {editingPowerType === name ? (
+                              <div className="flex items-center gap-2 flex-1 mr-2">
+                                <input 
+                                  type="text"
+                                  value={editingPowerTypeName}
+                                  onChange={e => setEditingPowerTypeName(e.target.value)}
+                                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-arcane/50"
+                                  autoFocus
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenamePowerType(name, editingPowerTypeName);
+                                    if (e.key === 'Escape') setEditingPowerType(null);
+                                  }}
+                                />
+                                <button 
+                                  onClick={() => handleRenamePowerType(name, editingPowerTypeName)}
+                                  className="p-1 text-green-400 hover:bg-green-400/10 rounded-md"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => setEditingPowerType(null)}
+                                  className="p-1 text-red-400 hover:bg-red-400/10 rounded-md"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="text-sm font-medium text-arcane">{name}</span>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingPowerType(name);
+                                      setEditingPowerTypeName(name);
+                                    }}
+                                    className="p-1.5 text-parchment/20 hover:text-arcane hover:bg-arcane/10 rounded-lg"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      const next = { ...powerTypeVars };
+                                      delete next[name];
+                                      setPowerTypeVars(next);
+                                    }}
+                                    className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono text-parchment/40 uppercase tracking-widest">Variável de Custo</label>
+                            <input 
+                              type="text"
+                              value={formula}
+                              onChange={e => setPowerTypeVars({ ...powerTypeVars, [name]: e.target.value })}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 focus:outline-none focus:border-arcane/50 transition-colors text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                </div>
+
+                {/* Skill Categories */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-ember">
+                      <Brain size={20} />
+                      <h4 className="text-lg font-serif">Categorias de Perícias</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowNewSkillTypeInput(true)}
+                      className="p-2 bg-ember/10 text-ember rounded-xl hover:bg-ember/20 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showNewSkillTypeInput && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="glass p-4 rounded-2xl border border-ember/30 space-y-4 overflow-hidden"
+                      >
+                        <input 
+                          type="text"
+                          value={newSkillTypeName}
+                          onChange={e => setNewSkillTypeName(e.target.value)}
+                          placeholder="Nome da categoria..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-ember/50 transition-colors text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              if (newSkillTypeName.trim()) {
+                                if (skillTypeVars[newSkillTypeName.trim()]) {
+                                  setSaveStatus({ type: 'error', message: 'Esta categoria já existe!' });
+                                  return;
+                                }
+                                setSkillTypeVars({ ...skillTypeVars, [newSkillTypeName.trim()]: '1' });
+                                setNewSkillTypeName('');
+                                setShowNewSkillTypeInput(false);
+                              }
+                            }}
+                            className="flex-1 py-2 bg-ember text-obsidian rounded-xl font-bold text-xs hover:scale-[1.02] transition-all"
+                          >
+                            Adicionar
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setShowNewSkillTypeInput(false);
+                              setNewSkillTypeName('');
+                            }}
+                            className="px-3 py-2 glass rounded-xl text-xs hover:bg-white/5 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                    <div className="space-y-3">
+                      {Object.entries(skillTypeVars).map(([name, formula]) => (
+                        <div key={name} className="glass p-4 rounded-xl border border-white/5 space-y-3 group">
+                          <div className="flex items-center justify-between">
+                            {editingSkillType === name ? (
+                              <div className="flex items-center gap-2 flex-1 mr-2">
+                                <input 
+                                  type="text"
+                                  value={editingSkillTypeName}
+                                  onChange={e => setEditingSkillTypeName(e.target.value)}
+                                  className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-ember/50"
+                                  autoFocus
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleRenameSkillType(name, editingSkillTypeName);
+                                    if (e.key === 'Escape') setEditingSkillType(null);
+                                  }}
+                                />
+                                <button 
+                                  onClick={() => handleRenameSkillType(name, editingSkillTypeName)}
+                                  className="p-1 text-green-400 hover:bg-green-400/10 rounded-md"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => setEditingSkillType(null)}
+                                  className="p-1 text-red-400 hover:bg-red-400/10 rounded-md"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="text-sm font-medium text-ember">{name}</span>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingSkillType(name);
+                                      setEditingSkillTypeName(name);
+                                    }}
+                                    className="p-1.5 text-parchment/20 hover:text-ember hover:bg-ember/10 rounded-lg"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      const next = { ...skillTypeVars };
+                                      delete next[name];
+                                      setSkillTypeVars(next);
+                                    }}
+                                    className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono text-parchment/40 uppercase tracking-widest">Variável de Custo</label>
+                            <input 
+                              type="text"
+                              value={formula}
+                              onChange={e => setSkillTypeVars({ ...skillTypeVars, [name]: e.target.value })}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 focus:outline-none focus:border-ember/50 transition-colors text-xs font-mono"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'vars' && (
+            <motion.div
+              key="vars"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="glass p-8 rounded-[2.5rem] space-y-8"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-serif">Variáveis de Cálculo</h3>
+                  <p className="text-sm text-parchment/40">Consulte as variáveis base e crie variáveis personalizadas para usar em suas fórmulas.</p>
+                </div>
+                <button 
+                  onClick={handleSaveSettings}
+                  className="flex items-center gap-2 px-6 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] transition-all font-bold"
+                >
+                  <Save size={18} />
+                  Salvar Alterações
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Core Variables (Read-only) */}
+                <div className="space-y-6">
+                  <div className="flex items-center gap-2 text-arcane">
+                    <Shield size={20} />
+                    <h4 className="text-lg font-serif">Variáveis Base (Somente Leitura)</h4>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {attributes.map(attr => (
+                      <div key={attr.id} className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1">
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{attr.label}</span>
+                        <span className="text-lg font-mono text-arcane">{attr.id.toUpperCase()}</span>
+                      </div>
+                    ))}
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1">
+                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Perícias de Luta</span>
+                      <span className="text-lg font-mono text-arcane">LUTA</span>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1">
+                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Perícias Místicas</span>
+                      <span className="text-lg font-mono text-arcane">MISTICA</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Variables */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-ember">
+                      <Plus size={20} />
+                      <h4 className="text-lg font-serif">Variáveis Personalizadas</h4>
+                    </div>
+                    <button 
+                      onClick={() => setShowNewVarInput(true)}
+                      className="p-2 bg-ember/10 text-ember rounded-xl hover:bg-ember/20 transition-colors"
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showNewVarInput && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="glass p-4 rounded-2xl border border-ember/30 space-y-4 overflow-hidden"
+                      >
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Nome da Variável</label>
+                          <input 
+                            type="text"
+                            value={newVarName}
+                            onChange={e => setNewVarName(e.target.value.toUpperCase().replace(/\s+/g, '_'))}
+                            placeholder="EX: BONUS_DANO"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-ember/50 transition-colors font-mono text-sm"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              if (newVarName.trim()) {
+                                if (calculationVars[newVarName]) {
+                                  setSaveStatus({ type: 'error', message: 'Esta variável já existe!' });
+                                  return;
+                                }
+                                setCalculationVars({ ...calculationVars, [newVarName]: '0' });
+                                setNewVarName('');
+                                setShowNewVarInput(false);
+                              }
+                            }}
+                            className="flex-1 py-2 bg-ember text-obsidian rounded-xl font-bold text-sm hover:scale-[1.02] transition-all"
+                          >
+                            Adicionar
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setShowNewVarInput(false);
+                              setNewVarName('');
+                            }}
+                            className="px-4 py-2 glass rounded-xl text-sm hover:bg-white/5 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="space-y-4">
+                    {Object.entries(calculationVars).length === 0 ? (
+                      <div className="text-center py-10 glass rounded-2xl border border-white/5">
+                        <p className="text-sm text-parchment/20 italic">Nenhuma variável personalizada criada.</p>
+                      </div>
+                    ) : (
+                      Object.entries(calculationVars).map(([name, value]) => (
+                        <div key={name} className="glass p-4 rounded-2xl border border-white/10 flex flex-col sm:flex-row items-start sm:items-center gap-4 group">
+                          <div className="flex-1 space-y-1 w-full">
+                            <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-1">{name}</label>
+                            <input 
+                              type="text" 
+                              value={value}
+                              onChange={e => setCalculationVars({ ...calculationVars, [name]: e.target.value })}
+                              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
+                              placeholder="Fórmula ou valor..."
+                            />
+                          </div>
+                          <button 
+                            onClick={() => {
+                              const newVars = { ...calculationVars };
+                              delete newVars[name];
+                              setCalculationVars(newVars);
+                            }}
+                            className="p-2 text-parchment/20 hover:text-ember hover:bg-ember/10 rounded-xl transition-all sm:opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === 'settings' && (
             <motion.div
               key="settings"
@@ -1952,8 +2902,100 @@ export default function GMDashboard() {
 
               <div className="pt-8 border-t border-white/10 space-y-6">
                 <div>
+                  <h4 className="text-xl font-serif mb-2">Evolução de Personagem</h4>
+                  <p className="text-sm text-parchment/40">Defina quantos pontos os personagens ganham automaticamente ao subir de nível.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Atributos por Nível</label>
+                    <input 
+                      type="number" 
+                      value={attrPointsPerLevel}
+                      onChange={e => setAttrPointsPerLevel(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Perícias por Nível</label>
+                    <input 
+                      type="number" 
+                      value={skillPointsPerLevel}
+                      onChange={e => setSkillPointsPerLevel(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Poderes por Nível</label>
+                    <input 
+                      type="number" 
+                      value={powerPointsPerLevel}
+                      onChange={e => setPowerPointsPerLevel(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div>
+                  <h4 className="text-xl font-serif mb-2">Config Criador de NPC</h4>
+                  <p className="text-sm text-parchment/40">Defina os valores padrão que o gerador de NPC usará quando a opção "Usar Padrões da Campanha" estiver ativa.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Atributo Mínimo</label>
+                    <input 
+                      type="number" 
+                      value={npcDefaultMinAttr}
+                      onChange={e => setNpcDefaultMinAttr(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Atributo Máximo</label>
+                    <input 
+                      type="number" 
+                      value={npcDefaultMaxAttr}
+                      onChange={e => setNpcDefaultMaxAttr(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Pontos de Atributo Base</label>
+                    <input 
+                      type="number" 
+                      value={npcDefaultAttrPoints}
+                      onChange={e => setNpcDefaultAttrPoints(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Pontos de Perícia Base</label>
+                    <input 
+                      type="number" 
+                      value={npcDefaultSkillPoints}
+                      onChange={e => setNpcDefaultSkillPoints(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Pontos de Poder Base</label>
+                    <input 
+                      type="number" 
+                      value={npcDefaultPowerPoints}
+                      onChange={e => setNpcDefaultPowerPoints(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div>
                   <h4 className="text-xl font-serif mb-2">Fórmulas de Combate</h4>
-                  <p className="text-sm text-parchment/40">Personalize como os status de combate são calculados. Use nomes de atributos em maiúsculo (ex: FOR, CON, INT, AGI, PER, VEL, INI, COR) e use LUTA ou MISTICA para contar perícias desses tipos.</p>
+                  <p className="text-sm text-parchment/40">Personalize como os status de combate são calculados. Use nomes de atributos em maiúsculo (ex: FOR, CON, INT, AGI, PER, VEL, INI, COR) e use o nome das categorias de perícia em maiúsculo (ex: LUTA, MISTICA, CONHECIMENTO) para contar perícias desses tipos.</p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2028,6 +3070,46 @@ export default function GMDashboard() {
                       onChange={e => setDmFormula(e.target.value)}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div>
+                  <h4 className="text-xl font-serif mb-2">Variáveis de Dificuldade</h4>
+                  <p className="text-sm text-parchment/40">Defina os modificadores e divisores para os testes de dificuldade.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificador Fácil (F)</label>
+                    <input 
+                      type="number" 
+                      value={diffEasyMod}
+                      onChange={e => setDiffEasyMod(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                    <p className="text-[10px] text-parchment/40 font-mono px-2">Valor somado ao atributo (ex: +2).</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Divisor Difícil (D)</label>
+                    <input 
+                      type="number" 
+                      value={diffHardDiv}
+                      onChange={e => setDiffHardDiv(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                    <p className="text-[10px] text-parchment/40 font-mono px-2">Atributo dividido por este valor (ex: / 2).</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Divisor Extremo (E)</label>
+                    <input 
+                      type="number" 
+                      value={diffExtremeDiv}
+                      onChange={e => setDiffExtremeDiv(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                    <p className="text-[10px] text-parchment/40 font-mono px-2">Atributo dividido por este valor (ex: / 5).</p>
                   </div>
                 </div>
               </div>
@@ -2328,7 +3410,7 @@ export default function GMDashboard() {
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                         >
                           <optgroup label="Atributos">
-                            {ATTRIBUTES.map(attr => (
+                            {attributes.map(attr => (
                               <option key={attr.id} value={attr.id}>{attr.label}</option>
                             ))}
                           </optgroup>
@@ -2420,7 +3502,7 @@ export default function GMDashboard() {
                           trait.type === 'advantage' ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
                         )}>
                           {trait.modifier > 0 ? '+' : ''}{trait.modifier} {
-                            ATTRIBUTES.find(a => a.id === trait.modifierType)?.label || 
+                            attributes.find(a => a.id === trait.modifierType)?.label || 
                             talents.find(t => t.id === trait.modifierType)?.name || 
                             trait.modifierType
                           }
@@ -2455,9 +3537,9 @@ export default function GMDashboard() {
             >
               <button 
                 onClick={() => setEditingSuggestion(null)}
-                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40"
+                className="absolute top-6 right-6 p-3 hover:bg-white/10 rounded-2xl transition-colors text-parchment/40 hover:text-parchment"
               >
-                <X size={20} />
+                <X size={24} />
               </button>
               
               <div className="flex items-center gap-3 mb-6">
@@ -2600,7 +3682,7 @@ export default function GMDashboard() {
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                         >
                           <optgroup label="Atributos">
-                            {ATTRIBUTES.map(attr => (
+                            {attributes.map(attr => (
                               <option key={attr.id} value={attr.id}>{attr.label}</option>
                             ))}
                           </optgroup>
@@ -2673,9 +3755,9 @@ export default function GMDashboard() {
             >
               <button 
                 onClick={() => setIsGeneratingNPC(false)}
-                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40"
+                className="absolute top-6 right-6 p-3 hover:bg-white/10 rounded-2xl transition-colors text-parchment/40 hover:text-parchment"
               >
-                <X size={20} />
+                <X size={24} />
               </button>
               
               <div className="flex items-center gap-3 mb-6">
@@ -2753,24 +3835,35 @@ export default function GMDashboard() {
                 </div>
 
                 {!npcConfig.useSessionDefaults && (
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Perícia</label>
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Atributo</label>
                       <input 
                         type="number"
-                        value={npcConfig.skillPoints}
-                        onChange={(e) => setNpcConfig(prev => ({ ...prev, skillPoints: parseInt(e.target.value) || 0 }))}
+                        value={npcConfig.attributePoints}
+                        onChange={(e) => setNpcConfig(prev => ({ ...prev, attributePoints: parseInt(e.target.value) || 0 }))}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Poder</label>
-                      <input 
-                        type="number"
-                        value={npcConfig.powerPoints}
-                        onChange={(e) => setNpcConfig(prev => ({ ...prev, powerPoints: parseInt(e.target.value) || 0 }))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Perícia</label>
+                        <input 
+                          type="number"
+                          value={npcConfig.skillPoints}
+                          onChange={(e) => setNpcConfig(prev => ({ ...prev, skillPoints: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Poder</label>
+                        <input 
+                          type="number"
+                          value={npcConfig.powerPoints}
+                          onChange={(e) => setNpcConfig(prev => ({ ...prev, powerPoints: parseInt(e.target.value) || 0 }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2819,9 +3912,9 @@ export default function GMDashboard() {
               >
                 <button 
                   onClick={() => setManagingCharacter(null)}
-                  className="absolute top-6 right-6 p-2 glass rounded-xl hover:bg-white/10 transition-colors text-parchment/40 hover:text-parchment"
+                  className="absolute top-6 right-6 p-3 glass rounded-2xl hover:bg-white/10 transition-colors text-parchment/40 hover:text-parchment"
                 >
-                  <X size={20} />
+                  <X size={24} />
                 </button>
 
                 <div className="flex items-center gap-4 mb-8">
@@ -3036,15 +4129,21 @@ export default function GMDashboard() {
             <div className="flex flex-col">
               <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.name} • {quickRoll.attr}</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-serif text-glow-arcane">{quickRoll.total}</span>
-                <span className="text-xs text-parchment/40 font-mono">(1d20: {quickRoll.result})</span>
+                <span className={cn(
+                  "text-2xl font-serif",
+                  quickRoll.success ? "text-glow-arcane" : "text-ember"
+                )}>
+                  {quickRoll.success ? 'Sucesso' : 'Falha'}
+                </span>
+                <span className="text-xs text-parchment/40 font-mono">(d10: {quickRoll.result})</span>
               </div>
             </div>
-            {quickRoll.result === 20 && <Sparkles className="text-gold animate-bounce" size={20} />}
-            {quickRoll.result === 1 && <Zap className="text-ember animate-pulse" size={20} />}
+            {quickRoll.success && <Sparkles className="text-gold animate-bounce" size={20} />}
+            {!quickRoll.success && <Zap className="text-ember animate-pulse" size={20} />}
           </motion.div>
         )}
       </AnimatePresence>
+      {sessionId && <SessionChat sessionId={sessionId} />}
     </div>
   );
 }

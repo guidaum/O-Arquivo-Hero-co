@@ -250,6 +250,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "type"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A message in a session chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderPhoto": { "type": "string" },
+        "text": { "type": "string" },
+        "image": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "senderId", "senderName", "createdAt"]
     }
   },
   "firestore": {
@@ -292,6 +308,10 @@
     "/traits/{traitId}": {
       "schema": "Trait",
       "description": "Global advantages and disadvantages"
+    },
+    "/chatMessages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Messages for game session chats"
     }
   }
 }

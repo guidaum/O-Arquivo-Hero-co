@@ -15,7 +15,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot } from '../firebase';
+import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from '../firebase';
 import DiceRoller from './DiceRoller';
 
 export default function Layout() {
@@ -24,6 +24,28 @@ export default function Layout() {
   const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
   const [playedCount, setPlayedCount] = React.useState(0);
   const [masteredCount, setMasteredCount] = React.useState(0);
+
+  // Presence Heartbeat
+  React.useEffect(() => {
+    if (!user) return;
+
+    const updatePresence = async () => {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          lastActive: serverTimestamp()
+        });
+      } catch (error) {
+        console.error('Error updating presence:', error);
+      }
+    };
+
+    // Initial update
+    updatePresence();
+
+    // Update every 2 minutes
+    const interval = setInterval(updatePresence, 120000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Handle sidebar state on resize
   React.useEffect(() => {
@@ -178,30 +200,29 @@ export default function Layout() {
         {/* Side Nav Bar */}
         <aside className={cn(
           "glass border-r-0 fixed lg:sticky top-16 h-[calc(100vh-64px)] z-40 transition-all duration-300",
-          isSidebarOpen 
-            ? "w-64 translate-x-0" 
-            : "-translate-x-full lg:translate-x-0 lg:w-20"
+          isSidebarOpen ? "w-64" : "w-20"
         )}>
           <nav className="p-4 space-y-2">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                onClick={() => window.innerWidth < 1024 && setIsSidebarOpen(false)}
+                title={!isSidebarOpen ? item.label : undefined}
+                onClick={() => window.innerWidth < 1024 && isSidebarOpen && setIsSidebarOpen(false)}
                 className={({ isActive }) => cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative overflow-hidden",
+                  "flex items-center px-4 py-3 rounded-xl transition-all group relative overflow-hidden",
                   isActive 
                     ? "bg-arcane/10 text-arcane border border-arcane/20" 
                     : "text-parchment/60 hover:text-parchment hover:bg-white/5"
                 )}
               >
                 <item.icon size={20} className={cn(
-                  "transition-transform group-hover:scale-110",
+                  "shrink-0 transition-transform group-hover:scale-110",
                   "group-[.active]:text-arcane"
                 )} />
                 <span className={cn(
-                  "font-medium transition-opacity",
-                  !isSidebarOpen && "lg:opacity-0"
+                  "font-medium transition-all duration-300 whitespace-nowrap overflow-hidden",
+                  isSidebarOpen ? "opacity-100 w-auto ml-3" : "opacity-0 w-0 ml-0"
                 )}>
                   {item.label}
                 </span>
@@ -216,7 +237,10 @@ export default function Layout() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-w-0 p-4 lg:p-10 overflow-auto pb-24 lg:pb-10">
+        <main className={cn(
+          "flex-1 min-w-0 p-4 lg:p-10 overflow-auto pb-24 lg:pb-10 transition-all duration-300",
+          "ml-20 lg:ml-0"
+        )}>
           <Outlet />
         </main>
 

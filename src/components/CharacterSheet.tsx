@@ -27,13 +27,41 @@ import {
   Sparkles,
   Coins,
   X,
-  Filter
+  Filter,
+  Menu,
+  ChevronLeft,
+  LayoutGrid,
+  Check,
+  Info,
+  UserPlus,
+  Search
 } from 'lucide-react';
-import { cn, evaluateFormula } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
 import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove } from '../firebase';
+import Inventory from './Inventory';
+import SessionChat from './SessionChat';
 
 const iconMap: Record<string, any> = {
   Shield, Sword, Zap, Flame, Eye, Brain, Heart, Activity, Scroll, Dice6, Sparkles
+};
+
+const DEFAULT_ATTRIBUTES = [
+  { id: 'for', label: 'Força', icon: 'Sword', color: 'text-ember' },
+  { id: 'con', label: 'Constituição', icon: 'Shield', color: 'text-ember' },
+  { id: 'agi', label: 'Agilidade', icon: 'Zap', color: 'text-arcane' },
+  { id: 'per', label: 'Percepção', icon: 'Eye', color: 'text-gold' },
+  { id: 'vel', label: 'Velocidade', icon: 'Zap', color: 'text-arcane' },
+  { id: 'ini', label: 'Iniciativa', icon: 'Zap', color: 'text-gold' },
+  { id: 'int', label: 'Inteligência', icon: 'Brain', color: 'text-arcane' },
+  { id: 'cor', label: 'Coragem', icon: 'Heart', color: 'text-ember' },
+];
+
+// Helper to get icon component from name
+const getIcon = (name: string) => {
+  const icons: Record<string, any> = {
+    Shield, Sword, Zap, Flame, Eye, Brain, Heart, Activity, Scroll, Dice6, Sparkles, UserPlus, Plus, History, Star, Info, Target, Search, Filter, X
+  };
+  return icons[name] || Shield;
 };
 
 export default function CharacterSheet() {
@@ -67,9 +95,20 @@ export default function CharacterSheet() {
   const [talentMods, setTalentMods] = React.useState<Record<string, number>>({});
   const [talents, setTalents] = React.useState<any[]>([]);
   const [activeCategory, setActiveCategory] = React.useState('geral');
-  const [activeSection, setActiveSection] = React.useState('stats');
+  const [activeSection, setActiveSection] = React.useState('all');
+  const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [isInventoryOpen, setIsInventoryOpen] = React.useState(false);
-  const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, attr: string } | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = React.useState(false);
+  const [quickRoll, setQuickRoll] = React.useState<{ 
+    result: number, 
+    success?: boolean, 
+    attr: string, 
+    target?: number,
+    type: 'test' | 'damage',
+    diceSides?: number
+  } | null>(null);
+  const [activeRollAttr, setActiveRollAttr] = React.useState<string | null>(null);
 
   const isGM = userRole === 'gm';
   const isOwner = character?.ownerId === auth.currentUser?.uid;
@@ -184,18 +223,17 @@ export default function CharacterSheet() {
         const pvFormula = globalSettings?.pvFormula || '((FOR / 2) + CON) * 10';
         const atpFormula = globalSettings?.atpFormula || '(INT + 3) * 3';
         
-        const statsForFormula: Record<string, number> = {
-          FOR: getVal('for'),
-          CON: getVal('con'),
-          AGI: getVal('agi'),
-          PER: getVal('per'),
-          VEL: getVal('vel'),
-          INI: getVal('ini'),
-          INT: getVal('int'),
-          COR: getVal('cor'),
-          LUTA: (data.skills || []).length, // Simplified for initial calc
-          MISTICA: (data.skills || []).length, // Simplified for initial calc
-        };
+        const initialAttrVars: Record<string, number> = {};
+        const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+        baseAttrs.forEach((attr: any) => {
+          initialAttrVars[attr.id.toUpperCase()] = getVal(attr.id);
+        });
+
+        const statsForFormula = resolveStatsWithVars({
+          ...initialAttrVars,
+          SKILLS: (data.skills || []).length,
+          POWERS: (data.powers || []).length,
+        }, globalSettings?.calculationVars);
 
         const maxPV = evaluateFormula(pvFormula, statsForFormula);
         const maxATP = evaluateFormula(atpFormula, statsForFormula);
@@ -282,6 +320,13 @@ export default function CharacterSheet() {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (saveStatus) {
+      const timer = setTimeout(() => setSaveStatus(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveStatus]);
+
   const handleSave = async (updatedData?: any) => {
     if (!characterId || !character) return;
     try {
@@ -304,7 +349,9 @@ export default function CharacterSheet() {
         ...updatedData
       };
       await updateDoc(doc(db, 'characters', characterId), dataToUpdate);
+      setSaveStatus({ type: 'success', message: 'Alterações salvas com sucesso!' });
     } catch (error) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar alterações.' });
       handleFirestoreError(error, OperationType.UPDATE, `characters/${characterId}`);
     }
   };
@@ -498,25 +545,38 @@ export default function CharacterSheet() {
 
   const traitStatsMods = React.useMemo(() => {
     const mods: Record<string, number> = {};
+    const attrIds = (globalSettings?.attributes || DEFAULT_ATTRIBUTES).map(a => a.id);
     resolvedTraits.forEach(trait => {
       const type = trait.modifierType?.toLowerCase();
-      if (['for', 'con', 'agi', 'per', 'vel', 'ini', 'int', 'cor'].includes(type)) {
+      if (attrIds.includes(type)) {
         mods[type] = (mods[type] || 0) + trait.modifier;
       }
     });
     return mods;
-  }, [resolvedTraits]);
+  }, [resolvedTraits, globalSettings]);
 
   const traitTalentMods = React.useMemo(() => {
     const mods: Record<string, number> = {};
+    const attrIds = (globalSettings?.attributes || DEFAULT_ATTRIBUTES).map(a => a.id);
     resolvedTraits.forEach(trait => {
       const type = trait.modifierType?.toLowerCase();
-      if (!['for', 'con', 'agi', 'per', 'vel', 'ini', 'int', 'cor'].includes(type)) {
+      if (!attrIds.includes(type)) {
         mods[trait.modifierType] = (mods[trait.modifierType] || 0) + trait.modifier;
       }
     });
     return mods;
-  }, [resolvedTraits]);
+  }, [resolvedTraits, globalSettings]);
+
+  const attributes = React.useMemo(() => {
+    const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+
+    return baseAttrs.map(attr => ({
+      ...attr,
+      value: stats[attr.id] || 0,
+      mod: statsMods[attr.id] || 0,
+      traitMod: traitStatsMods[attr.id] || 0
+    }));
+  }, [globalSettings, stats, statsMods, traitStatsMods]);
 
   if (loading) {
     return (
@@ -541,23 +601,39 @@ export default function CharacterSheet() {
     );
   }
 
-  const handleQuickRoll = (attrLabel: string, attrValue: number) => {
-    const roll = Math.floor(Math.random() * 20) + 1;
-    const total = roll + attrValue;
-    setQuickRoll({ result: roll, total, attr: attrLabel });
+  const handleQuickRoll = (attrLabel: string, attrValue: number, difficulty: 'easy' | 'normal' | 'hard' | 'extreme' = 'normal', diceSides: number = 20) => {
+    let target = attrValue;
+    let diffLabel = 'Normal';
+    
+    const easyMod = globalSettings?.diffEasyMod ?? 2;
+    const hardDiv = globalSettings?.diffHardDiv ?? 2;
+    const extremeDiv = globalSettings?.diffExtremeDiv ?? 5;
+
+    if (difficulty === 'easy') {
+      target += easyMod;
+      diffLabel = 'Fácil';
+    } else if (difficulty === 'hard') {
+      target = Math.floor(attrValue / hardDiv);
+      diffLabel = 'Difícil';
+    } else if (difficulty === 'extreme') {
+      target = Math.floor(attrValue / extremeDiv);
+      diffLabel = 'Extremo';
+    }
+    
+    const roll = Math.floor(Math.random() * diceSides) + 1;
+    const success = roll <= target;
+    
+    setQuickRoll({ 
+      result: roll, 
+      success, 
+      attr: `${attrLabel} [${diffLabel}]`,
+      target,
+      type: 'test',
+      diceSides
+    });
+    
     setTimeout(() => setQuickRoll(null), 5000);
   };
-
-  const attributes = [
-    { id: 'for', label: 'Força', icon: Sword, value: stats.for || 0, mod: statsMods.for || 0, traitMod: traitStatsMods.for || 0, color: 'text-ember' },
-    { id: 'con', label: 'Constituição', icon: Shield, value: stats.con || 0, mod: statsMods.con || 0, traitMod: traitStatsMods.con || 0, color: 'text-ember' },
-    { id: 'agi', label: 'Agilidade', icon: Zap, value: stats.agi || 0, mod: statsMods.agi || 0, traitMod: traitStatsMods.agi || 0, color: 'text-arcane' },
-    { id: 'per', label: 'Percepção', icon: Eye, value: stats.per || 0, mod: statsMods.per || 0, traitMod: traitStatsMods.per || 0, color: 'text-gold' },
-    { id: 'vel', label: 'Velocidade', icon: Zap, value: stats.vel || 0, mod: statsMods.vel || 0, traitMod: traitStatsMods.vel || 0, color: 'text-arcane' },
-    { id: 'ini', label: 'Iniciativa', icon: Zap, value: stats.ini || 0, mod: statsMods.ini || 0, traitMod: traitStatsMods.ini || 0, color: 'text-gold' },
-    { id: 'int', label: 'Inteligência', icon: Brain, value: stats.int || 0, mod: statsMods.int || 0, traitMod: traitStatsMods.int || 0, color: 'text-arcane' },
-    { id: 'cor', label: 'Coragem', icon: Heart, value: stats.cor || 0, mod: statsMods.cor || 0, traitMod: traitStatsMods.cor || 0, color: 'text-ember' },
-  ];
 
   const equippedItems = inventory.filter(i => i.equipped);
 
@@ -591,21 +667,23 @@ export default function CharacterSheet() {
       level: character?.powerOverrides?.[p.id]?.level || 1
     }));
 
-  const lutaCount = resolvedSkills.filter(s => s.type === 'Luta').length;
-  const misticaCount = resolvedSkills.filter(s => s.type === 'Mística').length;
+  const skillCategoryCounts: Record<string, number> = {};
+  const skillCategories = Object.keys(globalSettings?.skillTypeVars || { 'Luta': '1', 'Mística': '1' });
+  
+  skillCategories.forEach(cat => {
+    const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    skillCategoryCounts[normalizedCat] = resolvedSkills.filter(s => s.type === cat).length;
+  });
 
-  const statsForFormula: Record<string, number> = {
-    FOR: getAttr('for'),
-    CON: getAttr('con'),
-    AGI: getAttr('agi'),
-    PER: getAttr('per'),
-    VEL: getAttr('vel'),
-    INI: getAttr('ini'),
-    INT: getAttr('int'),
-    COR: getAttr('cor'),
-    LUTA: lutaCount,
-    MISTICA: misticaCount,
-  };
+  const baseStatsForFormula: Record<string, number> = {};
+  attributes.forEach(attr => {
+    baseStatsForFormula[attr.id.toUpperCase()] = getAttr(attr.id);
+  });
+
+  const statsForFormula = resolveStatsWithVars({
+    ...baseStatsForFormula,
+    ...skillCategoryCounts,
+  }, globalSettings?.calculationVars);
 
   const maxPV = evaluateFormula(globalSettings?.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
   const maxATP = evaluateFormula(globalSettings?.atpFormula || '(INT + 3) * 3', statsForFormula);
@@ -617,19 +695,24 @@ export default function CharacterSheet() {
   const defesa = evaluateFormula(globalSettings?.defesaFormula || 'CON + (AGI / 2) + (LUTA * 2)', statsForFormula);
   const esquiva = evaluateFormula(globalSettings?.esquivaFormula || '(CON + AGI + (VEL / 2)) + (LUTA * 2)', statsForFormula);
 
+  const handleFormulaRoll = (label: string, formula: string) => {
+    if (!formula) return;
+    const result = rollDiceFormula(formula, statsForFormula);
+    setQuickRoll({ 
+      result: result.total, 
+      attr: label,
+      type: 'damage'
+    });
+    setTimeout(() => setQuickRoll(null), 5000);
+  };
+
   const calculateDamage = (damage: string) => {
     if (!damage) return '-';
     let result = damage.toUpperCase();
-    const statsMap: Record<string, number | string> = {
-      FOR: getAttr('for'),
-      CON: getAttr('con'),
-      AGI: getAttr('agi'),
-      PER: getAttr('per'),
-      VEL: getAttr('vel'),
-      INI: getAttr('ini'),
-      INT: getAttr('int'),
-      COR: getAttr('cor'),
-    };
+    const statsMap: Record<string, number | string> = {};
+    attributes.forEach(attr => {
+      statsMap[attr.id.toUpperCase()] = getAttr(attr.id);
+    });
 
     Object.entries(statsMap).forEach(([key, value]) => {
       const regex = new RegExp(key, 'g');
@@ -654,6 +737,7 @@ export default function CharacterSheet() {
   ];
 
   const sections = [
+    { id: 'all', label: 'Ficha Completa', icon: LayoutGrid, category: 'geral' },
     { id: 'stats', label: 'Atributos', icon: Sword, category: 'geral' },
     { id: 'combat', label: 'Status de Combate', icon: Shield, category: 'geral' },
     { id: 'traits', label: 'Vantagens e Defeitos', icon: Star, category: 'geral' },
@@ -661,13 +745,208 @@ export default function CharacterSheet() {
     { id: 'powers', label: 'Poderes e Mágias', icon: Flame, category: 'geral' },
     { id: 'talents', label: 'Talentos', icon: Sparkles, category: 'geral' },
     { id: 'inventory', label: 'Inventário', icon: Backpack, category: 'inventory' },
+    { id: 'manage_inventory', label: 'Gerenciar Itens', icon: Edit3, category: 'inventory' },
   ];
 
   const activeSections = sections.filter(s => s.category === activeCategory);
 
+  const renderSidebar = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-8 px-2">
+        {!isSidebarCollapsed && <h3 className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Navegação</h3>}
+        <button 
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+          className="hidden lg:flex p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-parchment"
+        >
+          {isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+        </button>
+        <button 
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="lg:hidden p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-parchment"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      {/* Category Switcher in Sidebar */}
+      <div className={cn("grid gap-2 mb-6", isSidebarCollapsed ? "grid-cols-1" : "grid-cols-2")}>
+        {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => {
+                setActiveCategory(cat.id);
+                const firstSection = sections.find(s => s.category === cat.id);
+                if (firstSection) setActiveSection(firstSection.id);
+              }}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 py-3 rounded-2xl border transition-all",
+                activeCategory === cat.id 
+                  ? "bg-arcane/10 border-arcane/30 text-arcane shadow-lg shadow-arcane/5" 
+                  : "bg-white/5 border-white/10 text-parchment/40 hover:text-parchment hover:bg-white/10"
+              )}
+              title={cat.label}
+            >
+              <cat.icon size={isSidebarCollapsed ? 20 : 18} />
+              <span className={cn(
+                "text-[9px] font-mono uppercase tracking-tighter transition-all duration-300 overflow-hidden",
+                isSidebarCollapsed ? "opacity-0 h-0" : "opacity-100 h-auto"
+              )}>
+                {cat.label}
+              </span>
+            </button>
+        ))}
+      </div>
+
+      <div className="h-px bg-white/5 mb-6" />
+
+      <nav className="space-y-2">
+        {activeSections.map(section => (
+          <button
+            key={section.id}
+            onClick={() => {
+              setActiveSection(section.id);
+              if (window.innerWidth < 1024) setIsMobileSidebarOpen(false);
+            }}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
+              activeSection === section.id 
+                ? "bg-arcane/10 text-arcane border border-arcane/20" 
+                : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+            )}
+          >
+            <section.icon size={20} className={cn(
+              "shrink-0 transition-transform group-hover:scale-110",
+              activeSection === section.id && "text-arcane"
+            )} />
+            <span className={cn(
+              "font-medium text-sm whitespace-nowrap overflow-hidden text-ellipsis transition-all duration-300",
+              isSidebarCollapsed && window.innerWidth >= 1024 ? "opacity-0 w-0 ml-0" : "opacity-100 w-auto ml-0"
+            )}>
+              {section.label}
+            </span>
+            {activeSection === section.id && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-arcane rounded-r-full" />
+            )}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+
+  const isAll = activeSection === 'all';
+
   return (
-    <div className="space-y-10 pb-24 lg:pb-0">
-      {/* Character Header */}
+    <div className="flex flex-col lg:flex-row gap-6 lg:gap-10 min-h-screen relative">
+      <AnimatePresence>
+        {saveStatus && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={cn(
+              "fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border backdrop-blur-xl",
+              saveStatus.type === 'success' ? "bg-arcane/90 border-arcane/20 text-obsidian" : 
+              saveStatus.type === 'error' ? "bg-ember/90 border-ember/20 text-white" : 
+              "bg-white/90 border-white/20 text-obsidian"
+            )}
+          >
+            {saveStatus.type === 'success' ? <Check size={20} /> : 
+             saveStatus.type === 'error' ? <X size={20} /> : 
+             <Info size={20} />}
+            <span className="font-medium">{saveStatus.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Desktop Sidebar */}
+      <aside className={cn(
+        "hidden lg:block sticky top-24 h-[calc(100vh-120px)] transition-all duration-300 shrink-0",
+        isSidebarCollapsed ? "w-20" : "w-64"
+      )}>
+        <div className="glass p-4 rounded-3xl border border-white/10 h-full">
+          {renderSidebar()}
+        </div>
+      </aside>
+
+      {/* Mobile Sidebar Toggle */}
+      <button 
+        onClick={() => setIsMobileSidebarOpen(true)}
+        className="lg:hidden fixed bottom-28 right-6 z-50 w-14 h-14 bg-arcane text-obsidian rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
+      >
+        <Menu size={24} />
+      </button>
+
+      {/* Mobile Sidebar Drawer */}
+      <AnimatePresence>
+        {isMobileSidebarOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="fixed inset-0 bg-obsidian/80 backdrop-blur-sm z-[60] lg:hidden"
+            />
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              className="fixed inset-y-0 left-0 w-72 bg-obsidian border-r border-white/10 z-[70] p-6 lg:hidden"
+            >
+              {renderSidebar()}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1 space-y-10 pb-24 lg:pb-0">
+        {/* Category Navigation Bar (Horizontal Tabs) */}
+        <div className="flex items-center gap-6 border-b border-white/10 overflow-x-auto no-scrollbar">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => {
+                setActiveCategory(cat.id);
+                const firstSection = sections.find(s => s.category === cat.id);
+                if (firstSection) setActiveSection(firstSection.id);
+              }}
+              className={cn(
+                "pb-4 px-2 text-xs sm:text-sm font-mono uppercase tracking-widest transition-all relative flex items-center gap-2 shrink-0",
+                activeCategory === cat.id 
+                  ? "text-arcane" 
+                  : "text-parchment/40 hover:text-parchment"
+              )}
+            >
+              <cat.icon size={16} />
+              {cat.label}
+              {activeCategory === cat.id && (
+                <motion.div 
+                  layoutId="activeCategory"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-arcane"
+                />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Mobile Section Navigation Bar */}
+        <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
+          {activeSections.map(section => (
+            <button
+              key={section.id}
+              onClick={() => setActiveSection(section.id)}
+              className={cn(
+                "whitespace-nowrap px-4 py-2 rounded-xl text-[10px] font-mono uppercase tracking-widest border transition-all shrink-0",
+                activeSection === section.id 
+                  ? "bg-arcane/20 border-arcane/30 text-arcane" 
+                  : "bg-white/5 border-white/10 text-parchment/40"
+              )}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Character Header */}
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 lg:gap-8">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8 text-center sm:text-left">
           <div 
@@ -776,70 +1055,15 @@ export default function CharacterSheet() {
         </div>
       </header>
 
-      {/* Floating Navigation Menu */}
-      <div className="sticky top-4 lg:top-20 z-30 flex flex-col items-center gap-2 py-4 pointer-events-none lg:hidden">
-        {/* Category Menu (Mobile Only) */}
-        <div className="lg:hidden glass-arcane p-1 rounded-xl border border-white/10 flex items-center gap-1 pointer-events-auto shadow-xl">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                setActiveCategory(cat.id);
-                // Set first section of category as active
-                const firstSection = sections.find(s => s.category === cat.id);
-                if (firstSection) setActiveSection(firstSection.id);
-              }}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-widest transition-all",
-                activeCategory === cat.id 
-                  ? "bg-white/10 text-arcane font-bold" 
-                  : "text-parchment/40 hover:text-parchment"
-              )}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Section Menu (Desktop: All, Mobile: Filtered by Category) */}
-        <div className="glass-arcane p-1.5 rounded-2xl border border-white/10 flex items-center gap-1 pointer-events-auto shadow-2xl shadow-black/50 overflow-x-auto no-scrollbar max-w-[95vw]">
-          {sections.map(section => (
-            <button
-              key={section.id}
-              onClick={() => {
-                setActiveSection(section.id);
-                setActiveCategory(section.category);
-              }}
-              className={cn(
-                "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-mono uppercase tracking-widest transition-all whitespace-nowrap",
-                activeSection === section.id 
-                  ? "bg-arcane text-obsidian font-bold shadow-lg" 
-                  : "text-parchment/40 hover:text-parchment hover:bg-white/5",
-                // Hide sections not in active category on mobile, but show all on desktop
-                section.category !== activeCategory && "hidden lg:flex"
-              )}
-            >
-              <section.icon size={14} />
-              <span className={cn("hidden lg:inline", activeSection === section.id && "inline")}>{section.label}</span>
-            </button>
-          ))}
-        </div>
-        
-        {/* Sub-label for current section on mobile */}
-        <div className="lg:hidden pointer-events-none">
-          <div className="px-4 py-1 bg-obsidian/80 backdrop-blur-sm border border-white/5 rounded-full text-[9px] font-mono text-parchment/40 uppercase tracking-widest">
-            {sections.find(s => s.id === activeSection)?.label}
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Left Column: Attributes & Combat Status */}
-        <div className={cn(
-          "lg:col-span-3 space-y-8",
-          activeSection !== 'stats' && activeSection !== 'combat' && "hidden lg:block"
-        )}>
-          <section className={cn("space-y-4", activeSection !== 'stats' && "hidden lg:block")}>
+        {activeCategory === 'geral' ? (
+          <>
+            {/* Left Column: Attributes & Combat Status */}
+            <div className={cn(
+              isAll ? "lg:col-span-4" : "lg:col-span-12",
+              !isAll && activeSection !== 'stats' && activeSection !== 'combat' && "hidden"
+            )}>
+              <section className={cn("space-y-4", !isAll && activeSection !== 'stats' && "hidden")}>
             <div className="flex items-center justify-between px-2 sm:px-4">
               <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Dados Básicos</h3>
               {isGM && (
@@ -935,18 +1159,65 @@ export default function CharacterSheet() {
                 >
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className={cn("p-1.5 sm:p-2 rounded-xl bg-white/5", attr.color)}>
-                      <attr.icon size={16} sm:size={18} />
+                      {React.createElement(getIcon(attr.icon), { size: 18 })}
                     </div>
                     <span className="font-serif text-base sm:text-lg">{attr.label}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleQuickRoll(attr.label, attr.value + attr.mod + attr.traitMod)}
-                      className="p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
-                      title="Rolar D20"
-                    >
-                      <Dice6 size={16} />
-                    </button>
+                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                    <AnimatePresence mode="wait">
+                      {activeRollAttr === attr.id ? (
+                        <motion.div 
+                          key="diffs"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="flex gap-2 items-center"
+                        >
+                          {[
+                            { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                            { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                            { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                            { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                          ].map(d => (
+                            <button
+                              key={d.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickRoll(attr.label, attr.value + attr.mod + attr.traitMod, d.id as any, 10);
+                                setActiveRollAttr(null);
+                              }}
+                              className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
+                              title={d.title}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveRollAttr(null);
+                            }}
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                          >
+                            <X size={12} />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <motion.button 
+                          key="dice"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveRollAttr(attr.id);
+                          }}
+                          className="p-1.5 sm:p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
+                          title="Rolar com Dificuldade"
+                        >
+                          <Dice6 size={14} sm:size={16} />
+                        </motion.button>
+                      )}
+                    </AnimatePresence>
                     <div className="text-right">
                       {canPlayerEdit ? (
                         <div className="flex flex-col items-center gap-1">
@@ -1035,7 +1306,7 @@ export default function CharacterSheet() {
           </section>
 
           {/* Combat Status Calculations */}
-          <section className={cn("space-y-4", activeSection !== 'combat' && "hidden lg:block")}>
+          <section className={cn("space-y-4", !isAll && activeSection !== 'combat' && "hidden")}>
             <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Status de Combate</h3>
             <div className="glass p-6 rounded-3xl space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1070,11 +1341,11 @@ export default function CharacterSheet() {
 
         {/* Middle Column: Status Sliders & Perícias */}
         <div className={cn(
-          "lg:col-span-6 space-y-10",
-          activeSection !== 'combat' && activeSection !== 'skills' && activeSection !== 'powers' && activeSection !== 'talents' && "hidden lg:block"
+          isAll ? "lg:col-span-5" : "lg:col-span-12",
+          !isAll && activeSection !== 'combat' && activeSection !== 'skills' && activeSection !== 'powers' && activeSection !== 'talents' && activeSection !== 'traits' && "hidden"
         )}>
           {/* Status Sliders */}
-          <section className={cn("flex flex-col gap-16", activeSection !== 'combat' && "hidden lg:block")}>
+          <section className={cn("flex flex-col gap-1 mb-4", !isAll && activeSection !== 'combat' && "hidden")}>
             <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
@@ -1200,7 +1471,7 @@ export default function CharacterSheet() {
           </section>
 
           {/* Perícias & Disciplinas */}
-          <section className={cn("space-y-6", activeSection !== 'skills' && "hidden lg:block")}>
+          <section className={cn("space-y-6 mb-4", !isAll && activeSection !== 'skills' && "hidden")}>
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif flex items-center gap-3">
                 <Scroll className="text-arcane" size={24} />
@@ -1234,9 +1505,9 @@ export default function CharacterSheet() {
                         e.stopPropagation();
                         handleRemoveSkill(skill.id);
                       }}
-                      className="absolute top-4 right-4 p-1.5 glass rounded-lg opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all"
+                      className="absolute top-2 right-2 p-1 glass rounded-xl opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all shadow-lg"
                     >
-                      <X size={14} />
+                      <X size={16} />
                     </button>
                   )}
                   <div className="flex items-center justify-between">
@@ -1260,14 +1531,86 @@ export default function CharacterSheet() {
                         <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">ATP</p>
                         <p className="text-base font-serif text-arcane">{skill.atp}</p>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dano</p>
-                        <p className="text-base font-serif text-ember">{calculateDamage(skill.damage)}</p>
-                      </div>
+                      {skill.damage && (
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dano</p>
+                            <p className="text-base font-serif text-ember">{calculateDamage(skill.damage)}</p>
+                          </div>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFormulaRoll(skill.name, skill.damage);
+                            }}
+                            className="p-2 hover:bg-ember/20 rounded-lg text-parchment/40 hover:text-ember transition-colors"
+                            title="Rolar Dano"
+                          >
+                            <Sword size={18} />
+                          </button>
+                        </div>
+                      )}
                       {skill.difficultyFormula && (
-                        <div>
-                          <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dificuldade</p>
-                          <p className="text-base font-serif text-gold">{evaluateFormula(skill.difficultyFormula, statsForFormula)}</p>
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Teste</p>
+                            <p className="text-base font-serif text-gold">{evaluateFormula(skill.difficultyFormula, statsForFormula)}</p>
+                          </div>
+                          <div className="relative">
+                            <AnimatePresence mode="wait">
+                              {activeRollAttr === skill.id ? (
+                                <motion.div 
+                                  key="diffs"
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  className="absolute right-0 bottom-full mb-2 flex gap-2 glass p-1.5 rounded-xl border border-white/10 z-10"
+                                >
+                                  {[
+                                    { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                                    { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                                    { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                                    { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                                  ].map(d => (
+                                    <button
+                                      key={d.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleQuickRoll(skill.name, evaluateFormula(skill.difficultyFormula, statsForFormula), d.id as any);
+                                        setActiveRollAttr(null);
+                                      }}
+                                      className={cn("w-7 h-7 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
+                                      title={d.title}
+                                    >
+                                      {d.label}
+                                    </button>
+                                  ))}
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveRollAttr(null);
+                                    }}
+                                    className="w-7 h-7 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </motion.div>
+                              ) : (
+                                <motion.button 
+                                  key="dice"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveRollAttr(skill.id);
+                                  }}
+                                  className="p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
+                                  title="Rolar Teste"
+                                >
+                                  <Brain size={18} />
+                                </motion.button>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1286,7 +1629,7 @@ export default function CharacterSheet() {
           </section>
 
           {/* Vantagens & Defeitos Section */}
-          <section className={cn("space-y-6", activeSection !== 'traits' && "hidden lg:block")}>
+          <section className={cn("space-y-6 mb-4", !isAll && activeSection !== 'traits' && "hidden")}>
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif flex items-center gap-3">
                 <Star className="text-gold" size={24} />
@@ -1339,8 +1682,8 @@ export default function CharacterSheet() {
             </div>
           </section>
 
-          {/* Perícias & Disciplinas */}
-          <section className={cn("space-y-6", activeSection !== 'powers' && "hidden lg:block")}>
+          {/* Poderes e Mágias Section */}
+          <section className={cn("space-y-6 mb-4", !isAll && activeSection !== 'powers' && "hidden")}>
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif flex items-center gap-3">
                 <Flame className="text-ember" size={24} />
@@ -1374,9 +1717,9 @@ export default function CharacterSheet() {
                         e.stopPropagation();
                         handleRemovePower(power.id);
                       }}
-                      className="absolute top-4 right-4 p-1.5 glass rounded-lg opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all"
+                      className="absolute top-2 right-2 p-1 glass rounded-xl opacity-0 group-hover:opacity-100 hover:bg-ember/20 hover:text-ember transition-all shadow-lg"
                     >
-                      <X size={14} />
+                      <X size={16} />
                     </button>
                   )}
                   <div className="flex items-center justify-between">
@@ -1397,10 +1740,86 @@ export default function CharacterSheet() {
                         <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Custo</p>
                         <p className="text-base font-serif text-gold">{power.purchaseCost} pts</p>
                       </div>
+                      {power.effect && (
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Efeito</p>
+                            <p className="text-base font-serif text-ember">{calculateDamage(power.effect)}</p>
+                          </div>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFormulaRoll(power.name, power.effect);
+                            }}
+                            className="p-2 hover:bg-ember/20 rounded-lg text-parchment/40 hover:text-ember transition-colors"
+                            title="Rolar Efeito"
+                          >
+                            <Zap size={18} />
+                          </button>
+                        </div>
+                      )}
                       {power.difficultyFormula && (
-                        <div>
-                          <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Dificuldade</p>
-                          <p className="text-base font-serif text-arcane">{evaluateFormula(power.difficultyFormula, statsForFormula)}</p>
+                        <div className="flex items-center gap-2">
+                          <div>
+                            <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Teste</p>
+                            <p className="text-base font-serif text-arcane">{evaluateFormula(power.difficultyFormula, statsForFormula)}</p>
+                          </div>
+                          <div className="relative">
+                            <AnimatePresence mode="wait">
+                              {activeRollAttr === power.id ? (
+                                <motion.div 
+                                  key="diffs"
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  className="absolute right-0 bottom-full mb-2 flex gap-2 glass p-1.5 rounded-xl border border-white/10 z-10"
+                                >
+                                  {[
+                                    { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                                    { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                                    { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                                    { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                                  ].map(d => (
+                                    <button
+                                      key={d.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleQuickRoll(power.name, evaluateFormula(power.difficultyFormula, statsForFormula), d.id as any);
+                                        setActiveRollAttr(null);
+                                      }}
+                                      className={cn("w-7 h-7 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
+                                      title={d.title}
+                                    >
+                                      {d.label}
+                                    </button>
+                                  ))}
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveRollAttr(null);
+                                    }}
+                                    className="w-7 h-7 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </motion.div>
+                              ) : (
+                                <motion.button 
+                                  key="dice"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveRollAttr(power.id);
+                                  }}
+                                  className="p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
+                                  title="Rolar Teste"
+                                >
+                                  <Brain size={18} />
+                                </motion.button>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1425,7 +1844,7 @@ export default function CharacterSheet() {
 
           {/* Talentos Section */}
           {talents.length > 0 && (
-            <section className={cn("space-y-6", activeSection !== 'talents' && "hidden lg:block")}>
+            <section className={cn("space-y-6 mb-4", !isAll && activeSection !== 'talents' && "hidden")}>
               <div className="flex items-center justify-between">
                 <h3 className="text-2xl font-serif flex items-center gap-3">
                   <Sparkles className="text-gold" size={24} />
@@ -1470,8 +1889,66 @@ export default function CharacterSheet() {
                               <span className="text-[10px] font-mono text-ember uppercase tracking-widest">Mod: {modValue >= 0 ? `+${modValue}` : modValue}</span>
                             )}
                           </div>
-                          <div className="px-3 py-1 bg-gold/10 text-gold border border-gold/20 rounded-lg font-serif text-xl">
-                            {totalValue}
+                          <div className="flex items-center gap-3">
+                            <div className="px-3 py-1 bg-gold/10 text-gold border border-gold/20 rounded-lg font-serif text-xl">
+                              {totalValue}
+                            </div>
+                            <div className="relative">
+                              <AnimatePresence mode="wait">
+                                {activeRollAttr === talent.id ? (
+                                  <motion.div 
+                                    key="diffs"
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    className="absolute right-0 bottom-full mb-2 flex gap-2 glass p-1.5 rounded-xl border border-white/10 z-10"
+                                  >
+                                    {[
+                                      { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                                      { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                                      { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                                      { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                                    ].map(d => (
+                                      <button
+                                        key={d.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleQuickRoll(talent.name, totalValue, d.id as any);
+                                          setActiveRollAttr(null);
+                                        }}
+                                        className={cn("w-7 h-7 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
+                                        title={d.title}
+                                      >
+                                        {d.label}
+                                      </button>
+                                    ))}
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveRollAttr(null);
+                                      }}
+                                      className="w-7 h-7 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                                    >
+                                      <X size={12} />
+                                    </button>
+                                  </motion.div>
+                                ) : (
+                                  <motion.button 
+                                    key="dice"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActiveRollAttr(talent.id);
+                                    }}
+                                    className="p-2 hover:bg-gold/20 rounded-lg text-parchment/40 hover:text-gold transition-colors"
+                                    title="Rolar Teste"
+                                  >
+                                    <Brain size={18} />
+                                  </motion.button>
+                                )}
+                              </AnimatePresence>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1497,7 +1974,7 @@ export default function CharacterSheet() {
                               "flex items-center gap-1 px-2 py-0.5 rounded-md border text-[8px] font-mono uppercase tracking-wider transition-colors",
                               tagStyles
                             )}>
-                              <attr.icon size={8} />
+                              {React.createElement(getIcon(attr.icon), { size: 8 })}
                               {attr.label}
                             </div>
                           );
@@ -1511,13 +1988,13 @@ export default function CharacterSheet() {
           )}
         </div>
 
-        {/* Right Column: Inventory */}
+        {/* Right Column: Inventory Summary */}
         <div className={cn(
-          "lg:col-span-3 space-y-10",
-          activeSection !== 'inventory' && "hidden lg:block"
+          isAll ? "lg:col-span-3" : "lg:col-span-12",
+          !isAll && activeSection !== 'inventory' && "hidden"
         )}>
           {/* Equipped Items */}
-          <section className={cn("space-y-6", activeSection !== 'inventory' && "hidden lg:block")}>
+          <section className={cn("space-y-6", !isAll && activeSection !== 'inventory' && "hidden")}>
             <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Itens Equipados</h3>
             <div className="glass p-6 rounded-[2.5rem] space-y-4">
               {equippedItems.map((item, idx) => (
@@ -1552,7 +2029,7 @@ export default function CharacterSheet() {
           </section>
 
           {/* Equipment Summary */}
-          <section className={cn("space-y-6", activeSection !== 'inventory' && "hidden lg:block")}>
+          <section className={cn("space-y-6", !isAll && activeSection !== 'inventory' && "hidden")}>
             <div className="flex items-center justify-between px-4">
               <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Equipamento</h3>
               <button 
@@ -1577,7 +2054,7 @@ export default function CharacterSheet() {
                     <p className="text-[10px] font-mono text-parchment/20 uppercase tracking-widest">Mochila Vazia</p>
                   </div>
                 ) : (
-                  inventory.map((item) => (
+                  inventory.slice(0, 5).map((item) => (
                     <div 
                       key={item.id || item.name} 
                       className="space-y-1 group"
@@ -1598,18 +2075,18 @@ export default function CharacterSheet() {
                         </div>
                         <span className="text-[10px] font-mono text-parchment/40">x{item.quantity}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[9px] font-mono text-parchment/20 uppercase tracking-tighter pl-6">
-                        <span>Dano: {item.damage}</span>
-                        <span>Mun: {item.ammo}</span>
-                        {item.defense > 0 && <span className="text-arcane">Def: +{item.defense}</span>}
-                        {item.equipped && <span className="text-gold">Equipado</span>}
-                      </div>
                     </div>
                   ))
                 )}
+                {inventory.length > 5 && (
+                  <p className="text-[10px] text-center text-parchment/20 italic">e mais {inventory.length - 5} itens...</p>
+                )}
               </div>
               <button 
-                onClick={() => navigate(`/inventory?id=${characterId}`)}
+                onClick={() => {
+                  setActiveCategory('inventory');
+                  setActiveSection('inventory');
+                }}
                 className="w-full py-3 glass rounded-2xl text-[10px] font-mono text-parchment/40 hover:text-parchment transition-colors uppercase tracking-widest"
               >
                 VER INVENTÁRIO COMPLETO
@@ -1617,6 +2094,94 @@ export default function CharacterSheet() {
             </div>
           </section>
         </div>
+          </>
+        ) : activeSection === 'manage_inventory' ? (
+          <div className="lg:col-span-12">
+            <Inventory hideHeader={true} />
+          </div>
+        ) : (
+          <div className="lg:col-span-12 space-y-10">
+            <div className="flex items-center justify-between">
+              <h3 className="text-3xl font-serif flex items-center gap-4">
+                <Backpack className="text-arcane" size={32} />
+                Inventário Completo
+              </h3>
+              <button 
+                onClick={() => setActiveSection('manage_inventory')}
+                className="px-6 py-3 bg-arcane text-obsidian rounded-2xl font-bold hover:scale-105 transition-transform"
+              >
+                Gerenciar Itens
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {inventory.map((item) => (
+                <motion.div 
+                  key={item.id || item.name}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={cn(
+                    "glass p-6 rounded-[2rem] border transition-all group relative overflow-hidden",
+                    item.equipped ? "border-arcane/30 bg-arcane/5" : "border-white/10 hover:border-white/20"
+                  )}
+                >
+                  {item.equipped && (
+                    <div className="absolute top-0 right-0 px-4 py-1 bg-arcane text-obsidian text-[10px] font-bold uppercase tracking-widest rounded-bl-xl">
+                      Equipado
+                    </div>
+                  )}
+                  
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-12 h-12 rounded-2xl flex items-center justify-center border border-white/10",
+                        item.equipped ? "bg-arcane/20 text-arcane" : "bg-white/5 text-parchment/40"
+                      )}>
+                        {item.defense > 0 ? <Shield size={24} /> : <Sword size={24} />}
+                      </div>
+                      <div>
+                        <h4 className="text-xl font-serif">{item.name}</h4>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Quantidade: {item.quantity}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-parchment/60 mb-6 line-clamp-3">{item.description || 'Nenhuma descrição disponível.'}</p>
+
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-parchment/20 uppercase tracking-widest">Dano / Efeito</span>
+                      <p className="text-sm font-serif text-ember">{item.damage || '-'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-parchment/20 uppercase tracking-widest">Defesa</span>
+                      <p className="text-sm font-serif text-arcane">{item.defense > 0 ? `+${item.defense}` : '-'}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex gap-2">
+                    <button 
+                      onClick={() => toggleEquip(item.id)}
+                      className={cn(
+                        "flex-1 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
+                        item.equipped ? "bg-ember/10 text-ember hover:bg-ember/20" : "bg-arcane/10 text-arcane hover:bg-arcane/20"
+                      )}
+                    >
+                      {item.equipped ? 'Desequipar' : 'Equipar'}
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+              {inventory.length === 0 && (
+                <div className="col-span-full py-20 text-center glass rounded-[3rem] border border-dashed border-white/10">
+                  <Backpack size={48} className="text-parchment/10 mx-auto mb-4" />
+                  <p className="text-parchment/40 font-serif text-xl">Sua mochila está vazia</p>
+                  <p className="text-xs text-parchment/20 font-mono uppercase tracking-widest mt-2">Adicione itens para começar sua jornada</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add Skill Modal (Library) */}
@@ -1870,20 +2435,54 @@ export default function CharacterSheet() {
             initial={{ opacity: 0, y: 50, x: '-50%' }}
             animate={{ opacity: 1, y: 0, x: '-50%' }}
             exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className="fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border border-arcane/30 shadow-2xl flex items-center gap-4"
+            className={cn(
+              "fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border shadow-2xl flex items-center gap-4",
+              quickRoll.type === 'test' ? "border-arcane/30" : "border-ember/30"
+            )}
           >
             <div className="flex flex-col">
-              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.attr}</span>
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                {quickRoll.type === 'test' ? 'Teste: ' : 'Dano/Efeito: '}
+                {quickRoll.attr}
+              </span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-serif text-glow-arcane">{quickRoll.total}</span>
-                <span className="text-xs text-parchment/40 font-mono">(1d20: {quickRoll.result})</span>
+                {quickRoll.type === 'test' ? (
+                  <>
+                    <span className={cn(
+                      "text-2xl font-serif",
+                      quickRoll.success ? "text-glow-arcane" : "text-ember"
+                    )}>
+                      {quickRoll.success ? 'Sucesso' : 'Falha'}
+                    </span>
+                    <span className="text-xs text-parchment/40 font-mono">
+                      (d{quickRoll.diceSides || 20}: {quickRoll.result} vs {quickRoll.target})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl font-serif text-ember">
+                      {quickRoll.result}
+                    </span>
+                    <span className="text-xs text-parchment/40 font-mono">
+                      Total
+                    </span>
+                  </>
+                )}
               </div>
             </div>
-            {quickRoll.result === 20 && <Sparkles className="text-gold animate-bounce" size={20} />}
-            {quickRoll.result === 1 && <Zap className="text-ember animate-pulse" size={20} />}
+            {quickRoll.type === 'test' ? (
+              <>
+                {quickRoll.success && <Sparkles className="text-gold animate-bounce" size={20} />}
+                {!quickRoll.success && <Zap className="text-ember animate-pulse" size={20} />}
+              </>
+            ) : (
+              <Sword className="text-ember animate-pulse" size={20} />
+            )}
           </motion.div>
         )}
       </AnimatePresence>
+      {character.sessionId && <SessionChat sessionId={character.sessionId} />}
+    </div>
     </div>
   );
 }

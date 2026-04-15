@@ -22,10 +22,31 @@ import {
   Search,
   Filter,
   Target,
-  Star
+  Star,
+  X,
+  Info
 } from 'lucide-react';
-import { cn, evaluateFormula } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
+
+// Helper to get icon component from name
+const getIcon = (name: string) => {
+  const icons: Record<string, any> = {
+    Sword, Shield, Zap, Eye, Brain, Heart, UserPlus, Dice6, Activity, Scroll, Plus, History, Sparkles, Flame, Star, Info, Target, Search, Filter, X
+  };
+  return icons[name] || Shield;
+};
+
+const DEFAULT_ATTRIBUTES = [
+  { id: 'for', label: 'Força', icon: 'Sword', color: 'text-ember', description: 'Poder físico e força bruta.' },
+  { id: 'con', label: 'Constituição', icon: 'Shield', color: 'text-ember', description: 'Saúde, resistência e força vital.' },
+  { id: 'agi', label: 'Agilidade', icon: 'Zap', color: 'text-arcane', description: 'Destreza, reflexos e equilíbrio.' },
+  { id: 'per', label: 'Percepção', icon: 'Eye', color: 'text-gold', description: 'Intuição, sentidos e observação.' },
+  { id: 'vel', label: 'Velocidade', icon: 'Zap', color: 'text-arcane', description: 'Capacidade de deslocamento rápido.' },
+  { id: 'ini', label: 'Iniciativa', icon: 'Zap', color: 'text-gold', description: 'Prontidão para o combate.' },
+  { id: 'int', label: 'Inteligência', icon: 'Brain', color: 'text-arcane', description: 'Agudeza mental e raciocínio.' },
+  { id: 'cor', label: 'Coragem', icon: 'Heart', color: 'text-ember', description: 'Força de vontade e bravura.' },
+];
 
 export default function CharacterCreation() {
   const navigate = useNavigate();
@@ -34,7 +55,7 @@ export default function CharacterCreation() {
   const [sessions, setSessions] = React.useState<any[]>([]);
   const [sessionSearch, setSessionSearch] = React.useState('');
   const [showSessionList, setShowSessionList] = React.useState(false);
-  const steps = ['Origens', 'Atributos', 'Vantagens/Defeitos', 'Perícias', 'Poderes', 'Equipamento', 'Revisão'];
+  const steps = ['Origens', 'Atributos', 'Vantagens/Defeitos', 'Perícias', 'Dificuldades', 'Poderes', 'Equipamento', 'Revisão'];
 
   const [basics, setBasics] = React.useState({
     name: '',
@@ -62,6 +83,15 @@ export default function CharacterCreation() {
   const [powerTypeFilter, setPowerTypeFilter] = React.useState('all');
   const [traitSearch, setTraitSearch] = React.useState('');
   const [traitTypeFilter, setTraitTypeFilter] = React.useState('all');
+  const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
+  const [quickRoll, setQuickRoll] = React.useState<{ 
+    result: number, 
+    success?: boolean, 
+    attr: string, 
+    target?: number,
+    type: 'test' | 'damage',
+    diceSides?: number
+  } | null>(null);
 
   const [skills, setSkills] = React.useState<any[]>([]);
   const [powers, setPowers] = React.useState<any[]>([]);
@@ -82,6 +112,13 @@ export default function CharacterCreation() {
     modifier: 0,
     modifierType: 'for'
   });
+
+  React.useEffect(() => {
+    if (saveStatus) {
+      const timer = setTimeout(() => setSaveStatus(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveStatus]);
 
   const handleSaveSuggestion = async (type: 'skill' | 'power' | 'trait') => {
     if (!auth.currentUser) return;
@@ -109,8 +146,9 @@ export default function CharacterCreation() {
       setShowPowerSuggestion(false);
       setShowTraitSuggestion(false);
       setSuggestionData({ name: '', type: '', description: '', purchaseCost: 1, atpCost: 0, damage: '', cost: '', effect: '', modifier: 0, modifierType: 'for' });
-      alert('Sugestão enviada para o mestre!');
+      setSaveStatus({ type: 'success', message: 'Sugestão enviada para o mestre!' });
     } catch (error) {
+      setSaveStatus({ type: 'error', message: 'Erro ao enviar sugestão.' });
       handleFirestoreError(error, OperationType.WRITE, 'suggestions');
     }
   };
@@ -283,20 +321,41 @@ export default function CharacterCreation() {
     { name: 'Ladino', icon: Zap, color: 'ember', image: 'https://picsum.photos/seed/rogue/400/600' },
   ];
 
-  const attributes = [
-    { id: 'for', label: 'Força', icon: Sword, color: 'text-ember', description: 'Poder físico e força bruta.' },
-    { id: 'con', label: 'Constituição', icon: Shield, color: 'text-ember', description: 'Saúde, resistência e força vital.' },
-    { id: 'agi', label: 'Agilidade', icon: Zap, color: 'text-arcane', description: 'Destreza, reflexos e equilíbrio.' },
-    { id: 'per', label: 'Percepção', icon: Eye, color: 'text-gold', description: 'Intuição, sentidos e observação.' },
-    { id: 'vel', label: 'Velocidade', icon: Zap, color: 'text-arcane', description: 'Capacidade de deslocamento rápido.' },
-    { id: 'ini', label: 'Iniciativa', icon: Zap, color: 'text-gold', description: 'Prontidão para o combate.' },
-    { id: 'int', label: 'Inteligência', icon: Brain, color: 'text-arcane', description: 'Agudeza mental e raciocínio.' },
-    { id: 'cor', label: 'Coragem', icon: Heart, color: 'text-ember', description: 'Força de vontade e bravura.' },
-  ];
+  const attributes = React.useMemo(() => {
+    return globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+  }, [globalSettings]);
 
-  const [values, setValues] = React.useState<Record<string, number>>({
-    for: 0, con: 0, agi: 0, per: 0, vel: 0, ini: 0, int: 0, cor: 0
-  });
+  const [values, setValues] = React.useState<Record<string, number>>({});
+
+  React.useEffect(() => {
+    const initialValues: Record<string, number> = {};
+    attributes.forEach(attr => {
+      initialValues[attr.id] = 0;
+    });
+    setValues(initialValues);
+  }, [attributes]);
+
+  const statsForFormula: Record<string, number> = React.useMemo(() => {
+    const baseStats: Record<string, number> = {};
+    attributes.forEach(attr => {
+      baseStats[attr.id.toUpperCase()] = values[attr.id] || 0;
+    });
+    
+    const skillCategoryCounts: Record<string, number> = {};
+    const skillCategories = Object.keys(globalSettings?.skillTypeVars || { 'Luta': '1', 'Mística': '1' });
+    
+    skillCategories.forEach(cat => {
+      const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+      skillCategoryCounts[normalizedCat] = skills.filter(s => s.type === cat).length;
+    });
+    
+    return resolveStatsWithVars({
+      ...baseStats,
+      SKILLS: skills.length,
+      POWERS: powers.length,
+      ...skillCategoryCounts,
+    }, globalSettings?.calculationVars);
+  }, [values, skills, powers, globalSettings?.calculationVars, attributes]);
 
   const [maxPoints, setMaxPoints] = React.useState(120);
   const [maxSingleAttr, setMaxSingleAttr] = React.useState(100);
@@ -315,7 +374,7 @@ export default function CharacterCreation() {
     
     // Resolve typeVarValue dynamically using evaluateFormula
     // This allows typeVarValue to be an attribute name or a complex formula
-    const resolvedVar = Math.max(1, evaluateFormula(typeVarValue, values));
+    const resolvedVar = Math.max(1, evaluateFormula(typeVarValue, statsForFormula));
 
     try {
       let evalFormula = formula.toUpperCase();
@@ -486,6 +545,51 @@ export default function CharacterCreation() {
     return mod >= 0 ? `+${mod}` : mod;
   };
 
+  const handleQuickRoll = (attrLabel: string, attrValue: number, difficulty: 'easy' | 'normal' | 'hard' | 'extreme' = 'normal', diceSides: number = 20) => {
+    let target = attrValue;
+    let diffLabel = 'Normal';
+    
+    const easyMod = globalSettings?.diffEasyMod ?? 2;
+    const hardDiv = globalSettings?.diffHardDiv ?? 2;
+    const extremeDiv = globalSettings?.diffExtremeDiv ?? 5;
+
+    if (difficulty === 'easy') {
+      target += easyMod;
+      diffLabel = 'Fácil';
+    } else if (difficulty === 'hard') {
+      target = Math.floor(attrValue / hardDiv);
+      diffLabel = 'Difícil';
+    } else if (difficulty === 'extreme') {
+      target = Math.floor(attrValue / extremeDiv);
+      diffLabel = 'Extremo';
+    }
+    
+    const roll = Math.floor(Math.random() * diceSides) + 1;
+    const success = roll <= target;
+    
+    setQuickRoll({ 
+      result: roll, 
+      success, 
+      attr: `${attrLabel} [${diffLabel}]`,
+      target,
+      type: 'test',
+      diceSides
+    });
+    
+    setTimeout(() => setQuickRoll(null), 5000);
+  };
+
+  const handleFormulaRoll = (label: string, formula: string) => {
+    if (!formula) return;
+    const result = rollDiceFormula(formula, statsForFormula);
+    setQuickRoll({ 
+      result: result.total, 
+      attr: label,
+      type: 'damage'
+    });
+    setTimeout(() => setQuickRoll(null), 5000);
+  };
+
   const handleSaveCharacter = async () => {
     if (!auth.currentUser || !basics.sessionId) return;
     setLoading(true);
@@ -534,8 +638,10 @@ export default function CharacterCreation() {
       };
 
       await setDoc(doc(db, 'characters', characterId), characterData);
-      navigate('/');
+      setSaveStatus({ type: 'success', message: 'Personagem criado com sucesso!' });
+      setTimeout(() => navigate('/'), 1000);
     } catch (error) {
+      setSaveStatus({ type: 'error', message: 'Erro ao criar personagem.' });
       handleFirestoreError(error, OperationType.WRITE, 'characters');
     } finally {
       setLoading(false);
@@ -544,6 +650,26 @@ export default function CharacterCreation() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-10">
+      <AnimatePresence>
+        {saveStatus && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={cn(
+              "fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border backdrop-blur-xl",
+              saveStatus.type === 'success' ? "bg-arcane/90 border-arcane/20 text-obsidian" : 
+              saveStatus.type === 'error' ? "bg-ember/90 border-ember/20 text-white" : 
+              "bg-white/90 border-white/20 text-obsidian"
+            )}
+          >
+            {saveStatus.type === 'success' ? <Check size={20} /> : 
+             saveStatus.type === 'error' ? <X size={20} /> : 
+             <Info size={20} />}
+            <span className="font-medium">{saveStatus.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Stepper */}
       <div className="flex items-center justify-between px-2 sm:px-4">
         {steps.map((s, idx) => (
@@ -808,7 +934,7 @@ export default function CharacterCreation() {
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                           <div className={cn("p-3 rounded-2xl bg-white/5", attr.color)}>
-                            <attr.icon size={24} />
+                            {React.createElement(getIcon(attr.icon), { size: 24 })}
                           </div>
                           <div>
                             <h4 className="font-serif text-xl">{attr.label}</h4>
@@ -1091,7 +1217,7 @@ export default function CharacterCreation() {
                           {skill.difficultyFormula && (
                             <span className="flex items-center gap-1">
                               <Brain size={12} /> 
-                              Dif: {evaluateFormula(skill.difficultyFormula, { ...values, skills: skills.length, powers: powers.length })}
+                              Dif: {evaluateFormula(skill.difficultyFormula, statsForFormula)}
                             </span>
                           )}
                         </div>
@@ -1170,7 +1296,7 @@ export default function CharacterCreation() {
                     onClick={() => setStep(5)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
-                    <span>Continuar para Poderes</span>
+                    <span>Continuar para Dificuldades</span>
                     <ChevronRight size={18} />
                   </button>
                 </div>
@@ -1185,10 +1311,142 @@ export default function CharacterCreation() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
+                <header>
+                  <h2 className="text-4xl font-serif mb-2">Testes de Dificuldade</h2>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Verifique suas chances de sucesso</p>
+                </header>
+
+                <div className="space-y-6">
+                  <h3 className="text-xl font-serif text-parchment/60 border-b border-white/10 pb-2">Atributos (d10)</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {attributes.map((attr) => {
+                      const baseDifficulty = values[attr.id] + getModifier(values[attr.id]);
+                      return (
+                        <div key={attr.id} className="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-3">
+                              <div className={cn("p-2 rounded-xl bg-white/5", attr.color)}>
+                                {React.createElement(getIcon(attr.icon), { size: 20 })}
+                              </div>
+                              <div>
+                                <h4 className="font-serif text-xl">{attr.label}</h4>
+                                <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Base: {baseDifficulty}</p>
+                              </div>
+                            </div>
+                            <div className="p-2 bg-white/5 rounded-xl text-parchment/40">
+                              <Dice6 size={20} />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { id: 'easy', label: 'Fácil', target: baseDifficulty + (globalSettings?.diffEasyMod ?? 2), color: 'hover:bg-green-500/20 hover:text-green-400' },
+                              { id: 'normal', label: 'Normal', target: baseDifficulty, color: 'hover:bg-arcane/20 hover:text-arcane' },
+                              { id: 'hard', label: 'Difícil', target: Math.floor(baseDifficulty / (globalSettings?.diffHardDiv ?? 2)), color: 'hover:bg-orange-500/20 hover:text-orange-400' },
+                              { id: 'extreme', label: 'Extremo', target: Math.floor(baseDifficulty / (globalSettings?.diffExtremeDiv ?? 5)), color: 'hover:bg-ember/20 hover:text-ember' },
+                            ].map((diff) => (
+                              <button
+                                key={diff.id}
+                                onClick={() => handleQuickRoll(attr.label, baseDifficulty, diff.id as any, 10)}
+                                className={cn(
+                                  "p-3 rounded-xl glass border border-white/5 flex flex-col items-center justify-center gap-1 transition-all",
+                                  diff.color
+                                )}
+                              >
+                                <span className="text-[10px] font-mono uppercase tracking-widest opacity-60">{diff.label}</span>
+                                <span className="text-lg font-serif">{diff.target}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <h3 className="text-xl font-serif text-parchment/60 border-b border-white/10 pb-2 mt-8">Perícias (d20)</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {skills.length === 0 ? (
+                      <div className="col-span-full py-10 text-center glass rounded-3xl border border-white/10">
+                        <Brain size={32} className="text-parchment/10 mx-auto mb-4" />
+                        <p className="text-parchment/40 font-serif italic text-sm">Você ainda não escolheu nenhuma perícia.</p>
+                      </div>
+                    ) : (
+                      skills.map((skill) => {
+                        const baseDifficulty = evaluateFormula(skill.difficultyFormula || '10', statsForFormula);
+                        return (
+                          <div key={skill.id} className="glass p-6 rounded-3xl border border-white/10 space-y-4">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-serif text-xl text-arcane">{skill.name}</h4>
+                                <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Base: {baseDifficulty}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {skill.damage && (
+                                  <button 
+                                    onClick={() => handleFormulaRoll(skill.name, skill.damage)}
+                                    className="p-2 bg-ember/10 text-ember border border-ember/20 rounded-xl hover:bg-ember/20 transition-all"
+                                    title="Rolar Dano"
+                                  >
+                                    <Sword size={16} />
+                                  </button>
+                                )}
+                                <div className="p-2 bg-white/5 rounded-xl text-parchment/40">
+                                  <Dice6 size={20} />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { id: 'easy', label: 'Fácil', target: baseDifficulty + (globalSettings?.diffEasyMod ?? 2), color: 'hover:bg-green-500/20 hover:text-green-400' },
+                                { id: 'normal', label: 'Normal', target: baseDifficulty, color: 'hover:bg-arcane/20 hover:text-arcane' },
+                                { id: 'hard', label: 'Difícil', target: Math.floor(baseDifficulty / (globalSettings?.diffHardDiv ?? 2)), color: 'hover:bg-orange-500/20 hover:text-orange-400' },
+                                { id: 'extreme', label: 'Extremo', target: Math.floor(baseDifficulty / (globalSettings?.diffExtremeDiv ?? 5)), color: 'hover:bg-ember/20 hover:text-ember' },
+                              ].map((diff) => (
+                                <button
+                                  key={diff.id}
+                                  onClick={() => handleQuickRoll(skill.name, baseDifficulty, diff.id as any)}
+                                  className={cn(
+                                    "p-3 rounded-xl glass border border-white/5 flex flex-col items-center justify-center gap-1 transition-all",
+                                    diff.color
+                                  )}
+                                >
+                                  <span className="text-[10px] font-mono uppercase tracking-widest opacity-60">{diff.label}</span>
+                                  <span className="text-lg font-serif">{diff.target}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-6">
+                  <button 
+                    onClick={() => setStep(6)}
+                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                  >
+                    <span>Continuar para Poderes</span>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 6 && (
+              <motion.div
+                key="step6"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
                 <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
                     <h2 className="text-4xl font-serif mb-2">Escolha seus Poderes</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Dons e Habilidades Especiais</p>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Dons e Habilidades Especiais</p>
                   </div>
                   <div className="glass px-6 py-3 rounded-2xl border border-ember/30 bg-ember/5 flex items-center gap-4">
                     <div className="text-right">
@@ -1279,7 +1537,7 @@ export default function CharacterCreation() {
                           {power.difficultyFormula && (
                             <span className="flex items-center gap-1">
                               <Brain size={12} /> 
-                              Dif: {evaluateFormula(power.difficultyFormula, { ...values, skills: skills.length, powers: powers.length })}
+                              Dif: {evaluateFormula(power.difficultyFormula, statsForFormula)}
                             </span>
                           )}
                         </div>
@@ -1353,7 +1611,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(6)}
+                    onClick={() => setStep(7)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Equipamento</span>
@@ -1363,9 +1621,9 @@ export default function CharacterCreation() {
               </motion.div>
             )}
 
-            {step === 6 && (
+            {step === 7 && (
               <motion.div
-                key="step6"
+                key="step7"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -1373,7 +1631,7 @@ export default function CharacterCreation() {
               >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Equipamento & Inventário</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Preparação para a Jornada</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Preparação para a Jornada</p>
                 </header>
 
                 {/* Equipment Form */}
@@ -1501,7 +1759,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(7)}
+                    onClick={() => setStep(8)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Revisar Personagem</span>
@@ -1510,9 +1768,9 @@ export default function CharacterCreation() {
                 </div>
               </motion.div>
             )}
-            {step === 7 && (
+            {step === 8 && (
               <motion.div
-                key="step7"
+                key="step8"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -1520,7 +1778,7 @@ export default function CharacterCreation() {
               >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Revisão Final</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Selando o Destino</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 08: Selando o Destino</p>
                 </header>
 
                 <div className="glass p-8 rounded-[2.5rem] border border-white/10 space-y-8">
@@ -1918,6 +2176,59 @@ export default function CharacterCreation() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      {/* Quick Roll Result Notification */}
+      <AnimatePresence>
+        {quickRoll && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            className={cn(
+              "fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border shadow-2xl flex items-center gap-4",
+              quickRoll.type === 'test' ? "border-arcane/30" : "border-ember/30"
+            )}
+          >
+            <div className="flex flex-col">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                {quickRoll.type === 'test' ? 'Teste: ' : 'Dano/Efeito: '}
+                {quickRoll.attr}
+              </span>
+              <div className="flex items-baseline gap-2">
+                {quickRoll.type === 'test' ? (
+                  <>
+                    <span className={cn(
+                      "text-2xl font-serif",
+                      quickRoll.success ? "text-glow-arcane" : "text-ember"
+                    )}>
+                      {quickRoll.success ? 'Sucesso' : 'Falha'}
+                    </span>
+                    <span className="text-xs text-parchment/40 font-mono">
+                      (d{quickRoll.diceSides || 20}: {quickRoll.result} vs {quickRoll.target})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl font-serif text-ember">
+                      {quickRoll.result}
+                    </span>
+                    <span className="text-xs text-parchment/40 font-mono">
+                      Total
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            {quickRoll.type === 'test' ? (
+              <>
+                {quickRoll.success && <Sparkles className="text-gold animate-bounce" size={20} />}
+                {!quickRoll.success && <Zap className="text-ember animate-pulse" size={20} />}
+              </>
+            ) : (
+              <Sword className="text-ember animate-pulse" size={20} />
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

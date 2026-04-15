@@ -38,7 +38,17 @@ export default function Dashboard() {
   const [viewMode, setViewMode] = React.useState<'user' | 'gm'>('user');
   const [characters, setCharacters] = React.useState<any[]>([]);
   const [gmSessions, setGmSessions] = React.useState<any[]>([]);
+  const [globalSettings, setGlobalSettings] = React.useState<any>(null);
   const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'globalSettings', 'config'), (doc) => {
+      if (doc.exists()) {
+        setGlobalSettings(doc.data());
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [isCreatingSession, setIsCreatingSession] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
@@ -156,10 +166,10 @@ export default function Dashboard() {
           e.stopPropagation();
           setDeleteConfirm({ id: char.id, type: 'character', name: char.name });
         }}
-        className="absolute top-6 right-6 z-10 p-3 glass rounded-2xl text-parchment/40 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+        className="absolute top-2 right-2 z-10 p-1 glass rounded-xl text-parchment/40 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
         title="Excluir Personagem"
       >
-        <Trash2 size={20} />
+        <Trash2 size={16} />
       </button>
 
       {/* Clickable Area */}
@@ -213,18 +223,16 @@ export default function Dashboard() {
 
           {/* Stats Preview */}
           <div className="grid grid-cols-3 gap-2">
-            <div className="glass p-2 rounded-xl text-center">
-              <p className="text-[10px] text-parchment/40 font-mono">FOR</p>
-              <p className="text-sm font-serif">{char.stats.for}</p>
-            </div>
-            <div className="glass p-2 rounded-xl text-center">
-              <p className="text-[10px] text-parchment/40 font-mono">AGI</p>
-              <p className="text-sm font-serif">{char.stats.agi}</p>
-            </div>
-            <div className="glass p-2 rounded-xl text-center">
-              <p className="text-[10px] text-parchment/40 font-mono">CON</p>
-              <p className="text-sm font-serif">{char.stats.con}</p>
-            </div>
+            {(globalSettings?.attributes || [
+              { id: 'for', label: 'FOR' },
+              { id: 'agi', label: 'AGI' },
+              { id: 'con', label: 'CON' }
+            ]).slice(0, 3).map((attr: any) => (
+              <div key={attr.id} className="glass p-2 rounded-xl text-center">
+                <p className="text-[10px] text-parchment/40 font-mono">{attr.id.toUpperCase()}</p>
+                <p className="text-sm font-serif">{char.stats[attr.id] || 0}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -412,7 +420,7 @@ export default function Dashboard() {
                       e.stopPropagation();
                       setDeleteConfirm({ id: session.id, type: 'session', name: session.name });
                     }}
-                    className="absolute top-4 right-4 z-10 p-2 glass rounded-xl text-parchment/20 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100"
+                    className="absolute top-2 right-2 z-10 p-1 glass rounded-xl text-parchment/20 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
                     title="Excluir Campanha"
                   >
                     <Trash2 size={16} />

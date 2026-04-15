@@ -153,9 +153,10 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt', 'lastActive']) &&
              data.uid is string && data.uid == request.auth.uid &&
-             data.email is string && isValidEmail(data.email) &&
+             data.email is string &&
              data.role in ['admin', 'user', 'gm'];
     }
 
@@ -249,6 +250,16 @@ service cloud.firestore {
              data.data is map;
     }
 
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['sessionId', 'senderId', 'senderName', 'createdAt']) &&
+             data.sessionId is string &&
+             data.senderId == request.auth.uid &&
+             data.senderName is string &&
+             (!('text' in data) || data.text is string) &&
+             (!('image' in data) || data.image is string) &&
+             data.createdAt is string;
+    }
+
     function isGM() {
       return isAuthenticated() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gm' || isAdmin());
     }
@@ -258,9 +269,14 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role in ['user', 'gm'] || isAdmin());
-      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && (
+        // Allow heartbeat (only lastActive changed)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActive']) ||
+        // Allow full update if valid
+        (isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin()))
+      );
     }
 
     match /characters/{characterId} {
@@ -330,6 +346,12 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'data'])
         );
       allow delete: if isGM() || (isAuthenticated() && resource.data.suggestedBy == request.auth.uid && resource.data.status == 'pending');
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if isAuthenticated() && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId));
+      allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGMOfSession(request.resource.data.sessionId) || isPlayerInSession(request.resource.data.sessionId));
+      allow update, delete: if false;
     }
 
     // Default deny

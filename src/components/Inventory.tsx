@@ -21,11 +21,11 @@ import {
   Dice6,
   Sparkles
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, rollDiceFormula } from '../lib/utils';
 import { db, doc, getDoc, setDoc, updateDoc } from '../firebase';
 import { handleFirestoreError, OperationType } from '../firebase';
 
-export default function Inventory() {
+export default function Inventory({ hideHeader = false }: { hideHeader?: boolean }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const characterId = searchParams.get('id');
@@ -43,7 +43,7 @@ export default function Inventory() {
   const [activeCategory, setActiveCategory] = React.useState('weapons');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isMoneyModalOpen, setIsMoneyModalOpen] = React.useState(false);
-  const [saveStatus, setSaveStatus] = React.useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [moneyAmount, setMoneyAmount] = React.useState(0);
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [newItem, setNewItem] = React.useState({
@@ -64,33 +64,21 @@ export default function Inventory() {
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string } | null>(null);
 
   const handleQuickRoll = (name: string, damage: string) => {
-    // Simple damage parser (e.g., "1d6+2")
-    try {
-      const match = damage.match(/(\d+)d(\d+)([+-]\d+)?/i);
-      if (match) {
-        const qty = parseInt(match[1]);
-        const die = parseInt(match[2]);
-        const mod = parseInt(match[3] || '0');
-        
-        let total = 0;
-        for (let i = 0; i < qty; i++) {
-          total += Math.floor(Math.random() * die) + 1;
-        }
-        total += mod;
-        
-        setQuickRoll({ result: total, total, name });
-        setTimeout(() => setQuickRoll(null), 5000);
-      } else {
-        // If not a standard dice notation, just roll a d20 for check
-        const roll = Math.floor(Math.random() * 20) + 1;
-        setQuickRoll({ result: roll, total: roll, name });
-        setTimeout(() => setQuickRoll(null), 5000);
-      }
-    } catch (e) {
-      const roll = Math.floor(Math.random() * 20) + 1;
-      setQuickRoll({ result: roll, total: roll, name });
-      setTimeout(() => setQuickRoll(null), 5000);
-    }
+    if (!damage || !character) return;
+    
+    // Prepare stats for formula evaluation
+    const currentStats: Record<string, number> = {};
+    const stats = character.stats || {};
+    const mods = character.statsMods || {};
+    
+    // Include base stats + mods
+    Object.keys(stats).forEach(key => {
+      currentStats[key.toUpperCase()] = (stats[key] || 0) + (mods[key] || 0);
+    });
+
+    const result = rollDiceFormula(damage, currentStats);
+    setQuickRoll({ result: result.total, total: result.total, name });
+    setTimeout(() => setQuickRoll(null), 5000);
   };
 
   React.useEffect(() => {
@@ -176,7 +164,7 @@ export default function Inventory() {
       const updatedItems = [...items, itemToAdd];
       setItems(updatedItems);
       await saveToFirestore(updatedItems);
-      setSaveStatus('Item adicionado');
+      setSaveStatus({ type: 'success', message: 'Item adicionado' });
       setIsModalOpen(false);
       setNewItem({
         name: '',
@@ -199,7 +187,7 @@ export default function Inventory() {
     const updatedItems = items.filter(item => item.id !== id);
     setItems(updatedItems);
     await saveToFirestore(updatedItems);
-    setSaveStatus('Item removido');
+    setSaveStatus({ type: 'success', message: 'Item removido' });
   };
 
   const toggleEquip = async (id: string | number) => {
@@ -209,7 +197,7 @@ export default function Inventory() {
     );
     setItems(updatedItems);
     await saveToFirestore(updatedItems);
-    setSaveStatus(item?.equipped ? 'Item desequipado' : 'Item equipado');
+    setSaveStatus({ type: 'success', message: item?.equipped ? 'Item desequipado' : 'Item equipado' });
   };
 
   const filteredItems = items
@@ -255,7 +243,29 @@ export default function Inventory() {
 
   return (
     <div className="space-y-10">
+      <AnimatePresence>
+        {saveStatus && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={cn(
+              "fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border backdrop-blur-xl",
+              saveStatus.type === 'success' ? "bg-arcane/90 border-arcane/20 text-obsidian" : 
+              saveStatus.type === 'error' ? "bg-ember/90 border-ember/20 text-white" : 
+              "bg-white/90 border-white/20 text-obsidian"
+            )}
+          >
+            {saveStatus.type === 'success' ? <Check size={20} /> : 
+             saveStatus.type === 'error' ? <X size={20} /> : 
+             <Info size={20} />}
+            <span className="font-medium">{saveStatus.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header & Stats */}
+      {!hideHeader && (
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center gap-4 sm:gap-6">
           <button 
@@ -267,19 +277,6 @@ export default function Inventory() {
           <div>
             <div className="flex items-center gap-3 mb-1 sm:mb-2">
               <h2 className="text-2xl sm:text-4xl font-serif leading-tight">Inventário de {character?.name}</h2>
-              <AnimatePresence>
-                {saveStatus && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-arcane/10 border border-arcane/20 text-arcane text-[10px] font-mono uppercase tracking-widest"
-                  >
-                    <Check size={10} />
-                    {saveStatus}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
             <p className="text-parchment/40 font-mono text-[10px] sm:text-sm uppercase tracking-widest">Os Espólios da Aventura</p>
           </div>
@@ -315,6 +312,7 @@ export default function Inventory() {
           </div>
         </div>
       </header>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
         {/* Categories Sidebar */}
@@ -478,9 +476,9 @@ export default function Inventory() {
                       e.stopPropagation();
                       removeItem(item.id);
                     }}
-                    className="p-2 hover:bg-ember/10 rounded-lg transition-colors text-parchment/40 hover:text-ember"
+                    className="p-2.5 bg-ember/10 text-ember rounded-xl hover:bg-ember hover:text-obsidian transition-all shadow-lg"
                   >
-                    <Trash2 size={16} />
+                    <X size={18} />
                   </button>
                 </div>
               </motion.div>
@@ -530,9 +528,9 @@ export default function Inventory() {
                 </div>
                 <button 
                   onClick={() => setIsMoneyModalOpen(false)}
-                  className="p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40"
+                  className="p-3 hover:bg-white/10 rounded-2xl transition-colors text-parchment/40 hover:text-parchment"
                 >
-                  <X size={20} />
+                  <X size={24} />
                 </button>
               </div>
 
@@ -599,9 +597,9 @@ export default function Inventory() {
                 </div>
                 <button
                   onClick={() => setIsModalOpen(false)}
-                  className="p-2 hover:bg-white/5 rounded-xl transition-colors text-parchment/40 hover:text-parchment"
+                  className="p-3 hover:bg-white/10 rounded-2xl transition-colors text-parchment/40 hover:text-parchment"
                 >
-                  <X size={20} />
+                  <X size={24} />
                 </button>
               </div>
 

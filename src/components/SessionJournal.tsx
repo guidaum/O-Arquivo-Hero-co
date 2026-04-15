@@ -741,9 +741,9 @@ function JournalForm({ initialData, onSave, onCancel }: {
               <button 
                 type="button"
                 onClick={() => removeGalleryItem(idx)}
-                className="absolute top-2 right-2 p-1.5 bg-ember text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute top-2 right-2 p-2 bg-ember text-white rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
               >
-                <Trash2 size={14} />
+                <X size={16} />
               </button>
             </div>
           ))}
