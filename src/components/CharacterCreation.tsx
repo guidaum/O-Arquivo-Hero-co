@@ -293,7 +293,15 @@ export default function CharacterCreation() {
         setInitialPowerPoints(baseGlobalSettings.initialPowerPoints ?? 0);
       }
     }
-    setValues({ for: 0, con: 0, agi: 0, per: 0, vel: 0, ini: 0, int: 0, cor: 0 });
+    const initialValues: Record<string, number> = {};
+    const currentAttributes = basics.sessionId 
+      ? (sessions.find(s => s.id === basics.sessionId)?.attributes || baseGlobalSettings?.attributes || DEFAULT_ATTRIBUTES)
+      : (baseGlobalSettings?.attributes || DEFAULT_ATTRIBUTES);
+    
+    currentAttributes.forEach((attr: any) => {
+      initialValues[attr.id] = 0;
+    });
+    setValues(initialValues);
     setSkills([]);
     setPowers([]);
     setSelectedTraits([]);
@@ -346,7 +354,13 @@ export default function CharacterCreation() {
     
     skillCategories.forEach(cat => {
       const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-      skillCategoryCounts[normalizedCat] = skills.filter(s => s.type === cat).length;
+      const count = skills.filter(s => s.type === cat).length;
+      skillCategoryCounts[normalizedCat] = count;
+      if (!normalizedCat.endsWith('S')) {
+        skillCategoryCounts[normalizedCat + 'S'] = count;
+      } else {
+        skillCategoryCounts[normalizedCat.slice(0, -1)] = count;
+      }
     });
     
     return resolveStatsWithVars({

@@ -31,7 +31,11 @@ import {
   Info,
   Search,
   Target,
-  UserPlus
+  UserPlus,
+  RefreshCw,
+  Backpack,
+  Package,
+  Settings
 } from 'lucide-react';
 import { 
   auth,
@@ -193,10 +197,14 @@ export default function GMDashboard() {
   const [skills, setSkills] = React.useState<Skill[]>([]);
   const [powers, setPowers] = React.useState<Power[]>([]);
   const [traits, setTraits] = React.useState<Trait[]>([]);
+  const [itemCatalog, setItemCatalog] = React.useState<any[]>([]);
+  const [baseSettings, setBaseSettings] = React.useState<any>(null);
   const [suggestions, setSuggestions] = React.useState<Suggestion[]>([]);
   const [editingSuggestion, setEditingSuggestion] = React.useState<Suggestion | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits' | 'vars' | 'categories'>('characters');
+  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits' | 'vars' | 'categories' | 'catalog' | 'baseSettings'>('characters');
+  const [showConfigMenu, setShowConfigMenu] = React.useState(false);
+  const configMenuRef = React.useRef<HTMLDivElement>(null);
   const [gmNotes, setGmNotes] = React.useState('');
   const [maxAttributePoints, setMaxAttributePoints] = React.useState(120);
   const [maxSingleAttributeValue, setMaxSingleAttributeValue] = React.useState(100);
@@ -261,6 +269,8 @@ export default function GMDashboard() {
   const [editingSkillTypeName, setEditingSkillTypeName] = React.useState('');
   const [editingPowerType, setEditingPowerType] = React.useState<string | null>(null);
   const [editingPowerTypeName, setEditingPowerTypeName] = React.useState('');
+  const [editingAttribute, setEditingAttribute] = React.useState<string | null>(null);
+  const [editingAttributeName, setEditingAttributeName] = React.useState('');
 
   const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
 
@@ -284,6 +294,69 @@ export default function GMDashboard() {
   // Character Management State
   const [managingCharacter, setManagingCharacter] = React.useState<Character | null>(null);
   const [pointsToAdd, setPointsToAdd] = React.useState({ skills: 5, powers: 2, attributes: 10, level: 1 });
+
+  const applySettingsToUI = React.useCallback((data: any) => {
+    if (!data) return;
+    setMaxAttributePoints(data.maxAttributePoints ?? 120);
+    setMaxSingleAttributeValue(data.maxSingleAttributeValue ?? 100);
+    setInitialSkillPoints(data.initialSkillPoints ?? 0);
+    setInitialPowerPoints(data.initialPowerPoints ?? 0);
+    setAttributes(data.attributes || DEFAULT_ATTRIBUTES);
+    setAttrPointsPerLevel(data.attrPointsPerLevel ?? 10);
+    setSkillPointsPerLevel(data.skillPointsPerLevel ?? 5);
+    setPowerPointsPerLevel(data.powerPointsPerLevel ?? 2);
+    setNpcDefaultMinAttr(data.npcDefaultMinAttr ?? 0);
+    setNpcDefaultMaxAttr(data.npcDefaultMaxAttr ?? 100);
+    setNpcDefaultAttrPoints(data.npcDefaultAttrPoints ?? 120);
+    setNpcDefaultSkillPoints(data.npcDefaultSkillPoints ?? 10);
+    setNpcDefaultPowerPoints(data.npcDefaultPowerPoints ?? 5);
+    setPvFormula(data.pvFormula || '((FOR / 2) + CON) * 10');
+    setAtpFormula(data.atpFormula || '(INT + 3) * 3');
+    setSocoFormula(data.socoFormula || 'FOR');
+    setChuteFormula(data.chuteFormula || 'FOR + (FOR / 2)');
+    setDefesaFormula(data.defesaFormula || 'CON + (AGI / 2) + (LUTA * 2)');
+    setEsquivaFormula(data.esquivaFormula || '(CON + AGI + (VEL / 2)) + (LUTA * 2)');
+    setEnFormula(data.enFormula || '20 - ((AGI + (PER / 2)) + (LUTA * 2))');
+    setDmFormula(data.dmFormula || '20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
+    setSkillCostFormula(data.skillCostFormula || '(COST * LVL) / VAR');
+    setPowerCostFormula(data.powerCostFormula || '(COST * LVL) / VAR');
+    setCalculationVars(data.calculationVars || {});
+    setTalentCategories(data.talentCategories || []);
+    setSkillTypeVars(data.skillTypeVars || {
+      'Geral': '1',
+      'Luta': 'FOR',
+      'Mística': 'INT',
+      'Conhecimento': 'INT',
+      'Artes': 'INI',
+      'Ocultismo': 'COR',
+      'Treinamento': 'CON',
+      'Empírico': 'PER'
+    });
+    setPowerTypeVars(data.powerTypeVars || {
+      'Geral': '1',
+      'Elemental': 'INT',
+      'Físico': 'FOR',
+      'Defesa': 'CON',
+      'Buff': 'COR',
+      'Debuff': 'INI'
+    });
+    setDiffEasyMod(data.diffEasyMod ?? 2);
+    setDiffHardDiv(data.diffHardDiv ?? 2);
+    setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
+  }, []);
+
+  React.useEffect(() => {
+    if (activeTab === 'baseSettings' && baseSettings) {
+      applySettingsToUI(baseSettings);
+    } else if (session) {
+      // If session has its own settings, use them. Otherwise fallback to baseSettings.
+      if (session.maxAttributePoints !== undefined) {
+        applySettingsToUI(session);
+      } else if (baseSettings) {
+        applySettingsToUI(baseSettings);
+      }
+    }
+  }, [activeTab, baseSettings, session, applySettingsToUI]);
 
   // NPC Generator State
   const [isGeneratingNPC, setIsGeneratingNPC] = React.useState(false);
@@ -435,8 +508,17 @@ export default function GMDashboard() {
       
       Object.keys(skillTypeVars).forEach(cat => {
         const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-        baseStatsForFormula[normalizedCat] = npcSkills.filter(s => s.type === cat).length;
+        const count = npcSkills.filter(s => s.type === cat).length;
+        baseStatsForFormula[normalizedCat] = count;
+        if (!normalizedCat.endsWith('S')) {
+          baseStatsForFormula[normalizedCat + 'S'] = count;
+        } else {
+          baseStatsForFormula[normalizedCat.slice(0, -1)] = count;
+        }
       });
+
+      baseStatsForFormula['SKILLS'] = npcSkills.length;
+      baseStatsForFormula['POWERS'] = selectedPowers.length;
 
       const statsForFormula = resolveStatsWithVars(baseStatsForFormula, calculationVars);
 
@@ -524,13 +606,62 @@ export default function GMDashboard() {
     type: 'advantage' as 'advantage' | 'disadvantage'
   });
 
+  // Catalog Form State
+  const [isEditingCatalog, setIsEditingCatalog] = React.useState(false);
+  const [editingCatalogId, setEditingCatalogId] = React.useState<string | null>(null);
+  const [catalogItemForm, setCatalogItemForm] = React.useState({
+    name: '',
+    category: 'Geral',
+    rarity: 'Common',
+    weight: 0,
+    value: 0,
+    description: '',
+    image: '',
+    stats: {} as Record<string, number>,
+    damage: '',
+    defense: 0
+  });
+
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, success: boolean, name: string, attr: string } | null>(null);
+
+  const sendRollToChat = async (label: string, result: any, charName?: string, charImage?: string, success?: boolean) => {
+    if (!sessionId || !auth.currentUser) return;
+
+    try {
+      const rollData: any = {
+        total: result.total,
+        formula: result.detail,
+        details: result.rolls.map((r: any) => `${r.die}: [${r.values.join(', ')}]`).join(' | '),
+        rolls: result.rolls
+      };
+
+      if (success !== undefined) {
+        rollData.success = success;
+      }
+
+      await addDoc(collection(db, 'chatMessages'), {
+        sessionId,
+        senderId: auth.currentUser.uid,
+        senderName: charName || auth.currentUser.displayName || 'Mestre',
+        senderPhoto: charImage || auth.currentUser.photoURL || '',
+        text: `Rolou ${label}: ${result.total}`,
+        type: 'roll',
+        rollData,
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error sending roll to chat:', err);
+    }
+  };
 
   const handleQuickRoll = (name: string, attrLabel: string, attrValue: number) => {
     const result = rollDiceFormula('1D10', {});
     const naturalRoll = result.rolls[0]?.values[0] || 0;
     const success = naturalRoll <= attrValue;
     setQuickRoll({ result: naturalRoll, success, name, attr: attrLabel });
+    
+    sendRollToChat(`${name} - ${attrLabel}`, result, undefined, undefined, success);
+    
     setTimeout(() => setQuickRoll(null), 5000);
   };
 
@@ -578,15 +709,15 @@ export default function GMDashboard() {
     if (!sessionId) return;
 
     const sessionRef = doc(db, 'gameSessions', sessionId);
-    const unsubscribeSession = onSnapshot(sessionRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
+    const unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         // SECURITY CHECK: Only the GM of this specific session can access this dashboard
         if (data.gmId !== user?.uid) {
           navigate('/');
           return;
         }
-        setSession({ id: doc.id, ...data } as GameSession);
+        setSession({ id: docSnap.id, ...data } as GameSession);
         setGmNotes(data.gmNotes || '');
         setSessionName(data.name || '');
         setSessionImage(data.image || '');
@@ -601,55 +732,10 @@ export default function GMDashboard() {
 
     // Global Settings
     const settingsRef = doc(db, 'globalSettings', 'config');
-    const unsubscribeSettings = onSnapshot(settingsRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        setMaxAttributePoints(data.maxAttributePoints || 120);
-        setMaxSingleAttributeValue(data.maxSingleAttributeValue || 100);
-        setInitialSkillPoints(data.initialSkillPoints || 0);
-        setInitialPowerPoints(data.initialPowerPoints || 0);
-        setAttributes(data.attributes || DEFAULT_ATTRIBUTES);
-        setAttrPointsPerLevel(data.attrPointsPerLevel || 10);
-        setSkillPointsPerLevel(data.skillPointsPerLevel || 5);
-        setPowerPointsPerLevel(data.powerPointsPerLevel || 2);
-        setNpcDefaultMinAttr(data.npcDefaultMinAttr || 0);
-        setNpcDefaultMaxAttr(data.npcDefaultMaxAttr || 100);
-        setNpcDefaultAttrPoints(data.npcDefaultAttrPoints || 120);
-        setNpcDefaultSkillPoints(data.npcDefaultSkillPoints || 10);
-        setNpcDefaultPowerPoints(data.npcDefaultPowerPoints || 5);
-        setPvFormula(data.pvFormula || '((FOR / 2) + CON) * 10');
-        setAtpFormula(data.atpFormula || '(INT + 3) * 3');
-        setSocoFormula(data.socoFormula || 'FOR');
-        setChuteFormula(data.chuteFormula || 'FOR + (FOR / 2)');
-        setDefesaFormula(data.defesaFormula || 'CON + (AGI / 2) + (LUTA * 2)');
-        setEsquivaFormula(data.esquivaFormula || '(CON + AGI + (VEL / 2)) + (LUTA * 2)');
-        setEnFormula(data.enFormula || '20 - ((AGI + (PER / 2)) + (LUTA * 2))');
-        setDmFormula(data.dmFormula || '20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
-        setSkillCostFormula(data.skillCostFormula || '(COST * LVL) / VAR');
-        setPowerCostFormula(data.powerCostFormula || '(COST * LVL) / VAR');
-        setCalculationVars(data.calculationVars || {});
-        setTalentCategories(data.talentCategories || []);
-        setSkillTypeVars(data.skillTypeVars || {
-          'Geral': '1',
-          'Luta': 'FOR',
-          'Mística': 'INT',
-          'Conhecimento': 'INT',
-          'Artes': 'INI',
-          'Ocultismo': 'COR',
-          'Treinamento': 'CON',
-          'Empírico': 'PER'
-        });
-        setPowerTypeVars(data.powerTypeVars || {
-          'Geral': '1',
-          'Elemental': 'INT',
-          'Físico': 'FOR',
-          'Defesa': 'CON',
-          'Buff': 'COR',
-          'Debuff': 'INI'
-        });
-        setDiffEasyMod(data.diffEasyMod ?? 2);
-        setDiffHardDiv(data.diffHardDiv ?? 2);
-        setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
+    const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setBaseSettings(data);
       }
     });
 
@@ -737,6 +823,18 @@ export default function GMDashboard() {
       handleFirestoreError(error, OperationType.LIST, 'traits');
     });
 
+    // Item Catalog
+    const catalogQuery = query(collection(db, 'itemCatalog'));
+    const unsubscribeCatalog = onSnapshot(catalogQuery, (snapshot) => {
+      const catalogData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setItemCatalog(catalogData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'itemCatalog');
+    });
+
     return () => {
       unsubscribeSession();
       unsubscribeSettings();
@@ -746,8 +844,19 @@ export default function GMDashboard() {
       unsubscribePowers();
       unsubscribeSuggestions();
       unsubscribeTraits();
+      unsubscribeCatalog();
     };
   }, [sessionId]);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (configMenuRef.current && !configMenuRef.current.contains(event.target as Node)) {
+        setShowConfigMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [configMenuRef]);
 
   React.useEffect(() => {
     if (saveStatus) {
@@ -772,13 +881,53 @@ export default function GMDashboard() {
   const handleSaveSettings = async () => {
     if (!sessionId) return;
     try {
-      // Save session-specific info
+      // Save session-specific info and settings
       await updateDoc(doc(db, 'gameSessions', sessionId), {
         name: sessionName,
         image: sessionImage,
+        maxAttributePoints: Number(maxAttributePoints),
+        maxSingleAttributeValue: Number(maxSingleAttributeValue),
+        initialSkillPoints: Number(initialSkillPoints),
+        initialPowerPoints: Number(initialPowerPoints),
+        attrPointsPerLevel: Number(attrPointsPerLevel),
+        skillPointsPerLevel: Number(skillPointsPerLevel),
+        powerPointsPerLevel: Number(powerPointsPerLevel),
+        npcDefaultMinAttr: Number(npcDefaultMinAttr),
+        npcDefaultMaxAttr: Number(npcDefaultMaxAttr),
+        npcDefaultAttrPoints: Number(npcDefaultAttrPoints),
+        npcDefaultSkillPoints: Number(npcDefaultSkillPoints),
+        npcDefaultPowerPoints: Number(npcDefaultPowerPoints),
+        pvFormula,
+        atpFormula,
+        socoFormula,
+        chuteFormula,
+        defesaFormula,
+        esquivaFormula,
+        enFormula,
+        dmFormula,
+        skillCostFormula,
+        powerCostFormula,
+        calculationVars,
+        talentCategories,
+        attributes,
+        skillTypeVars,
+        powerTypeVars,
+        diffEasyMod: Number(diffEasyMod),
+        diffHardDiv: Number(diffHardDiv),
+        diffExtremeDiv: Number(diffExtremeDiv),
+        updatedAt: new Date().toISOString()
       });
 
-      // Save global settings
+      setSaveStatus({ type: 'success', message: 'Configurações da sessão salvas!' });
+    } catch (err) {
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar configurações.' });
+      console.error('Error saving settings:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `gameSessions/${sessionId}`);
+    }
+  };
+
+  const handleSaveBaseSettings = async () => {
+    try {
       await setDoc(doc(db, 'globalSettings', 'config'), {
         maxAttributePoints: Number(maxAttributePoints),
         maxSingleAttributeValue: Number(maxSingleAttributeValue),
@@ -813,11 +962,140 @@ export default function GMDashboard() {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      setSaveStatus({ type: 'success', message: 'Configurações salvas com sucesso!' });
+      setSaveStatus({ type: 'success', message: 'Configurações BASE salvas! (Válido para novas campanhas)' });
     } catch (err) {
-      setSaveStatus({ type: 'error', message: 'Erro ao salvar configurações.' });
-      console.error('Error saving settings:', err);
-      handleFirestoreError(err, OperationType.UPDATE, `gameSessions/${sessionId}`);
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar configurações base.' });
+      console.error('Error saving base settings:', err);
+      handleFirestoreError(err, OperationType.UPDATE, 'globalSettings/config');
+    }
+  };
+
+  const handleRenameAttribute = (oldId: string, newLabel: string) => {
+    const newId = newLabel.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").substring(0, 3);
+    
+    if (newId === oldId) {
+      setEditingAttribute(null);
+      return;
+    }
+
+    if (attributes.some(a => a.id === newId)) {
+      setSaveStatus({ type: 'error', message: 'Um atributo com este ID já existe!' });
+      return;
+    }
+
+    // Update attributes list
+    const updatedAttributes = attributes.map(a => 
+      a.id === oldId ? { ...a, id: newId, label: newLabel } : a
+    );
+    setAttributes(updatedAttributes);
+
+    // Update formulas
+    const oldUpper = oldId.toUpperCase();
+    const newUpper = newId.toUpperCase();
+    const replaceVar = (formula: string) => {
+      if (!formula) return formula;
+      const regex = new RegExp(`\\b${oldUpper}\\b`, 'g');
+      return formula.replace(regex, newUpper);
+    };
+
+    setPvFormula(replaceVar(pvFormula));
+    setAtpFormula(replaceVar(atpFormula));
+    setSocoFormula(replaceVar(socoFormula));
+    setChuteFormula(replaceVar(chuteFormula));
+    setDefesaFormula(replaceVar(defesaFormula));
+    setEsquivaFormula(replaceVar(esquivaFormula));
+    setEnFormula(replaceVar(enFormula));
+    setDmFormula(replaceVar(dmFormula));
+    setSkillCostFormula(replaceVar(skillCostFormula));
+    setPowerCostFormula(replaceVar(powerCostFormula));
+
+    // Update skillTypeVars (formulas)
+    const newSkillTypeVars = { ...skillTypeVars };
+    Object.keys(newSkillTypeVars).forEach(key => {
+      newSkillTypeVars[key] = replaceVar(newSkillTypeVars[key]);
+    });
+    setSkillTypeVars(newSkillTypeVars);
+
+    // Update powerTypeVars (formulas)
+    const newPowerTypeVars = { ...powerTypeVars };
+    Object.keys(newPowerTypeVars).forEach(key => {
+      newPowerTypeVars[key] = replaceVar(newPowerTypeVars[key]);
+    });
+    setPowerTypeVars(newPowerTypeVars);
+
+    // Update calculationVars (formulas)
+    const newCalcVars = { ...calculationVars };
+    Object.keys(newCalcVars).forEach(key => {
+      newCalcVars[key] = replaceVar(newCalcVars[key]);
+    });
+    setCalculationVars(newCalcVars);
+
+    setEditingAttribute(null);
+    setSaveStatus({ type: 'success', message: `Atributo renomeado e fórmulas atualizadas!` });
+  };
+
+  const handleSyncVariables = () => {
+    // Identify all current base variables
+    const currentBaseVars = new Set([
+      ...attributes.map(a => a.id.toUpperCase()),
+      ...Object.keys(skillTypeVars).map(cat => cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()),
+      'SKILLS',
+      'POWERS'
+    ]);
+
+    // Add plural/singular versions to the set
+    const allBaseVars = new Set(currentBaseVars);
+    currentBaseVars.forEach(v => {
+      if (v.endsWith('S')) allBaseVars.add(v.slice(0, -1));
+      else allBaseVars.add(v + 'S');
+    });
+
+    // 1. Remove from calculationVars any that conflict with base variables
+    const newCalcVars = { ...calculationVars };
+    let conflictsRemoved = 0;
+    Object.keys(newCalcVars).forEach(key => {
+      if (allBaseVars.has(key)) {
+        delete newCalcVars[key];
+        conflictsRemoved++;
+      }
+    });
+
+    // 2. Scan formulas for missing variables
+    const allFormulas = [
+      pvFormula, atpFormula, socoFormula, chuteFormula, defesaFormula, esquivaFormula, enFormula, dmFormula,
+      skillCostFormula, powerCostFormula,
+      ...Object.values(skillTypeVars),
+      ...Object.values(powerTypeVars),
+      ...Object.values(calculationVars)
+    ];
+
+    const usedVars = new Set<string>();
+    allFormulas.forEach(f => {
+      if (!f) return;
+      const matches = f.match(/[A-Z_][A-Z0-9_]*/g);
+      if (matches) matches.forEach(m => usedVars.add(m));
+    });
+
+    // Math functions and numbers to ignore
+    const ignore = new Set(['Math', 'min', 'max', 'floor', 'ceil', 'round', 'abs', 'PI', 'E']);
+    
+    let missingAdded = 0;
+    usedVars.forEach(v => {
+      if (!allBaseVars.has(v) && !newCalcVars[v] && !ignore.has(v) && isNaN(Number(v))) {
+        newCalcVars[v] = '0';
+        missingAdded++;
+      }
+    });
+
+    setCalculationVars(newCalcVars);
+    
+    if (conflictsRemoved > 0 || missingAdded > 0) {
+      setSaveStatus({ 
+        type: 'success', 
+        message: `Sincronização concluída: ${conflictsRemoved} conflitos removidos, ${missingAdded} variáveis ausentes adicionadas.` 
+      });
+    } else {
+      setSaveStatus({ type: 'success', message: 'Todas as variáveis estão sincronizadas e válidas!' });
     }
   };
 
@@ -837,6 +1115,49 @@ export default function GMDashboard() {
     next[newName] = formula;
     setSkillTypeVars(next);
     setEditingSkillType(null);
+
+    // Update formulas
+    const oldUpper = oldName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    const newUpper = newName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    
+    const replaceVar = (formula: string) => {
+      if (!formula) return formula;
+      // Replace both singular and plural forms
+      const oldSingular = oldUpper.endsWith('S') ? oldUpper.slice(0, -1) : oldUpper;
+      const oldPlural = oldUpper.endsWith('S') ? oldUpper : oldUpper + 'S';
+      const newSingular = newUpper.endsWith('S') ? newUpper.slice(0, -1) : newUpper;
+      const newPlural = newUpper.endsWith('S') ? newUpper : newUpper + 'S';
+
+      let f = formula;
+      f = f.replace(new RegExp(`\\b${oldPlural}\\b`, 'g'), newPlural);
+      f = f.replace(new RegExp(`\\b${oldSingular}\\b`, 'g'), newSingular);
+      return f;
+    };
+
+    setPvFormula(replaceVar(pvFormula));
+    setAtpFormula(replaceVar(atpFormula));
+    setSocoFormula(replaceVar(socoFormula));
+    setChuteFormula(replaceVar(chuteFormula));
+    setDefesaFormula(replaceVar(defesaFormula));
+    setEsquivaFormula(replaceVar(esquivaFormula));
+    setEnFormula(replaceVar(enFormula));
+    setDmFormula(replaceVar(dmFormula));
+    setSkillCostFormula(replaceVar(skillCostFormula));
+    setPowerCostFormula(replaceVar(powerCostFormula));
+
+    // Update skillTypeVars (formulas)
+    const updatedSkillTypeVars = { ...next };
+    Object.keys(updatedSkillTypeVars).forEach(key => {
+      updatedSkillTypeVars[key] = replaceVar(updatedSkillTypeVars[key]);
+    });
+    setSkillTypeVars(updatedSkillTypeVars);
+
+    // Update calculationVars (formulas)
+    const newCalcVars = { ...calculationVars };
+    Object.keys(newCalcVars).forEach(key => {
+      newCalcVars[key] = replaceVar(newCalcVars[key]);
+    });
+    setCalculationVars(newCalcVars);
 
     // Update existing skills
     const skillsToUpdate = skills.filter(s => s.type === oldName);
@@ -865,6 +1186,26 @@ export default function GMDashboard() {
     next[newName] = formula;
     setPowerTypeVars(next);
     setEditingPowerType(null);
+
+    // Update formulas
+    const oldUpper = oldName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    const newUpper = newName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    
+    const replaceVar = (formula: string) => {
+      if (!formula) return formula;
+      const regex = new RegExp(`\\b${oldUpper}\\b`, 'g');
+      return formula.replace(regex, newUpper);
+    };
+
+    setSkillCostFormula(replaceVar(skillCostFormula));
+    setPowerCostFormula(replaceVar(powerCostFormula));
+
+    // Update powerTypeVars (formulas)
+    const updatedPowerTypeVars = { ...next };
+    Object.keys(updatedPowerTypeVars).forEach(key => {
+      updatedPowerTypeVars[key] = replaceVar(updatedPowerTypeVars[key]);
+    });
+    setPowerTypeVars(updatedPowerTypeVars);
 
     // Update existing powers
     const powersToUpdate = powers.filter(p => p.type === oldName);
@@ -1078,6 +1419,40 @@ export default function GMDashboard() {
     }
   };
 
+  const handleEditCatalogItem = (item: any) => {
+    setCatalogItemForm({
+      name: item.name || '',
+      category: item.category || 'Geral',
+      rarity: item.rarity || 'Common',
+      weight: item.weight || 0,
+      value: item.value || 0,
+      description: item.description || '',
+      image: item.image || '',
+      stats: item.stats || {},
+      damage: item.damage || '',
+      defense: item.defense || 0
+    });
+    setEditingCatalogId(item.id);
+    setIsEditingCatalog(true);
+  };
+
+  const handleUpdateCatalogItem = async () => {
+    if (!editingCatalogId) return;
+    try {
+      await updateDoc(doc(db, 'itemCatalog', editingCatalogId), {
+        ...catalogItemForm,
+        lastUpdated: new Date().toISOString()
+      });
+      setIsEditingCatalog(false);
+      setEditingCatalogId(null);
+      setSaveStatus({ type: 'success', message: 'Item do catálogo atualizado!' });
+    } catch (err) {
+      console.error('Error updating catalog item:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `itemCatalog/${editingCatalogId}`);
+      setSaveStatus({ type: 'error', message: 'Erro ao atualizar item.' });
+    }
+  };
+
   const handleApproveSuggestion = async (suggestion: Suggestion, updatedData?: any) => {
     try {
       let collectionName = 'skills';
@@ -1249,7 +1624,7 @@ export default function GMDashboard() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pb-2 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 lg:justify-end">
+          <div className="flex flex-wrap gap-2 pb-2 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 lg:justify-end items-center">
             <button 
               onClick={() => setActiveTab('characters')}
               className={cn(
@@ -1269,42 +1644,6 @@ export default function GMDashboard() {
               Diário
             </button>
             <button 
-              onClick={() => setActiveTab('talents')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'talents' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Talentos
-            </button>
-            <button 
-              onClick={() => setActiveTab('skills')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'skills' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Perícias
-            </button>
-            <button 
-              onClick={() => setActiveTab('powers')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'powers' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Poderes
-            </button>
-            <button 
-              onClick={() => setActiveTab('traits')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'traits' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Vantagens/Defeitos
-            </button>
-            <button 
               onClick={() => setActiveTab('notes')}
               className={cn(
                 "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
@@ -1314,46 +1653,136 @@ export default function GMDashboard() {
               Notas
             </button>
             <button 
-              onClick={() => setActiveTab('vars')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'vars' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Variáveis
-            </button>
-            <button 
-              onClick={() => setActiveTab('categories')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'categories' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Categorias
-            </button>
-            <button 
               onClick={() => setActiveTab('settings')}
               className={cn(
                 "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
                 activeTab === 'settings' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
               )}
             >
-              Config
+              Config. Campanha
             </button>
-            <button 
-              onClick={() => setActiveTab('suggestions')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2",
-                activeTab === 'suggestions' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Sugestões
-              {suggestions.length > 0 && (
-                <span className="w-4 h-4 bg-ember text-white text-[10px] rounded-full flex items-center justify-center animate-pulse">
-                  {suggestions.length}
-                </span>
-              )}
-            </button>
+
+            {/* Config Menu Dropdown */}
+            <div className="relative" ref={configMenuRef}>
+              <button 
+                onClick={() => setShowConfigMenu(!showConfigMenu)}
+                className={cn(
+                  "p-2 rounded-xl transition-all glass hover:bg-white/10 flex items-center justify-center",
+                  showConfigMenu || ['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions'].includes(activeTab) 
+                    ? "bg-arcane text-obsidian" 
+                    : "text-parchment/60"
+                )}
+                title="Atalhos e Ferramentas"
+              >
+                <Settings size={20} className={cn(showConfigMenu && "animate-[spin_3s_linear_infinite]")} />
+              </button>
+              
+              <AnimatePresence>
+                {showConfigMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                    className="absolute right-0 top-full mt-2 w-56 glass border border-white/10 rounded-2xl shadow-2xl p-2 z-[100] overflow-hidden"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <button 
+                        onClick={() => { setActiveTab('talents'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'talents' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Talentos
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('skills'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'skills' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Perícias
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('powers'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'powers' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Poderes
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('traits'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'traits' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Vantagens/Defeitos
+                      </button>
+                      
+                      <div className="h-px bg-white/10 my-1 mx-2" />
+                      
+                      <button 
+                        onClick={() => { setActiveTab('vars'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'vars' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Variáveis
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('categories'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'categories' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Categorias
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('catalog'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'catalog' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Catálogo
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('baseSettings'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          activeTab === 'baseSettings' ? "bg-amber-400/20 text-amber-400" : "hover:bg-white/5 text-amber-400/60 hover:text-amber-400"
+                        )}
+                      >
+                        Config. Base
+                      </button>
+
+                      <div className="h-px bg-white/10 my-1 mx-2" />
+
+                      <button 
+                        onClick={() => { setActiveTab('suggestions'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-between",
+                          activeTab === 'suggestions' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        Sugestões
+                        {suggestions.length > 0 && (
+                          <span className="w-5 h-5 bg-ember text-white text-[10px] rounded-full flex items-center justify-center shadow-lg shadow-ember/20">
+                            {suggestions.length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
@@ -1571,6 +2000,297 @@ export default function GMDashboard() {
                   </motion.div>
                 ))
               )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'catalog' && (
+            <motion.div
+              key="catalog"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="space-y-6"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/5 p-6 rounded-[2.5rem] border border-white/10">
+                <div>
+                  <h3 className="text-2xl font-serif">Catálogo de Itens</h3>
+                  <p className="text-sm text-parchment/40">Todos os itens criados pelos jogadores são salvos aqui para referência do mestre.</p>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-2 glass rounded-2xl">
+                  <Package size={18} className="text-arcane" />
+                  <span className="text-sm font-medium">{itemCatalog.length} Itens Catalogados</span>
+                </div>
+              </div>
+
+              {isEditingCatalog && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="glass p-8 rounded-[2.5rem] space-y-6 relative border border-arcane/30"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-arcane/20 rounded-xl flex items-center justify-center text-arcane">
+                        <Edit2 size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-serif">Editar Item do Catálogo</h3>
+                        <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Modificando entradas globais</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setIsEditingCatalog(false)} className="text-parchment/40 hover:text-parchment p-2 rounded-full hover:bg-white/5 transition-colors">
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome do Item</label>
+                        <input 
+                          type="text" 
+                          value={catalogItemForm.name}
+                          onChange={e => setCatalogItemForm({ ...catalogItemForm, name: e.target.value })}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Categoria</label>
+                          <input 
+                            type="text" 
+                            value={catalogItemForm.category}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, category: e.target.value })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Raridade</label>
+                          <select 
+                            value={catalogItemForm.rarity}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, rarity: e.target.value })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          >
+                            <option value="Common">Comum</option>
+                            <option value="Uncommon">Incomum</option>
+                            <option value="Rare">Raro</option>
+                            <option value="Epic">Épico</option>
+                            <option value="Legendary">Lendário</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Peso (kg)</label>
+                          <input 
+                            type="number" 
+                            value={catalogItemForm.weight}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, weight: Number(e.target.value) })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Valor (MO)</label>
+                          <input 
+                            type="number" 
+                            value={catalogItemForm.value}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, value: Number(e.target.value) })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Imagem URL</label>
+                        <input 
+                          type="text" 
+                          value={catalogItemForm.image}
+                          onChange={e => setCatalogItemForm({ ...catalogItemForm, image: e.target.value })}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Dano</label>
+                          <input 
+                            type="text" 
+                            value={catalogItemForm.damage}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, damage: e.target.value })}
+                            placeholder="Ex: 2d6 + FOR"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Defesa</label>
+                          <input 
+                            type="number" 
+                            value={catalogItemForm.defense}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, defense: Number(e.target.value) })}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição</label>
+                        <textarea 
+                          value={catalogItemForm.description}
+                          onChange={e => setCatalogItemForm({ ...catalogItemForm, description: e.target.value })}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors h-24 resize-none"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificadores de Atributo</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {attributes.map(attr => (
+                            <div key={attr.id} className="space-y-1">
+                              <p className="text-[8px] font-mono text-parchment/40 uppercase text-center">{attr.id}</p>
+                              <input 
+                                type="number"
+                                value={catalogItemForm.stats[attr.id] || 0}
+                                onChange={e => setCatalogItemForm({
+                                  ...catalogItemForm,
+                                  stats: { ...catalogItemForm.stats, [attr.id]: Number(e.target.value) }
+                                })}
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-1 py-1 text-center text-xs focus:outline-none focus:border-arcane/50 font-mono"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-white/5">
+                    <button 
+                      onClick={() => setIsEditingCatalog(false)}
+                      className="px-6 py-2 rounded-xl glass hover:bg-white/5 text-xs font-bold uppercase tracking-widest transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={handleUpdateCatalogItem}
+                      className="flex items-center gap-2 px-8 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] active:scale-95 transition-all font-bold shadow-lg shadow-arcane/20"
+                    >
+                      <Save size={18} />
+                      Salvar Alterações
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {itemCatalog.length === 0 ? (
+                  <div className="col-span-full glass p-20 rounded-[3rem] text-center border-dashed border-white/10">
+                    <Backpack size={48} className="mx-auto text-parchment/10 mb-6" />
+                    <h4 className="text-xl font-serif mb-2">O catálogo está vazio</h4>
+                    <p className="text-parchment/40 max-w-xs mx-auto">Assim que os jogadores criarem ou salvarem itens em seus inventários, eles aparecerão aqui.</p>
+                  </div>
+                ) : (
+                  itemCatalog.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className="glass rounded-[2rem] border border-white/10 hover:border-arcane/30 transition-all group relative overflow-hidden flex flex-col"
+                    >
+                      <div className="aspect-square relative overflow-hidden bg-obsidian/40">
+                        <img 
+                          src={item.image || "https://picsum.photos/seed/item/400/400"} 
+                          alt={item.name}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute top-4 right-4 flex flex-col gap-2">
+                           <div className={cn(
+                             "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md border",
+                             item.rarity === 'Legendary' ? "bg-orange-500/20 text-orange-400 border-orange-500/30" :
+                             item.rarity === 'Epic' ? "bg-purple-500/20 text-purple-400 border-purple-500/30" :
+                             item.rarity === 'Rare' ? "bg-blue-500/20 text-blue-400 border-blue-500/30" :
+                             item.rarity === 'Uncommon' ? "bg-green-500/20 text-green-400 border-green-500/30" :
+                             "bg-gray-500/20 text-gray-400 border-gray-500/30"
+                           )}>
+                             {item.rarity}
+                           </div>
+                        </div>
+                        <div className="absolute bottom-4 left-4 right-4">
+                           <div className="glass-dark px-3 py-1.5 rounded-xl text-[10px] font-mono text-parchment/60 uppercase tracking-widest text-center truncate">
+                             {item.category}
+                           </div>
+                        </div>
+                      </div>
+
+                      <div className="p-6 flex-1 flex flex-col gap-4">
+                        <div className="space-y-1">
+                          <h4 className="text-xl font-serif text-glow-arcane truncate">{item.name}</h4>
+                          <div className="flex items-center gap-2 text-[10px] font-mono text-parchment/30">
+                            <span>Criado por: <span className="text-arcane/60">{item.createdBy || 'Sistema'}</span></span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pb-4 border-b border-white/5">
+                           <div className="space-y-0.5">
+                             <p className="text-[9px] font-mono text-parchment/40 uppercase tracking-tighter">Peso</p>
+                             <p className="text-sm font-bold text-parchment/80">{item.weight} kg</p>
+                           </div>
+                           <div className="space-y-0.5 text-right">
+                             <p className="text-[9px] font-mono text-parchment/40 uppercase tracking-tighter">Valor</p>
+                             <p className="text-sm font-bold text-gold">{item.value || 0} MO</p>
+                           </div>
+                        </div>
+
+                        {item.description && (
+                          <p className="text-xs text-parchment/50 line-clamp-3 italic">
+                            "{item.description}"
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap gap-2 pt-2 mt-auto">
+                          {item.damage && (
+                            <span className="px-2 py-0.5 rounded-md bg-red-400/10 text-red-400 text-[10px] font-bold border border-red-400/20">
+                              Dano: {item.damage}
+                            </span>
+                          )}
+                          {item.defense && (
+                            <span className="px-2 py-0.5 rounded-md bg-blue-400/10 text-blue-400 text-[10px] font-bold border border-blue-400/20">
+                              Def: {item.defense}
+                            </span>
+                          )}
+                          {item.stats && Object.entries(item.stats).map(([stat, val]) => (val as number) !== 0 && (
+                            <span key={stat} className="px-2 py-0.5 rounded-md bg-arcane/10 text-arcane text-[10px] font-bold border border-arcane/20">
+                              {stat.toUpperCase()}: {(val as number) > 0 ? `+${val}` : val}
+                            </span>
+                          ))}
+                        </div>
+                        
+                        <div className="flex gap-2 mt-4">
+                          <button 
+                            onClick={() => handleEditCatalogItem(item)}
+                            className="flex-1 py-2 rounded-xl bg-arcane/10 text-arcane border border-arcane/20 text-[10px] font-bold uppercase tracking-widest hover:bg-arcane hover:text-obsidian transition-all flex items-center justify-center gap-2"
+                          >
+                            <Edit2 size={12} />
+                            Editar
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('Deseja excluir este item do catálogo?')) {
+                                try {
+                                  await deleteDoc(doc(db, 'itemCatalog', item.id));
+                                } catch (err) {
+                                  console.error('Error deleting catalog item:', err);
+                                }
+                              }
+                            }}
+                            className="p-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-obsidian transition-all"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </motion.div>
           )}
@@ -2288,27 +3008,70 @@ export default function GMDashboard() {
                   <div className="space-y-2">
                     {attributes.map((attr, idx) => (
                       <div key={attr.id} className="glass p-3 rounded-xl border border-white/5 flex items-center justify-between group">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 flex-1">
                           <div className={cn("p-1.5 rounded-lg bg-white/5", attr.color)}>
                             {React.createElement(getIcon(attr.icon), { size: 14 })}
                           </div>
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">{attr.label}</span>
-                            <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-widest">{attr.id}</span>
-                          </div>
+                          {editingAttribute === attr.id ? (
+                            <div className="flex items-center gap-2 flex-1 mr-2">
+                              <input 
+                                type="text"
+                                value={editingAttributeName}
+                                onChange={e => setEditingAttributeName(e.target.value)}
+                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-arcane/50"
+                                autoFocus
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleRenameAttribute(attr.id, editingAttributeName);
+                                  if (e.key === 'Escape') setEditingAttribute(null);
+                                }}
+                              />
+                              <button 
+                                onClick={() => handleRenameAttribute(attr.id, editingAttributeName)}
+                                className="p-1 text-green-400 hover:bg-green-400/10 rounded-md"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button 
+                                onClick={() => setEditingAttribute(null)}
+                                className="p-1 text-red-400 hover:bg-red-400/10 rounded-md"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col">
+                              <span className="text-sm font-medium">{attr.label}</span>
+                              <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-widest">{attr.id}</span>
+                            </div>
+                          )}
                         </div>
-                        <button 
-                          onClick={() => {
-                            if (DEFAULT_ATTRIBUTES.some(a => a.id === attr.id)) {
-                              setSaveStatus({ type: 'error', message: 'Não é possível excluir atributos base!' });
-                              return;
-                            }
-                            setAttributes(attributes.filter((_, i) => i !== idx));
-                          }}
-                          className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          {!editingAttribute && (
+                            <>
+                              <button 
+                                onClick={() => {
+                                  setEditingAttribute(attr.id);
+                                  setEditingAttributeName(attr.label);
+                                }}
+                                className="p-1.5 text-parchment/20 hover:text-arcane hover:bg-arcane/10 rounded-lg"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  if (DEFAULT_ATTRIBUTES.some(a => a.id === attr.id)) {
+                                    setSaveStatus({ type: 'error', message: 'Não é possível excluir atributos base!' });
+                                    return;
+                                  }
+                                  setAttributes(attributes.filter((_, i) => i !== idx));
+                                }}
+                                className="p-1.5 text-parchment/20 hover:text-red-400 hover:bg-red-400/10 rounded-lg"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2543,6 +3306,10 @@ export default function GMDashboard() {
                     </button>
                   </div>
 
+                  <p className="text-xs text-parchment/40 italic px-1">
+                    * Cada categoria criada aqui torna-se automaticamente uma variável de cálculo (ex: TREINAMENTO).
+                  </p>
+
                   <AnimatePresence>
                     {showNewSkillTypeInput && (
                       <motion.div
@@ -2689,9 +3456,19 @@ export default function GMDashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Core Variables (Read-only) */}
                 <div className="space-y-6">
-                  <div className="flex items-center gap-2 text-arcane">
-                    <Shield size={20} />
-                    <h4 className="text-lg font-serif">Variáveis Base (Somente Leitura)</h4>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-arcane">
+                      <Shield size={20} />
+                      <h4 className="text-lg font-serif">Variáveis Base (Somente Leitura)</h4>
+                    </div>
+                    <button 
+                      onClick={handleSyncVariables}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-arcane/10 text-arcane rounded-xl hover:bg-arcane/20 transition-all text-[10px] font-bold uppercase tracking-wider"
+                      title="Sincronizar variáveis com atributos e categorias"
+                    >
+                      <RefreshCw size={12} className="animate-spin-slow" />
+                      Sincronizar
+                    </button>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {attributes.map(attr => (
@@ -2700,13 +3477,31 @@ export default function GMDashboard() {
                         <span className="text-lg font-mono text-arcane">{attr.id.toUpperCase()}</span>
                       </div>
                     ))}
+                    {Object.keys(skillTypeVars).map(cat => {
+                      const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                      const plural = normalizedCat.endsWith('S') ? normalizedCat : normalizedCat + 'S';
+                      const singular = normalizedCat.endsWith('S') ? normalizedCat.slice(0, -1) : normalizedCat;
+                      
+                      return (
+                        <div key={cat} className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1 relative group overflow-hidden">
+                          <div className="absolute top-0 right-0 p-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" title="Sincronizado" />
+                          </div>
+                          <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Perícias: {cat}</span>
+                          <div className="flex flex-col">
+                            <span className="text-lg font-mono text-arcane leading-tight">{normalizedCat}</span>
+                            <span className="text-[9px] font-mono text-parchment/20">Alt: {normalizedCat === singular ? plural : singular}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                     <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1">
-                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Perícias de Luta</span>
-                      <span className="text-lg font-mono text-arcane">LUTA</span>
+                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Total de Perícias</span>
+                      <span className="text-lg font-mono text-arcane">SKILLS</span>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-xl p-3 flex flex-col gap-1">
-                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Perícias Místicas</span>
-                      <span className="text-lg font-mono text-arcane">MISTICA</span>
+                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Total de Poderes</span>
+                      <span className="text-lg font-mono text-arcane">POWERS</span>
                     </div>
                   </div>
                 </div>
@@ -2813,51 +3608,77 @@ export default function GMDashboard() {
             </motion.div>
           )}
 
-          {activeTab === 'settings' && (
+          {(activeTab === 'settings' || activeTab === 'baseSettings') && (
             <motion.div
-              key="settings"
+              key={activeTab}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
               className="glass p-8 rounded-[2.5rem] space-y-8"
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-serif">Configurações da Campanha</h3>
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center",
+                    activeTab === 'baseSettings' ? "bg-amber-400/20 text-amber-400" : "bg-arcane/20 text-arcane"
+                  )}>
+                    <Settings size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-serif">
+                      {activeTab === 'baseSettings' ? 'Configurações Base do Sistema' : 'Configurações da Campanha'}
+                    </h3>
+                    <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest leading-none">
+                      {activeTab === 'baseSettings' 
+                        ? 'Afeta todas as futuras campanhas criadas' 
+                        : `Ajustes exclusivos para: ${sessionName}`
+                      }
+                    </p>
+                  </div>
+                </div>
                 <button 
-                  onClick={handleSaveSettings}
-                  className="flex items-center gap-2 px-6 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] transition-all font-bold"
+                  onClick={activeTab === 'baseSettings' ? handleSaveBaseSettings : handleSaveSettings}
+                  className={cn(
+                    "flex items-center gap-2 px-6 py-3 rounded-2xl hover:scale-[1.02] transition-all font-bold shadow-lg",
+                    activeTab === 'baseSettings' ? "bg-amber-400 text-obsidian" : "bg-arcane text-obsidian"
+                  )}
                 >
                   <Save size={18} />
-                  Salvar Alterações
+                  Salvar {activeTab === 'baseSettings' ? 'Base' : 'Alterações'}
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome da Campanha</label>
-                  <input 
-                    type="text" 
-                    value={sessionName}
-                    onChange={e => setSessionName(e.target.value)}
-                    onBlur={() => setTouched(prev => ({ ...prev, sessionName: true }))}
-                    className={cn(
-                      "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors",
-                      touched.sessionName && !sessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+              {activeTab === 'settings' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 p-6 rounded-3xl border border-white/10">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome da Campanha</label>
+                    <input 
+                      type="text" 
+                      value={sessionName}
+                      onChange={e => setSessionName(e.target.value)}
+                      onBlur={() => setTouched(prev => ({ ...prev, sessionName: true }))}
+                      className={cn(
+                        "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors font-serif text-lg",
+                        touched.sessionName && !sessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                      )}
+                    />
+                    {touched.sessionName && !sessionName.trim() && (
+                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
                     )}
-                  />
-                  {touched.sessionName && !sessionName.trim() && (
-                    <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
-                  )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
+                    <input 
+                      type="text" 
+                      value={sessionImage}
+                      onChange={e => setSessionImage(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
-                  <input 
-                    type="text" 
-                    value={sessionImage}
-                    onChange={e => setSessionImage(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                  />
-                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Pontos de Atributo Iniciais</label>
                   <input 
@@ -4143,7 +4964,12 @@ export default function GMDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-      {sessionId && <SessionChat sessionId={sessionId} />}
+      {sessionId && (
+        <SessionChat 
+          sessionId={sessionId} 
+          senderOverride={{ name: "Mestre", photo: auth.currentUser?.photoURL || "" }}
+        />
+      )}
     </div>
   );
 }

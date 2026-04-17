@@ -37,7 +37,7 @@ import {
   Search
 } from 'lucide-react';
 import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
-import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove } from '../firebase';
+import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, addDoc } from '../firebase';
 import Inventory from './Inventory';
 import SessionChat from './SessionChat';
 
@@ -229,9 +229,25 @@ export default function CharacterSheet() {
           initialAttrVars[attr.id.toUpperCase()] = getVal(attr.id);
         });
 
+        const initialSkillCategoryCounts: Record<string, number> = {};
+        const skillCategories = Object.keys(globalSettings?.skillTypeVars || { 'Luta': '1', 'Mística': '1' });
+        const charSkills = data.skills || [];
+        
+        skillCategories.forEach(cat => {
+          const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+          const count = charSkills.filter((s: any) => s.type === cat).length;
+          initialSkillCategoryCounts[normalizedCat] = count;
+          if (!normalizedCat.endsWith('S')) {
+            initialSkillCategoryCounts[normalizedCat + 'S'] = count;
+          } else {
+            initialSkillCategoryCounts[normalizedCat.slice(0, -1)] = count;
+          }
+        });
+
         const statsForFormula = resolveStatsWithVars({
           ...initialAttrVars,
-          SKILLS: (data.skills || []).length,
+          ...initialSkillCategoryCounts,
+          SKILLS: charSkills.length,
           POWERS: (data.powers || []).length,
         }, globalSettings?.calculationVars);
 
@@ -631,6 +647,12 @@ export default function CharacterSheet() {
       type: 'test',
       diceSides
     });
+
+    sendRollToChat(`${attrLabel} [${diffLabel}]`, {
+      total: roll,
+      detail: `1D${diceSides} <= ${target}`,
+      rolls: [{ die: `1D${diceSides}`, values: [roll] }]
+    }, success);
     
     setTimeout(() => setQuickRoll(null), 5000);
   };
@@ -672,7 +694,13 @@ export default function CharacterSheet() {
   
   skillCategories.forEach(cat => {
     const normalizedCat = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-    skillCategoryCounts[normalizedCat] = resolvedSkills.filter(s => s.type === cat).length;
+    const count = resolvedSkills.filter(s => s.type === cat).length;
+    skillCategoryCounts[normalizedCat] = count;
+    if (!normalizedCat.endsWith('S')) {
+      skillCategoryCounts[normalizedCat + 'S'] = count;
+    } else {
+      skillCategoryCounts[normalizedCat.slice(0, -1)] = count;
+    }
   });
 
   const baseStatsForFormula: Record<string, number> = {};
@@ -683,6 +711,8 @@ export default function CharacterSheet() {
   const statsForFormula = resolveStatsWithVars({
     ...baseStatsForFormula,
     ...skillCategoryCounts,
+    SKILLS: resolvedSkills.length,
+    POWERS: resolvedPowers.length,
   }, globalSettings?.calculationVars);
 
   const maxPV = evaluateFormula(globalSettings?.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
@@ -695,6 +725,52 @@ export default function CharacterSheet() {
   const defesa = evaluateFormula(globalSettings?.defesaFormula || 'CON + (AGI / 2) + (LUTA * 2)', statsForFormula);
   const esquiva = evaluateFormula(globalSettings?.esquivaFormula || '(CON + AGI + (VEL / 2)) + (LUTA * 2)', statsForFormula);
 
+  const sendRollToChat = async (label: string, result: any, success?: boolean) => {
+    if (!character?.sessionId || !auth.currentUser) return;
+
+    try {
+      const rollData: any = {
+        total: result.total,
+        formula: result.detail || label,
+        details: result.rolls ? result.rolls.map((r: any) => `${r.die}: [${r.values.join(', ')}]`).join(' | ') : '',
+        rolls: result.rolls || []
+      };
+
+      if (success !== undefined) {
+        rollData.success = success;
+      }
+
+      await addDoc(collection(db, 'chatMessages'), {
+        sessionId: character.sessionId,
+        senderId: auth.currentUser.uid,
+        senderName: character.name || auth.currentUser.displayName || 'Anônimo',
+        senderPhoto: character.image || auth.currentUser.photoURL || '',
+        text: `Rolou ${label}: ${result.total}`,
+        type: 'roll',
+        rollData,
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error sending roll to chat:', err);
+    }
+  };
+
+  const sendValueToChat = async (label: string, value: any) => {
+    if (!character?.sessionId || !auth.currentUser) return;
+    try {
+      await addDoc(collection(db, 'chatMessages'), {
+        sessionId: character.sessionId,
+        senderId: auth.currentUser.uid,
+        senderName: character.name || auth.currentUser.displayName || 'Anônimo',
+        senderPhoto: character.image || auth.currentUser.photoURL || '',
+        text: `${label}: ${value}`,
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error sending value to chat:', err);
+    }
+  };
+
   const handleFormulaRoll = (label: string, formula: string) => {
     if (!formula) return;
     const result = rollDiceFormula(formula, statsForFormula);
@@ -703,6 +779,7 @@ export default function CharacterSheet() {
       attr: label,
       type: 'damage'
     });
+    sendRollToChat(label, result);
     setTimeout(() => setQuickRoll(null), 5000);
   };
 
@@ -1033,6 +1110,13 @@ export default function CharacterSheet() {
 
         <div className="flex items-center justify-center sm:justify-end gap-3 mt-4 lg:mt-0">
           <button 
+            onClick={() => navigate(`/journal?characterId=${characterId}`)}
+            className="p-3 glass rounded-2xl hover:bg-white/10 transition-colors text-parchment/60 hover:text-arcane"
+            title="Abrir Diário do Personagem"
+          >
+            <BookOpen size={20} />
+          </button>
+          <button 
             onClick={handleShare}
             className="p-3 glass rounded-2xl hover:bg-white/10 transition-colors text-parchment/60 hover:text-parchment"
             title="Compartilhar Ficha"
@@ -1060,6 +1144,7 @@ export default function CharacterSheet() {
           <>
             {/* Left Column: Attributes & Combat Status */}
             <div className={cn(
+              "space-y-10",
               isAll ? "lg:col-span-4" : "lg:col-span-12",
               !isAll && activeSection !== 'stats' && activeSection !== 'combat' && "hidden"
             )}>
@@ -1310,33 +1395,289 @@ export default function CharacterSheet() {
             <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Status de Combate</h3>
             <div className="glass p-6 rounded-3xl space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Soco</p>
+                <div className="space-y-1 group relative">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Soco</p>
+                    <button 
+                      onClick={() => sendValueToChat('Soco', soco)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                      title="Compartilhar no Chat"
+                    >
+                      <Share2 size={12} />
+                    </button>
+                  </div>
                   <p className="text-xl font-serif text-ember">{soco}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Chute</p>
+                <div className="space-y-1 group relative">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Chute</p>
+                    <button 
+                      onClick={() => sendValueToChat('Chute', chute)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                      title="Compartilhar no Chat"
+                    >
+                      <Share2 size={12} />
+                    </button>
+                  </div>
                   <p className="text-xl font-serif text-ember">{chute}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">E/N (Esq. Nat.)</p>
+
+                {/* E/N (Esq. Nat.) */}
+                <div className="space-y-1 relative group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">E/N (Esq. Nat.)</p>
+                    <AnimatePresence mode="wait">
+                      {activeRollAttr === 'en_combat' ? (
+                        <motion.div 
+                          key="diffs"
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 20 }}
+                          className="flex gap-1 items-center bg-obsidian/90 backdrop-blur-md rounded-lg p-1 z-10 absolute right-0 -top-1 border border-white/10 shadow-xl"
+                        >
+                          {[
+                            { id: 'easy', label: 'F', color: 'hover:text-green-400' },
+                            { id: 'normal', label: 'N', color: 'hover:text-arcane' },
+                            { id: 'hard', label: 'D', color: 'hover:text-orange-400' },
+                            { id: 'extreme', label: 'E', color: 'hover:text-ember' },
+                          ].map(d => (
+                            <button
+                              key={d.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickRoll('E/N (Esq. Nat.)', en, d.id as any, 20);
+                                setActiveRollAttr(null);
+                              }}
+                              className={cn("w-6 h-6 rounded bg-white/5 text-[9px] font-bold transition-colors", d.color)}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveRollAttr(null);
+                            }} 
+                            className="w-6 h-6 rounded bg-white/5 text-ember hover:bg-ember/10 transition-colors"
+                          >
+                            <X size={10} />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <button 
+                          onClick={() => setActiveRollAttr('en_combat')}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                        >
+                          <Dice6 size={12} />
+                        </button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <p className="text-xl font-serif text-arcane">{en}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">D/M</p>
+
+                {/* D/M */}
+                <div className="space-y-1 relative group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">D/M</p>
+                    <AnimatePresence mode="wait">
+                      {activeRollAttr === 'dm_combat' ? (
+                        <motion.div 
+                          key="diffs"
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 20 }}
+                          className="flex gap-1 items-center bg-obsidian/90 backdrop-blur-md rounded-lg p-1 z-10 absolute right-0 -top-1 border border-white/10 shadow-xl"
+                        >
+                          {[
+                            { id: 'easy', label: 'F', color: 'hover:text-green-400' },
+                            { id: 'normal', label: 'N', color: 'hover:text-arcane' },
+                            { id: 'hard', label: 'D', color: 'hover:text-orange-400' },
+                            { id: 'extreme', label: 'E', color: 'hover:text-ember' },
+                          ].map(d => (
+                            <button
+                              key={d.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickRoll('D/M', dm, d.id as any, 20);
+                                setActiveRollAttr(null);
+                              }}
+                              className={cn("w-6 h-6 rounded bg-white/5 text-[9px] font-bold transition-colors", d.color)}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveRollAttr(null);
+                            }} 
+                            className="w-6 h-6 rounded bg-white/5 text-ember hover:bg-ember/10 transition-colors"
+                          >
+                            <X size={10} />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <button 
+                          onClick={() => setActiveRollAttr('dm_combat')}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                        >
+                          <Dice6 size={12} />
+                        </button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <p className="text-xl font-serif text-gold">{dm}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Defesa</p>
+
+                {/* Defesa */}
+                <div className="space-y-1 relative group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Defesa</p>
+                    <AnimatePresence mode="wait">
+                      {activeRollAttr === 'defesa_combat' ? (
+                        <motion.div 
+                          key="diffs"
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 20 }}
+                          className="flex gap-1 items-center bg-obsidian/90 backdrop-blur-md rounded-lg p-1 z-10 absolute right-0 -top-1 border border-white/10 shadow-xl"
+                        >
+                          {[
+                            { id: 'easy', label: 'F', color: 'hover:text-green-400' },
+                            { id: 'normal', label: 'N', color: 'hover:text-arcane' },
+                            { id: 'hard', label: 'D', color: 'hover:text-orange-400' },
+                            { id: 'extreme', label: 'E', color: 'hover:text-ember' },
+                          ].map(d => (
+                            <button
+                              key={d.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickRoll('Defesa', defesa, d.id as any, 20);
+                                setActiveRollAttr(null);
+                              }}
+                              className={cn("w-6 h-6 rounded bg-white/5 text-[9px] font-bold transition-colors", d.color)}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveRollAttr(null);
+                            }} 
+                            className="w-6 h-6 rounded bg-white/5 text-ember hover:bg-ember/10 transition-colors"
+                          >
+                            <X size={10} />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <button 
+                          onClick={() => setActiveRollAttr('defesa_combat')}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                        >
+                          <Dice6 size={12} />
+                        </button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <p className="text-xl font-serif text-arcane">{defesa}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Esquiva</p>
+
+                {/* Esquiva */}
+                <div className="space-y-1 relative group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Esquiva</p>
+                    <AnimatePresence mode="wait">
+                      {activeRollAttr === 'esquiva_combat' ? (
+                        <motion.div 
+                          key="diffs"
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: 20 }}
+                          className="flex gap-1 items-center bg-obsidian/90 backdrop-blur-md rounded-lg p-1 z-10 absolute right-0 -top-1 border border-white/10 shadow-xl"
+                        >
+                          {[
+                            { id: 'easy', label: 'F', color: 'hover:text-green-400' },
+                            { id: 'normal', label: 'N', color: 'hover:text-arcane' },
+                            { id: 'hard', label: 'D', color: 'hover:text-orange-400' },
+                            { id: 'extreme', label: 'E', color: 'hover:text-ember' },
+                          ].map(d => (
+                            <button
+                              key={d.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickRoll('Esquiva', esquiva, d.id as any, 20);
+                                setActiveRollAttr(null);
+                              }}
+                              className={cn("w-6 h-6 rounded bg-white/5 text-[9px] font-bold transition-colors", d.color)}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveRollAttr(null);
+                            }} 
+                            className="w-6 h-6 rounded bg-white/5 text-ember hover:bg-ember/10 transition-colors"
+                          >
+                            <X size={10} />
+                          </button>
+                        </motion.div>
+                      ) : (
+                        <button 
+                          onClick={() => setActiveRollAttr('esquiva_combat')}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-arcane/20 rounded transition-all text-parchment/40 hover:text-arcane"
+                        >
+                          <Dice6 size={12} />
+                        </button>
+                      )}
+                    </AnimatePresence>
+                  </div>
                   <p className="text-xl font-serif text-arcane">{esquiva}</p>
                 </div>
               </div>
             </div>
           </section>
+
+          {/* Equipamentos com Rolagem */}
+          {equippedItems.some(item => item.damage) && (
+            <section className={cn("space-y-4 pt-4", !isAll && activeSection !== 'combat' && "hidden")}>
+              <div className="flex items-center justify-between px-4">
+                <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Ataques e Equipamentos</h3>
+                <Sword size={14} className="text-ember/40" />
+              </div>
+              <div className="glass p-5 rounded-[2rem] border border-white/5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {equippedItems.filter(item => item.damage).map((item) => (
+                    <motion.div 
+                      key={item.id}
+                      whileHover={{ scale: 1.02 }}
+                      className="glass p-4 rounded-2xl border border-white/5 hover:border-arcane/30 transition-all group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 max-w-[70%]">
+                          <p className="text-[10px] text-parchment/60 font-mono uppercase tracking-wider truncate" title={item.name}>{item.name}</p>
+                        </div>
+                        <button 
+                          onClick={() => handleFormulaRoll(item.name, item.damage)}
+                          className="p-1.5 bg-arcane/10 hover:bg-arcane/20 rounded-lg text-arcane transition-colors"
+                          title="Rolar Dano"
+                        >
+                          <Dice6 size={14} />
+                        </button>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-xl font-serif text-ember">{item.damage}</p>
+                        <span className="text-[10px] text-parchment/20 font-mono uppercase tracking-widest">Dano</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Middle Column: Status Sliders & Perícias */}
@@ -2481,7 +2822,12 @@ export default function CharacterSheet() {
           </motion.div>
         )}
       </AnimatePresence>
-      {character.sessionId && <SessionChat sessionId={character.sessionId} />}
+      {character.sessionId && (
+        <SessionChat 
+          sessionId={character.sessionId} 
+          senderOverride={{ name: character.name, photo: character.image }}
+        />
+      )}
     </div>
     </div>
   );

@@ -109,6 +109,22 @@ service cloud.firestore {
     //
     // ===============================================================
 
+    // Collection: itemCatalog
+    // Document ID: itemId
+    // Fields:
+    //   - name: string (required)
+    //   - category: string
+    //   - rarity: string
+    //   - weight: number
+    //   - value: integer
+    //   - description: string
+    //   - image: string
+    //   - stats: map
+    //   - damage: string
+    //   - defense: integer
+    //   - createdBy: string
+    //   - lastUpdated: string (date-time)
+    //
     // ===============================================================
     // Helper Functions
     // ===============================================================
@@ -352,6 +368,15 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId));
       allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGMOfSession(request.resource.data.sessionId) || isPlayerInSession(request.resource.data.sessionId));
       allow update, delete: if false;
+    }
+
+    match /itemCatalog/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && 
+                            request.resource.data.name is string && 
+                            request.resource.data.name.size() > 0 && 
+                            request.resource.data.name.size() < 100;
+      allow delete: if isGM();
     }
 
     // Default deny

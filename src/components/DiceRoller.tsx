@@ -15,6 +15,8 @@ import {
   Sparkles,
   Zap
 } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { auth, db, collection, addDoc, doc, getDoc } from '../firebase';
 import { cn } from '../lib/utils';
 
 type DieType = 4 | 6 | 8 | 10 | 12 | 20 | 100;
@@ -30,12 +32,33 @@ interface RollResult {
 }
 
 export default function DiceRoller() {
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [isOpen, setIsOpen] = React.useState(false);
   const [quantity, setQuantity] = React.useState(1);
   const [modifier, setModifier] = React.useState(0);
   const [history, setHistory] = React.useState<RollResult[]>([]);
   const [isRolling, setIsRolling] = React.useState(false);
   const [lastRoll, setLastRoll] = React.useState<RollResult | null>(null);
+
+  React.useEffect(() => {
+    const pathParts = location.pathname.split('/');
+    if (pathParts[1] === 'gm' && pathParts[2] === 'session' && pathParts[3]) {
+      setSessionId(pathParts[3]);
+    } else {
+      const charId = searchParams.get('id');
+      if (charId && location.pathname === '/sheet') {
+        getDoc(doc(db, 'characters', charId)).then(docSnap => {
+          if (docSnap.exists()) {
+            setSessionId(docSnap.data().sessionId || null);
+          }
+        });
+      } else {
+        setSessionId(null);
+      }
+    }
+  }, [location, searchParams]);
 
   const diceTypes: { type: DieType; label: string }[] = [
     { type: 4, label: 'D4' },
@@ -68,6 +91,25 @@ export default function DiceRoller() {
       setLastRoll(result);
       setHistory(prev => [result, ...prev].slice(0, 20));
       setIsRolling(false);
+
+      // Send to chat if in session
+      if (sessionId && auth.currentUser) {
+        addDoc(collection(db, 'chatMessages'), {
+          sessionId,
+          senderId: auth.currentUser.uid,
+          senderName: auth.currentUser.displayName || 'Anônimo',
+          senderPhoto: auth.currentUser.photoURL || '',
+          text: `Rolou ${quantity}d${dieType}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''}: ${total}`,
+          type: 'roll',
+          rollData: {
+            total,
+            formula: `${quantity}d${dieType}${modifier !== 0 ? (modifier > 0 ? `+${modifier}` : modifier) : ''}`,
+            details: `[${rolls.join(', ')}]${modifier !== 0 ? ` ${modifier > 0 ? '+' : '-'} ${Math.abs(modifier)}` : ''}`,
+            rolls: [{ die: `${quantity}d${dieType}`, values: rolls }]
+          },
+          createdAt: new Date().toISOString()
+        });
+      }
     }, 600);
   };
 

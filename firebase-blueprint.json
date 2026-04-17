@@ -266,6 +266,27 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["sessionId", "senderId", "senderName", "createdAt"]
+    },
+    "CatalogItem": {
+      "title": "CatalogItem",
+      "description": "Item saved in the global catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "rarity": { "type": "string" },
+        "weight": { "type": "number" },
+        "value": { "type": "integer" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "stats": { "type": "object" },
+        "damage": { "type": "string" },
+        "defense": { "type": "integer" },
+        "createdBy": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category"]
     }
   },
   "firestore": {
@@ -312,6 +333,10 @@
     "/chatMessages/{messageId}": {
       "schema": "ChatMessage",
       "description": "Messages for game session chats"
+    },
+    "/itemCatalog/{itemId}": {
+      "schema": "CatalogItem",
+      "description": "Global catalog of items created by players"
     }
   }
 }

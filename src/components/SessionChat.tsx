@@ -10,7 +10,8 @@ import {
   User,
   ExternalLink,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Dice6
 } from 'lucide-react';
 import { 
   db, 
@@ -34,19 +35,32 @@ interface ChatMessage {
   text: string;
   image?: string;
   createdAt: string;
+  type?: 'text' | 'roll';
+  rollData?: {
+    total: number;
+    formula: string;
+    details?: string;
+    rolls?: { die: string, values: number[] }[];
+    success?: boolean;
+  };
 }
 
 interface SessionChatProps {
   sessionId: string;
+  senderOverride?: {
+    name: string;
+    photo: string;
+  };
 }
 
-export default function SessionChat({ sessionId }: SessionChatProps) {
+export default function SessionChat({ sessionId, senderOverride }: SessionChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = React.useState('');
   const [imageUrl, setImageUrl] = React.useState('');
   const [showImageInput, setShowImageInput] = React.useState(false);
+  const [lastReadCount, setLastReadCount] = React.useState(0);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -69,13 +83,38 @@ export default function SessionChat({ sessionId }: SessionChatProps) {
       // Scroll to bottom on new messages
       setTimeout(() => {
         if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          scrollRef.current.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
         }
       }, 100);
     });
 
     return () => unsubscribe();
   }, [sessionId]);
+
+  // Update last read count when opening chat or receiving new messages while open
+  // Also scroll to bottom when opening
+  React.useEffect(() => {
+    if (isOpen) {
+      setLastReadCount(messages.length);
+      
+      // Scroll to bottom when chat is opened
+      // We use a slightly longer timeout to ensure the Framer Motion animation has started/completed
+      const timer = setTimeout(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTo({
+            top: scrollRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, messages.length]);
+
+  const unreadCount = Math.max(0, messages.length - lastReadCount);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,8 +124,8 @@ export default function SessionChat({ sessionId }: SessionChatProps) {
       await addDoc(collection(db, 'chatMessages'), {
         sessionId,
         senderId: auth.currentUser.uid,
-        senderName: auth.currentUser.displayName || 'Anônimo',
-        senderPhoto: auth.currentUser.photoURL || '',
+        senderName: senderOverride?.name || auth.currentUser.displayName || 'Anônimo',
+        senderPhoto: senderOverride?.photo || auth.currentUser.photoURL || '',
         text: newMessage.trim(),
         image: imageUrl.trim(),
         createdAt: new Date().toISOString()
@@ -189,20 +228,29 @@ export default function SessionChat({ sessionId }: SessionChatProps) {
                       )}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        {!isMe && (
-                          <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
-                            {msg.senderName}
-                          </span>
-                        )}
+                        <span className={cn(
+                          "text-[10px] font-mono uppercase tracking-widest",
+                          isMe ? "text-arcane/60" : "text-parchment/40"
+                        )}>
+                          {msg.senderName}
+                        </span>
                         <span className="text-[8px] font-mono text-parchment/20 uppercase">
                           {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                       <div className={cn(
-                        "p-3 rounded-2xl text-sm",
+                        "p-3 rounded-2xl text-sm transition-colors",
                         isMe 
-                          ? "bg-arcane text-obsidian rounded-tr-none" 
-                          : "bg-white/5 border border-white/10 text-parchment rounded-tl-none"
+                          ? cn(
+                              "bg-arcane text-obsidian rounded-tr-none",
+                              msg.rollData?.success === true && "bg-green-500 text-white shadow-[0_0_15px_rgba(34,197,94,0.3)]",
+                              msg.rollData?.success === false && "bg-ember text-white shadow-[0_0_15px_rgba(244,63,94,0.3)]"
+                            ) 
+                          : cn(
+                              "bg-white/5 border border-white/10 text-parchment rounded-tl-none",
+                              msg.rollData?.success === true && "border-green-500/50 bg-green-500/10 text-green-100 shadow-[0_0_15px_rgba(34,197,94,0.1)]",
+                              msg.rollData?.success === false && "border-ember/50 bg-ember/10 text-ember-100 shadow-[0_0_15px_rgba(244,63,94,0.1)]"
+                            )
                       )}>
                         {msg.image && (
                           <div className="mb-2 rounded-lg overflow-hidden border border-black/10">
@@ -217,6 +265,29 @@ export default function SessionChat({ sessionId }: SessionChatProps) {
                         <p className="whitespace-pre-wrap break-words">
                           {formatText(msg.text, isMe)}
                         </p>
+                        {msg.type === 'roll' && msg.rollData && (
+                          <div className={cn(
+                            "mt-2 p-2 rounded-xl border flex flex-col gap-1",
+                            isMe ? "bg-obsidian/10 border-obsidian/20" : "bg-arcane/10 border-arcane/20"
+                          )}>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-[10px] font-mono uppercase tracking-widest opacity-60">
+                                {msg.rollData.formula}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <Dice6 size={12} className={isMe ? "text-obsidian/60" : "text-arcane"} />
+                                <span className={cn("font-serif text-lg", isMe ? "text-obsidian" : "text-arcane text-glow-arcane")}>
+                                  {msg.rollData.total}
+                                </span>
+                              </div>
+                            </div>
+                            {msg.rollData.details && (
+                              <div className="text-[9px] font-mono opacity-40 break-all">
+                                {msg.rollData.details}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -324,9 +395,9 @@ export default function SessionChat({ sessionId }: SessionChatProps) {
         )}
       >
         {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
-        {!isOpen && messages.length > 0 && (
+        {!isOpen && unreadCount > 0 && (
           <div className="absolute -top-1 -right-1 w-5 h-5 bg-ember text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-obsidian">
-            {messages.length > 99 ? '99+' : messages.length}
+            {unreadCount > 99 ? '99+' : unreadCount}
           </div>
         )}
       </motion.button>

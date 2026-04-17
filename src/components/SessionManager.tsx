@@ -265,6 +265,22 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [baseSettings, setBaseSettings] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    // Fetch base settings from global config
+    const fetchBaseSettings = async () => {
+      try {
+        const settingsDoc = await getDocs(query(collection(db, 'globalSettings'), where('__name__', '==', 'config')));
+        if (!settingsDoc.empty) {
+          setBaseSettings(settingsDoc.docs[0].data());
+        }
+      } catch (error) {
+        console.error('Error fetching base settings:', error);
+      }
+    };
+    fetchBaseSettings();
+  }, []);
 
   React.useEffect(() => {
     if (!user) return;
@@ -293,15 +309,34 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
     
     try {
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      await addDoc(collection(db, 'gameSessions'), {
+      
+      // Merge base settings if available
+      const sessionData = {
         gmId: user.uid,
         name: newSessionName,
         code,
-        maxAttributePoints: 120,
-        playerIds: [],
         active: true,
-        createdAt: new Date().toISOString()
-      });
+        playerIds: [],
+        createdAt: new Date().toISOString(),
+        ...(baseSettings || {
+          maxAttributePoints: 120,
+          maxSingleAttributeValue: 100,
+          initialSkillPoints: 0,
+          initialPowerPoints: 0,
+          attrPointsPerLevel: 10,
+          skillPointsPerLevel: 5,
+          powerPointsPerLevel: 2,
+          npcDefaultMinAttr: 0,
+          npcDefaultMaxAttr: 100,
+          npcDefaultAttrPoints: 120,
+          npcDefaultSkillPoints: 10,
+          npcDefaultPowerPoints: 5,
+          pvFormula: '((FOR / 2) + CON) * 10',
+          atpFormula: '(INT + 3) * 3',
+        })
+      };
+
+      await addDoc(collection(db, 'gameSessions'), sessionData);
       setNewSessionName('');
       setIsCreating(false);
     } catch (error) {

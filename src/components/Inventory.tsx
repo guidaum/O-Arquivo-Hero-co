@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Backpack, 
@@ -19,10 +19,12 @@ import {
   Minus,
   Check,
   Dice6,
-  Sparkles
+  Sparkles,
+  GripVertical,
+  Pencil
 } from 'lucide-react';
 import { cn, rollDiceFormula } from '../lib/utils';
-import { db, doc, getDoc, setDoc, updateDoc } from '../firebase';
+import { auth, db, doc, getDoc, setDoc, updateDoc, collection, addDoc } from '../firebase';
 import { handleFirestoreError, OperationType } from '../firebase';
 
 export default function Inventory({ hideHeader = false }: { hideHeader?: boolean }) {
@@ -42,6 +44,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
   const [loading, setLoading] = React.useState(true);
   const [activeCategory, setActiveCategory] = React.useState('weapons');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [modalMode, setModalMode] = React.useState<'add' | 'edit'>('add');
+  const [editingItemId, setEditingItemId] = React.useState<string | number | null>(null);
   const [isMoneyModalOpen, setIsMoneyModalOpen] = React.useState(false);
   const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [moneyAmount, setMoneyAmount] = React.useState(0);
@@ -58,10 +62,41 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     ammo: '-',
     damage: '',
     defense: 0,
-    equipped: false
+    equipped: false,
+    image: ''
   });
 
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string } | null>(null);
+
+  const sendRollToChat = async (label: string, result: any, success?: boolean) => {
+    if (!character?.sessionId || !auth.currentUser) return;
+
+    try {
+      const rollData: any = {
+        total: result.total,
+        formula: result.detail,
+        details: result.rolls.map((r: any) => `${r.die}: [${r.values.join(', ')}]`).join(' | '),
+        rolls: result.rolls
+      };
+
+      if (success !== undefined) {
+        rollData.success = success;
+      }
+
+      await addDoc(collection(db, 'chatMessages'), {
+        sessionId: character.sessionId,
+        senderId: auth.currentUser.uid,
+        senderName: character.name || auth.currentUser.displayName || 'Anônimo',
+        senderPhoto: character.image || auth.currentUser.photoURL || '',
+        text: `Rolou ${label}: ${result.total}`,
+        type: 'roll',
+        rollData,
+        createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error sending roll to chat:', err);
+    }
+  };
 
   const handleQuickRoll = (name: string, damage: string) => {
     if (!damage || !character) return;
@@ -78,6 +113,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
 
     const result = rollDiceFormula(damage, currentStats);
     setQuickRoll({ result: result.total, total: result.total, name });
+    sendRollToChat(name, result);
     setTimeout(() => setQuickRoll(null), 5000);
   };
 
@@ -134,6 +170,30 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     }
   };
 
+  const saveToCatalog = async (item: any) => {
+    try {
+      const catalogId = item.name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      if (!catalogId) return;
+
+      await setDoc(doc(db, 'itemCatalog', catalogId), {
+        name: item.name,
+        category: item.category,
+        rarity: item.rarity,
+        weight: item.weight,
+        value: item.value,
+        stats: item.stats,
+        description: item.description,
+        damage: item.damage,
+        defense: item.defense,
+        image: item.image,
+        lastUpdated: new Date().toISOString(),
+        createdBy: character?.name || auth.currentUser?.displayName || 'Anônimo'
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error saving to catalog:', err);
+    }
+  };
+
   const handleUpdateMoney = async (amount: number) => {
     if (!characterId || !character) return;
     const currentMoney = character.money || 0;
@@ -151,36 +211,100 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     }
   };
 
-  const [sortBy, setSortBy] = React.useState('Raridade');
+  const [sortBy, setSortBy] = React.useState('Manual');
   const [filterRarity, setFilterRarity] = React.useState('Todas');
 
-  const handleAddItem = async () => {
+  const handleReorder = async (newOrder: any[]) => {
+    // We only update if we are in Manual sort mode
+    if (sortBy !== 'Manual') {
+      setSortBy('Manual');
+    }
+
+    const updatedItems = [...items];
+    
+    // Find index in main items array for each filtered item currently being reordered
+    const visibleItemIds = filteredItems.map(i => i.id);
+    const indicesInMaster = [];
+    
+    for (let i = 0; i < items.length; i++) {
+      if (visibleItemIds.includes(items[i].id)) {
+        indicesInMaster.push(i);
+      }
+    }
+
+    // Replace items at those master indices with the new order
+    indicesInMaster.forEach((masterIdx, orderIdx) => {
+      updatedItems[masterIdx] = newOrder[orderIdx];
+    });
+
+    setItems(updatedItems);
+    await saveToFirestore(updatedItems);
+  };
+
+  const handleSaveItem = async () => {
     if (newItem.name.trim()) {
-      const itemToAdd = {
+      const itemData = {
         ...newItem,
-        id: Math.random().toString(36).substring(2, 9),
-        image: `https://picsum.photos/seed/${newItem.name}/100/100`
+        stats: (newItem.damage || newItem.defense) 
+          ? (newItem.damage ? `Dano: ${newItem.damage}` : '') + (newItem.damage && newItem.defense ? ' | ' : '') + (newItem.defense ? `Defesa: +${newItem.defense}` : '')
+          : (newItem.stats || ''),
+        image: newItem.image.trim() || `https://picsum.photos/seed/${newItem.name}/100/100`
       };
-      const updatedItems = [...items, itemToAdd];
+
+      let updatedItems;
+      if (modalMode === 'edit' && editingItemId !== null) {
+        updatedItems = items.map(item => 
+          item.id === editingItemId ? { ...itemData, id: editingItemId } : item
+        );
+        setSaveStatus({ type: 'success', message: 'Item atualizado' });
+      } else {
+        const itemToAdd = {
+          ...itemData,
+          id: Math.random().toString(36).substring(2, 9)
+        };
+        updatedItems = [...items, itemToAdd];
+        setSaveStatus({ type: 'success', message: 'Item adicionado' });
+      }
+      
       setItems(updatedItems);
       await saveToFirestore(updatedItems);
-      setSaveStatus({ type: 'success', message: 'Item adicionado' });
+      await saveToCatalog(itemData);
       setIsModalOpen(false);
-      setNewItem({
-        name: '',
-        category: 'misc',
-        rarity: 'Comum',
-        weight: 0,
-        value: 0,
-        stats: '',
-        description: '',
-        quantity: 1,
-        ammo: '-',
-        damage: '',
-        defense: 0,
-        equipped: false
-      });
+      resetNewItem();
     }
+  };
+
+  const resetNewItem = () => {
+    setNewItem({
+      name: '',
+      category: 'misc',
+      rarity: 'Comum',
+      weight: 0,
+      value: 0,
+      stats: '',
+      description: '',
+      quantity: 1,
+      ammo: '-',
+      damage: '',
+      defense: 0,
+      equipped: false,
+      image: ''
+    });
+    setEditingItemId(null);
+    setModalMode('add');
+    setTouched({});
+  };
+
+  const openAddModal = () => {
+    resetNewItem();
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (item: any) => {
+    setNewItem({ ...item });
+    setEditingItemId(item.id);
+    setModalMode('edit');
+    setIsModalOpen(true);
   };
 
   const removeItem = async (id: string | number) => {
@@ -210,7 +334,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       }
       if (sortBy === 'Peso') return b.weight - a.weight;
       if (sortBy === 'Valor') return b.value - a.value;
-      return 0;
+      return 0; // 'Manual' uses the original array order
     });
 
   if (loading) {
@@ -307,7 +431,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
             </div>
             <div>
               <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-widest">Carga</p>
-              <p className="text-base sm:text-lg font-serif">{items.reduce((acc, item) => acc + (item.weight || 0), 0).toFixed(1)} / 150 <span className="text-xs text-arcane">LB</span></p>
+              <p className="text-base sm:text-lg font-serif">{items.reduce((acc, item) => acc + (item.weight || 0), 0).toFixed(1)} / 150 <span className="text-xs text-arcane">KG</span></p>
             </div>
           </div>
         </div>
@@ -347,7 +471,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
 
           <div className="pt-2 lg:pt-6">
             <button 
-              onClick={() => setIsModalOpen(true)}
+              onClick={openAddModal}
               className="w-full py-4 glass border border-dashed border-white/10 rounded-2xl text-parchment/40 hover:text-parchment hover:border-white/20 transition-all flex items-center justify-center gap-2 text-sm font-medium"
             >
               <Plus size={16} />
@@ -385,6 +509,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                   onChange={(e) => setSortBy(e.target.value)}
                   className="bg-white/5 border border-white/10 rounded-lg px-3 py-1 text-xs focus:outline-none focus:border-arcane/50"
                 >
+                  <option value="Manual">Manual</option>
                   <option value="Raridade">Raridade</option>
                   <option value="Peso">Peso</option>
                   <option value="Valor">Valor</option>
@@ -393,17 +518,33 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Reorder.Group 
+            axis="y" 
+            values={filteredItems} 
+            onReorder={handleReorder}
+            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+          >
             {filteredItems.map((item, idx) => (
-              <motion.div
+              <Reorder.Item
                 key={item.id}
+                value={item}
+                dragListener={sortBy === 'Manual'}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: idx * 0.05 }}
-                className="glass p-5 rounded-3xl group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30 cursor-pointer"
+                className={cn(
+                  "glass p-5 rounded-3xl group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30 cursor-pointer",
+                  sortBy !== 'Manual' && "cursor-default"
+                )}
               >
                 <div className="flex items-center gap-5">
-                  <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 relative">
+                  <div className="flex items-center gap-2">
+                    {sortBy === 'Manual' && (
+                      <div className="text-parchment/20 group-hover:text-parchment/40 cursor-grab active:cursor-grabbing">
+                        <GripVertical size={20} />
+                      </div>
+                    )}
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 relative shrink-0">
                     <img 
                       src={item.image} 
                       alt={item.name} 
@@ -416,7 +557,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                       item.rarity === 'Rare' ? "bg-arcane/20" : "bg-white/5"
                     )} />
                   </div>
-                  <div className="flex-1">
+                </div>
+                <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
                       <h5 className="font-serif text-lg">{item.name}</h5>
                       <span className={cn(
@@ -430,7 +572,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     </div>
                     <p className="text-[10px] text-arcane font-mono mb-2">{item.stats}</p>
                     <div className="flex items-center gap-4 text-[10px] text-parchment/40 font-mono">
-                      <span className="flex items-center gap-1"><Weight size={10} /> {item.weight} LB</span>
+                      <span className="flex items-center gap-1"><Weight size={10} /> {item.weight} KG</span>
                       <span className="flex items-center gap-1"><Coins size={10} /> {item.value} Dinheiro</span>
                     </div>
                   </div>
@@ -464,6 +606,16 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
+                        openEditModal(item);
+                      }}
+                      className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-arcane"
+                      title="Editar Item"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
                         alert(`${item.name}\n\n${item.description || 'Sem descrição.'}\n\n${item.stats}`);
                       }}
                       className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-gold"
@@ -481,7 +633,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     <X size={18} />
                   </button>
                 </div>
-              </motion.div>
+              </Reorder.Item>
             ))}
 
             {filteredItems.length === 0 && (
@@ -495,7 +647,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                 </div>
               </div>
             )}
-          </div>
+          </Reorder.Group>
         </div>
       </div>
 
@@ -588,11 +740,13 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
                   <div className="p-3 rounded-2xl bg-arcane/10 text-arcane">
-                    <Plus size={24} />
+                    {modalMode === 'edit' ? <Pencil size={24} /> : <Plus size={24} />}
                   </div>
                   <div>
-                    <h2 className="text-2xl font-serif">Adicionar Item Personalizado</h2>
-                    <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Crie um novo item para o seu inventário</p>
+                    <h2 className="text-2xl font-serif">{modalMode === 'edit' ? 'Editar Item' : 'Adicionar Item Personalizado'}</h2>
+                    <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      {modalMode === 'edit' ? 'Modifique os detalhes do seu item' : 'Crie um novo item para o seu inventário'}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -605,22 +759,35 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
 
               <div className="p-8 space-y-6">
                 <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome do Item</label>
-                    <input
-                      type="text"
-                      value={newItem.name}
-                      onChange={e => setNewItem({ ...newItem, name: e.target.value })}
-                      onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
-                      placeholder="Ex: Escudo de Escamas de Dragão"
-                      className={cn(
-                        "w-full bg-white/5 border rounded-xl px-4 py-2 text-sm focus:outline-none transition-colors",
-                        touched.name && !newItem.name.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome do Item</label>
+                      <input
+                        type="text"
+                        value={newItem.name}
+                        onChange={e => setNewItem({ ...newItem, name: e.target.value })}
+                        onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
+                        placeholder="Ex: Escudo de Escamas de Dragão"
+                        className={cn(
+                          "w-full bg-white/5 border rounded-xl px-4 py-2 text-sm focus:outline-none transition-colors",
+                          touched.name && !newItem.name.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                        )}
+                      />
+                      {touched.name && !newItem.name.trim() && (
+                        <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome do item é obrigatório</p>
                       )}
-                    />
-                    {touched.name && !newItem.name.trim() && (
-                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome do item é obrigatório</p>
-                    )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem</label>
+                      <input
+                        type="text"
+                        value={newItem.image}
+                        onChange={e => setNewItem({ ...newItem, image: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-arcane/50 font-mono"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -653,7 +820,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Peso (LB)</label>
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Peso (KG)</label>
                       <input
                         type="number"
                         step="0.1"
@@ -707,10 +874,10 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                 </div>
 
                 <button
-                  onClick={handleAddItem}
+                  onClick={handleSaveItem}
                   className="w-full py-4 bg-arcane text-obsidian rounded-2xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-arcane/20"
                 >
-                  Adicionar ao Inventário
+                  {modalMode === 'edit' ? 'Salvar Alterações' : 'Adicionar ao Inventário'}
                 </button>
               </div>
             </motion.div>

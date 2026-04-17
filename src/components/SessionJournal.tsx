@@ -17,7 +17,10 @@ import {
   Trash2,
   X,
   Edit2,
-  ScrollText
+  ScrollText,
+  Filter,
+  Shield,
+  Gamepad2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { 
@@ -52,6 +55,7 @@ interface JournalEntry {
   id: string;
   ownerId: string;
   gameSessionId?: string;
+  characterId?: string;
   title: string;
   date: string;
   location: string;
@@ -64,11 +68,19 @@ interface JournalEntry {
   createdAt: string;
 }
 
-export default function SessionJournal({ gameSessionId: propGameSessionId }: { gameSessionId?: string }) {
+export default function SessionJournal({ gameSessionId: propGameSessionId, characterId: propCharacterId }: { gameSessionId?: string, characterId?: string }) {
   const [searchParams] = useSearchParams();
   const gameSessionId = propGameSessionId || searchParams.get('sessionId');
+  const characterId = propCharacterId || searchParams.get('characterId');
+  
   const [entries, setEntries] = React.useState<JournalEntry[]>([]);
+  const [userCharacters, setUserCharacters] = React.useState<any[]>([]);
   const [currentEntry, setCurrentEntry] = React.useState<JournalEntry | null>(null);
+  const [filterMode, setFilterMode] = React.useState<'session' | 'character' | 'all'>(
+    gameSessionId ? 'session' : characterId ? 'character' : 'all'
+  );
+  const [selectedCharacterId, setSelectedCharacterId] = React.useState<string>(characterId || '');
+  
   const [isEditing, setIsEditing] = React.useState(false);
   const [isAdding, setIsAdding] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -78,10 +90,27 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
   React.useEffect(() => {
     if (!user) return;
 
-    let q = query(collection(db, 'journalEntries'), where('ownerId', '==', user.uid));
+    // Fetch user characters for the dropdown
+    const charQuery = query(collection(db, 'characters'), where('ownerId', '==', user.uid));
+    const unsubscribeChars = onSnapshot(charQuery, (snapshot) => {
+      const charData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUserCharacters(charData);
+    });
+
+    return () => unsubscribeChars();
+  }, [user]);
+
+  React.useEffect(() => {
+    if (!user) return;
+
+    let q;
     
-    if (gameSessionId) {
+    if (filterMode === 'session' && gameSessionId) {
       q = query(collection(db, 'journalEntries'), where('gameSessionId', '==', gameSessionId));
+    } else if (filterMode === 'character' && selectedCharacterId) {
+      q = query(collection(db, 'journalEntries'), where('characterId', '==', selectedCharacterId));
+    } else {
+      q = query(collection(db, 'journalEntries'), where('ownerId', '==', user.uid));
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -90,15 +119,21 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
         ...doc.data()
       })) as JournalEntry[];
       
-      setEntries(entryData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-      if (entryData.length > 0 && !currentEntry) {
-        setCurrentEntry(entryData[0]);
+      const sortedEntries = entryData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setEntries(sortedEntries);
+      
+      if (sortedEntries.length > 0) {
+        if (!currentEntry || !sortedEntries.find(e => e.id === currentEntry.id)) {
+          setCurrentEntry(sortedEntries[0]);
+        }
+      } else {
+        setCurrentEntry(null);
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [user, gameSessionId]);
+  }, [user, gameSessionId, filterMode, selectedCharacterId]);
 
   const handleSaveEntry = async (entry: Partial<JournalEntry>) => {
     if (!user) return;
@@ -111,7 +146,8 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
         const newEntry = {
           ...entry,
           ownerId: user.uid,
-          gameSessionId: gameSessionId || null,
+          gameSessionId: entry.gameSessionId || gameSessionId || null,
+          characterId: entry.characterId || selectedCharacterId || null,
           createdAt: new Date().toISOString(),
           timeline: entry.timeline || [],
           npcs: entry.npcs || [],
@@ -151,7 +187,7 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
       {/* Header with Entry Selector */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
@@ -169,11 +205,62 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
         </div>
         <button 
           onClick={() => setIsAdding(true)}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-arcane/20 text-arcane border border-arcane/30 rounded-xl hover:bg-arcane/30 transition-all text-sm font-medium w-full sm:w-auto"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-arcane/20 text-arcane border border-arcane/30 rounded-xl hover:bg-arcane/30 transition-all text-sm font-medium w-full sm:w-auto font-mono uppercase tracking-wider"
         >
           <Plus size={18} />
           Novo Registro
         </button>
+      </div>
+
+      {/* Filtering Controls */}
+      <div className="flex flex-wrap gap-4 items-center glass p-4 rounded-2xl border-white/5">
+        <div className="flex items-center gap-2">
+          <Filter size={16} className="text-arcane" />
+          <span className="text-sm font-mono text-parchment/40 uppercase tracking-widest">Visualizar:</span>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setFilterMode('all')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5",
+              filterMode === 'all' ? "bg-arcane text-obsidian" : "glass hover:bg-white/10"
+            )}
+          >
+            <ScrollText size={12} /> Tudo
+          </button>
+          <button 
+            onClick={() => setFilterMode('session')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-medium transition-all invisible hidden",
+              gameSessionId && "visible flex items-center gap-1.5",
+              filterMode === 'session' ? "bg-arcane text-obsidian" : "glass hover:bg-white/10"
+            )}
+          >
+            <Gamepad2 size={12} /> Campanha
+          </button>
+          <button 
+            onClick={() => setFilterMode('character')}
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5",
+              filterMode === 'character' ? "bg-arcane text-obsidian" : "glass hover:bg-white/10"
+            )}
+          >
+            <Shield size={12} /> Personagem
+          </button>
+        </div>
+        
+        {filterMode === 'character' && (
+          <select 
+            className="glass px-4 py-1.5 rounded-lg text-[10px] font-mono uppercase tracking-wider focus:outline-none border-white/10 bg-obsidian text-parchment/70"
+            value={selectedCharacterId}
+            onChange={(e) => setSelectedCharacterId(e.target.value)}
+          >
+            <option value="">Selecione um Personagem</option>
+            {userCharacters.map(char => (
+              <option key={char.id} value={char.id} className="bg-obsidian">{char.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {currentEntry ? (
@@ -192,6 +279,11 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
                 <div className="flex flex-col gap-2 sm:gap-4">
                   <div className="flex items-center gap-4">
                     <span className="px-3 py-1 glass-arcane text-arcane text-[10px] font-mono uppercase tracking-widest rounded-full">Registro</span>
+                    {currentEntry.characterId && (
+                      <span className="flex items-center gap-1.5 px-3 py-1 bg-gold/10 text-gold text-[10px] font-mono uppercase tracking-widest rounded-full border border-gold/20">
+                        <Shield size={10} /> {userCharacters.find(c => c.id === currentEntry.characterId)?.name || 'Personagem'}
+                      </span>
+                    )}
                     <span className="flex items-center gap-1.5 text-parchment/60 text-xs font-mono">
                       <Calendar size={14} /> {new Date(currentEntry.date).toLocaleDateString('pt-BR')}
                     </span>
@@ -444,6 +536,7 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
 
               <JournalForm 
                 initialData={isEditing ? currentEntry : undefined}
+                userCharacters={userCharacters}
                 onSave={handleSaveEntry}
                 onCancel={() => { setIsEditing(false); setIsAdding(false); }}
               />
@@ -455,8 +548,9 @@ export default function SessionJournal({ gameSessionId: propGameSessionId }: { g
   );
 }
 
-function JournalForm({ initialData, onSave, onCancel }: { 
+function JournalForm({ initialData, userCharacters, onSave, onCancel }: { 
   initialData?: JournalEntry | null, 
+  userCharacters: any[],
   onSave: (data: Partial<JournalEntry>) => void,
   onCancel: () => void 
 }) {
@@ -470,6 +564,7 @@ function JournalForm({ initialData, onSave, onCancel }: {
     timeline: [],
     npcs: [],
     gallery: [],
+    characterId: '',
     ...initialData
   });
 
@@ -593,6 +688,20 @@ function JournalForm({ initialData, onSave, onCancel }: {
             />
           </div>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Vincular a Personagem (Opcional)</label>
+        <select 
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors text-parchment/70 bg-obsidian"
+          value={formData.characterId || ''}
+          onChange={(e) => setFormData({ ...formData, characterId: e.target.value })}
+        >
+          <option value="">Nenhum Personagem (Geral da Sessão)</option>
+          {userCharacters.map(char => (
+            <option key={char.id} value={char.id}>{char.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-2">
