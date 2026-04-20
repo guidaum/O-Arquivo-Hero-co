@@ -260,7 +260,7 @@ service cloud.firestore {
 
     function isValidSuggestion(data) {
       return data.keys().hasAll(['type', 'data', 'suggestedBy', 'status']) &&
-             data.type in ['skill', 'power'] &&
+             data.type in ['skill', 'power', 'trait'] &&
              data.status in ['pending', 'approved', 'rejected'] &&
              data.suggestedBy == request.auth.uid &&
              data.data is map;
@@ -353,7 +353,7 @@ service cloud.firestore {
 
     match /suggestions/{suggestionId} {
       allow read: if isAuthenticated() && (resource.data.suggestedBy == request.auth.uid || isGM());
-      allow create: if isAuthenticated() && isValidSuggestion(request.resource.data) && request.resource.data.status == 'pending';
+      allow create: if isAuthenticated() && request.resource.data.suggestedBy == request.auth.uid && request.resource.data.status == 'pending';
       allow update: if isGM() && 
         request.resource.data.suggestedBy == resource.data.suggestedBy &&
         request.resource.data.type == resource.data.type &&
@@ -372,11 +372,7 @@ service cloud.firestore {
 
     match /itemCatalog/{itemId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && 
-                            request.resource.data.name is string && 
-                            request.resource.data.name.size() > 0 && 
-                            request.resource.data.name.size() < 100;
-      allow delete: if isGM();
+      allow create, update, delete: if isGM();
     }
 
     // Default deny

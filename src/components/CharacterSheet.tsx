@@ -583,6 +583,19 @@ export default function CharacterSheet() {
     return mods;
   }, [resolvedTraits, globalSettings]);
 
+  const itemStatsMods = React.useMemo(() => {
+    const mods: Record<string, number> = {};
+    const equippedItems = inventory.filter(item => item.equipped);
+    equippedItems.forEach(item => {
+      if (item.stats) {
+        Object.entries(item.stats).forEach(([stat, value]) => {
+          mods[stat] = (mods[stat] || 0) + (Number(value) || 0);
+        });
+      }
+    });
+    return mods;
+  }, [inventory]);
+
   const attributes = React.useMemo(() => {
     const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
 
@@ -590,9 +603,10 @@ export default function CharacterSheet() {
       ...attr,
       value: stats[attr.id] || 0,
       mod: statsMods[attr.id] || 0,
-      traitMod: traitStatsMods[attr.id] || 0
+      traitMod: traitStatsMods[attr.id] || 0,
+      itemMod: itemStatsMods[attr.id] || 0
     }));
-  }, [globalSettings, stats, statsMods, traitStatsMods]);
+  }, [globalSettings, stats, statsMods, traitStatsMods, itemStatsMods]);
 
   if (loading) {
     return (
@@ -661,7 +675,7 @@ export default function CharacterSheet() {
 
   const getAttr = (id: string) => {
     const attr = attributes.find(a => a.id === id);
-    return (attr?.value || 0) + (attr?.mod || 0) + (traitStatsMods[id] || 0);
+    return (attr?.value || 0) + (attr?.mod || 0) + (traitStatsMods[id] || 0) + (itemStatsMods[id] || 0);
   };
   
   const FOR = getAttr('for');
@@ -1268,7 +1282,7 @@ export default function CharacterSheet() {
                               key={d.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleQuickRoll(attr.label, attr.value + attr.mod + attr.traitMod, d.id as any, 10);
+                                handleQuickRoll(attr.label, getAttr(attr.id), d.id as any, 10);
                                 setActiveRollAttr(null);
                               }}
                               className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
@@ -1380,9 +1394,18 @@ export default function CharacterSheet() {
                         "text-lg sm:text-xl font-serif leading-none",
                         attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
                       )}>
-                        {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
+                         {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
                       </p>
                       <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">TRAÇO</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={cn(
+                        "text-lg sm:text-xl font-serif leading-none",
+                        attr.itemMod > 0 ? "text-arcane" : attr.itemMod < 0 ? "text-ember" : "text-parchment/20"
+                      )}>
+                        {attr.itemMod > 0 ? `+${attr.itemMod}` : attr.itemMod}
+                      </p>
+                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">ITEM</p>
                     </div>
                   </div>
                 </motion.div>

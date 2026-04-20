@@ -24,7 +24,12 @@ import {
   Target,
   Star,
   X,
-  Info
+  Info,
+  Package,
+  History,
+  Edit2,
+  Backpack,
+  Pencil
 } from 'lucide-react';
 import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
@@ -100,6 +105,10 @@ export default function CharacterCreation() {
   const [showSkillSuggestion, setShowSkillSuggestion] = React.useState(false);
   const [showPowerSuggestion, setShowPowerSuggestion] = React.useState(false);
   const [showTraitSuggestion, setShowTraitSuggestion] = React.useState(false);
+
+  const [itemCatalog, setItemCatalog] = React.useState<any[]>([]);
+  const [showCatalog, setShowCatalog] = React.useState(false);
+  const [catalogSearch, setCatalogSearch] = React.useState('');
   const [suggestionData, setSuggestionData] = React.useState({
     name: '',
     type: '',
@@ -162,7 +171,11 @@ export default function CharacterCreation() {
     ammo: '-',
     damage: '',
     defense: 0,
-    equipped: false
+    equipped: false,
+    stats: {} as Record<string, number>,
+    image: '',
+    category: 'Geral',
+    rarity: 'Common'
   });
 
   const handleAddEquip = () => {
@@ -175,13 +188,29 @@ export default function CharacterCreation() {
         ammo: '-',
         damage: '',
         defense: 0,
-        equipped: false
+        equipped: false,
+        stats: {},
+        image: '',
+        category: 'Geral',
+        rarity: 'Common'
       });
     }
   };
 
   const removeEquip = (id: string) => {
     setEquipment(equipment.filter(e => e.id !== id));
+  };
+
+  const importFromCatalog = (item: any) => {
+    setEquipment([...equipment, {
+      ...item,
+      id: Math.random().toString(36).substring(2, 9),
+      quantity: 1,
+      equipped: false,
+      stats: item.stats || {}
+    }]);
+    setShowCatalog(false);
+    setSaveStatus({ type: 'success', message: 'Item importado do catálogo!' });
   };
 
   React.useEffect(() => {
@@ -267,6 +296,9 @@ export default function CharacterCreation() {
 
         const traitsSnap = await getDocs(collection(db, 'traits'));
         setAvailableTraits(traitsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        const catalogSnap = await getDocs(collection(db, 'itemCatalog'));
+        setItemCatalog(catalogSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) {
         console.error('Error fetching library:', error);
       }
@@ -1650,10 +1682,19 @@ export default function CharacterCreation() {
 
                 {/* Equipment Form */}
                 <div className="glass p-8 rounded-[2.5rem] space-y-6 border border-white/10">
-                  <h3 className="text-xl font-serif flex items-center gap-2">
-                    <Plus className="text-arcane" size={20} />
-                    Adicionar Novo Equipamento
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-serif flex items-center gap-2">
+                      <Plus className="text-arcane" size={20} />
+                      Adicionar Novo Equipamento
+                    </h3>
+                    <button 
+                      onClick={() => setShowCatalog(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-arcane/10 hover:bg-arcane/20 text-arcane rounded-xl font-mono text-[10px] uppercase tracking-widest border border-arcane/30 transition-all"
+                    >
+                      <Search size={14} />
+                      Buscar no Catálogo
+                    </button>
+                  </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -1716,6 +1757,25 @@ export default function CharacterCreation() {
                       </label>
                     </div>
                     <div className="md:col-span-2 space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificadores de Atributo</label>
+                      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                        {attributes.map(attr => (
+                          <div key={attr.id} className="space-y-1">
+                            <p className="text-[8px] font-mono text-parchment/40 uppercase text-center">{attr.id}</p>
+                            <input 
+                              type="number"
+                              value={newEquip.stats?.[attr.id] || 0}
+                              onChange={e => setNewEquip({
+                                ...newEquip,
+                                stats: { ...newEquip.stats, [attr.id]: parseInt(e.target.value) || 0 }
+                              })}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-1 py-1 text-center text-xs focus:outline-none focus:border-arcane/50 font-mono"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="md:col-span-2 space-y-2">
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição</label>
                       <textarea 
                         value={newEquip.description}
@@ -1748,16 +1808,27 @@ export default function CharacterCreation() {
                         className="glass p-5 rounded-3xl flex items-center justify-between group border border-white/10 hover:border-arcane/30"
                       >
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-arcane">
-                            <Shield size={18} />
+                          <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center border border-white/10",
+                            item.equipped ? "bg-arcane/20 text-arcane" : "bg-white/5 text-parchment/40"
+                          )}>
+                            {item.defense > 0 ? <Shield size={22} /> : <Sword size={22} />}
                           </div>
                           <div>
-                            <h5 className="font-serif text-lg">{item.name}</h5>
-                            <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-wider">
-                              Qtd: {item.quantity} • Mun: {item.ammo} • Dano: {item.damage || 'N/A'} 
-                              {item.defense > 0 && ` • Defesa: +${item.defense}`}
-                              {item.equipped && ' • [EQUIPADO]'}
-                            </span>
+                            <h4 className="font-serif text-lg">{item.name}</h4>
+                            <div className="flex items-center gap-3 text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                              <span>Qtd: {item.quantity}</span>
+                              {item.damage && <span>Dano: {item.damage}</span>}
+                              {item.defense > 0 && <span>Defesa: +{item.defense}</span>}
+                              {item.stats && Object.entries(item.stats).some(([_, v]) => (v as number) !== 0) && (
+                                <span className="text-arcane">
+                                  MODS: {Object.entries(item.stats)
+                                    .filter(([_, v]) => (v as number) !== 0)
+                                    .map(([k, v]) => `${k.toUpperCase()} ${Number(v) > 0 ? '+' : ''}${v}`)
+                                    .join(' | ')}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <button 
@@ -1948,9 +2019,10 @@ export default function CharacterCreation() {
                     {step === 1 ? 'Continuar para Atributos' : 
                      step === 2 ? 'Continuar para Vantagens/Defeitos' : 
                      step === 3 ? 'Continuar para Perícias' : 
-                     step === 4 ? 'Continuar para Poderes' : 
-                     step === 5 ? 'Continuar para Equipamento' : 
-                     step === 6 ? 'Revisar Personagem' : 
+                     step === 4 ? 'Continuar para Dificuldades' : 
+                     step === 5 ? 'Continuar para Poderes' : 
+                     step === 6 ? 'Continuar para Equipamento' : 
+                     step === 7 ? 'Revisar Personagem' : 
                      'Próximo Passo'}
                   </span>
                   <ChevronRight size={18} />
@@ -1976,6 +2048,90 @@ export default function CharacterCreation() {
           </section>
         </div>
       </div>
+
+      {/* Suggestion Modals */}
+      <AnimatePresence>
+        {showCatalog && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCatalog(false)}
+              className="absolute inset-0 bg-obsidian/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-4xl glass p-8 rounded-[2.5rem] border border-white/10 space-y-6 overflow-y-auto max-h-[90vh] no-scrollbar"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-3xl font-serif">Catálogo de Itens</h3>
+                  <p className="text-parchment/40 font-mono text-xs uppercase tracking-widest">Selecione um item pré-definido pelo mestre</p>
+                </div>
+                <button 
+                  onClick={() => setShowCatalog(false)}
+                  className="p-2 glass rounded-full hover:bg-white/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
+                <input 
+                  type="text"
+                  placeholder="Buscar no catálogo..."
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-4 focus:outline-none focus:border-arcane/50 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {itemCatalog
+                  .filter(i => i.name.toLowerCase().includes(catalogSearch.toLowerCase()))
+                  .map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => importFromCatalog(item)}
+                      className="glass p-6 rounded-3xl text-left border border-white/10 hover:border-arcane/50 hover:bg-arcane/5 transition-all group"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-serif text-xl group-hover:text-arcane transition-colors">{item.name}</h4>
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-[8px] font-mono uppercase tracking-widest text-parchment/40 border border-white/10">
+                          {item.rarity}
+                        </span>
+                      </div>
+                      <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{item.description}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {item.damage && (
+                          <span className="px-2 py-0.5 rounded bg-ember/10 text-ember text-[9px] font-mono uppercase">
+                            Dano: {item.damage}
+                          </span>
+                        )}
+                        {item.stats && Object.entries(item.stats).map(([k, v]) => (v as number) !== 0 && (
+                          <span key={k} className="px-2 py-0.5 rounded bg-arcane/10 text-arcane text-[9px] font-mono uppercase">
+                            {k}: {Number(v) > 0 ? '+' : ''}{v}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+              
+              {itemCatalog.length === 0 && (
+                <div className="text-center py-12">
+                  <Package size={48} className="text-parchment/10 mx-auto mb-4" />
+                  <p className="text-parchment/40 font-serif">Catálogo vazio. Peça ao mestre para adicionar itens.</p>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Suggestion Modals */}
       <AnimatePresence>

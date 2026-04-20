@@ -40,6 +40,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
   ];
 
   const [character, setCharacter] = React.useState<any>(null);
+  const [globalSettings, setGlobalSettings] = React.useState<any>(null);
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [activeCategory, setActiveCategory] = React.useState('weapons');
@@ -56,7 +57,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     rarity: 'Comum',
     weight: 0,
     value: 0,
-    stats: '',
+    stats: {} as Record<string, number>,
     description: '',
     quantity: 1,
     ammo: '-',
@@ -126,6 +127,13 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       try {
         const docRef = doc(db, 'characters', characterId);
         const docSnap = await getDoc(docRef);
+
+        // Fetch Global Settings
+        const settingsSnap = await getDoc(doc(db, 'globalSettings', 'config'));
+        if (settingsSnap.exists()) {
+          setGlobalSettings(settingsSnap.data());
+        }
+
         if (docSnap.exists()) {
           const data = docSnap.data();
           setCharacter(data);
@@ -137,7 +145,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
             rarity: item.rarity || 'Comum',
             weight: item.weight || 0,
             value: item.value || 0,
-            stats: item.stats || (item.damage ? `Dano: ${item.damage}` : item.defense ? `Defesa: +${item.defense}` : ''),
+            stats: typeof item.stats === 'object' ? item.stats : {},
             image: item.image || `https://picsum.photos/seed/${item.name}/100/100`
           }));
           setItems(mappedItems);
@@ -245,9 +253,6 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     if (newItem.name.trim()) {
       const itemData = {
         ...newItem,
-        stats: (newItem.damage || newItem.defense) 
-          ? (newItem.damage ? `Dano: ${newItem.damage}` : '') + (newItem.damage && newItem.defense ? ' | ' : '') + (newItem.defense ? `Defesa: +${newItem.defense}` : '')
-          : (newItem.stats || ''),
         image: newItem.image.trim() || `https://picsum.photos/seed/${newItem.name}/100/100`
       };
 
@@ -281,7 +286,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       rarity: 'Comum',
       weight: 0,
       value: 0,
-      stats: '',
+      stats: {},
       description: '',
       quantity: 1,
       ammo: '-',
@@ -570,7 +575,14 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                         {item.rarity}
                       </span>
                     </div>
-                    <p className="text-[10px] text-arcane font-mono mb-2">{item.stats}</p>
+                    <p className="text-[10px] text-arcane font-mono mb-2">
+                      {item.stats && typeof item.stats === 'object' 
+                        ? Object.entries(item.stats)
+                            .filter(([_, val]) => Number(val) !== 0)
+                            .map(([key, val]) => `${key.toUpperCase()}: ${Number(val) > 0 ? '+' : ''}${val}`)
+                            .join(' | ')
+                        : ''}
+                    </p>
                     <div className="flex items-center gap-4 text-[10px] text-parchment/40 font-mono">
                       <span className="flex items-center gap-1"><Weight size={10} /> {item.weight} KG</span>
                       <span className="flex items-center gap-1"><Coins size={10} /> {item.value} Dinheiro</span>
@@ -616,7 +628,19 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        alert(`${item.name}\n\n${item.description || 'Sem descrição.'}\n\n${item.stats}`);
+                        let statsSummary = '';
+                        if (item.stats && typeof item.stats === 'object') {
+                          const entries = Object.entries(item.stats);
+                          if (entries.length > 0) {
+                            statsSummary = '\n\nModificadores:\n' + entries
+                              .map(([key, val]) => {
+                                const v = Number(val) || 0;
+                                return `${key.toUpperCase()}: ${v > 0 ? '+' : ''}${v}`;
+                              })
+                              .join(', ');
+                          }
+                        }
+                        alert(`${item.name}\n\n${item.description || 'Sem descrição.'}${statsSummary}`);
                       }}
                       className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-gold"
                     >
@@ -840,12 +864,47 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     </div>
                   </div>
 
+                  <div className="space-y-4 pt-4 border-t border-white/5">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Modificadores de Atributo</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {(globalSettings?.attributes || [
+                        { id: 'for', label: 'For' },
+                        { id: 'con', label: 'Con' },
+                        { id: 'agi', label: 'Agi' },
+                        { id: 'per', label: 'Per' },
+                        { id: 'vel', label: 'Vel' },
+                        { id: 'ini', label: 'Ini' },
+                        { id: 'int', label: 'Int' },
+                        { id: 'cor', label: 'Cor' }
+                      ]).map((attr: any) => (
+                        <div key={attr.id} className="space-y-1">
+                          <label className="text-[9px] font-mono text-parchment/30 uppercase tracking-tighter ml-1">{attr.label || attr.id.toUpperCase()}</label>
+                          <input
+                            type="number"
+                            value={newItem.stats[attr.id] || 0}
+                            onChange={e => {
+                              const val = parseInt(e.target.value) || 0;
+                              const newStats = { ...newItem.stats };
+                              if (val === 0) {
+                                delete newStats[attr.id];
+                              } else {
+                                newStats[attr.id] = val;
+                              }
+                              setNewItem({ ...newItem, stats: newStats });
+                            }}
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-center focus:outline-none focus:border-arcane/50"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Atributos / Descrição</label>
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Descrição Adicional</label>
                     <textarea
                       value={newItem.description}
                       onChange={e => setNewItem({ ...newItem, description: e.target.value })}
-                      placeholder="Ex: +2 CA, Resistência a Fogo"
+                      placeholder="Ex: Resistência a Fogo, Brilha no escuro..."
                       rows={2}
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-arcane/50 resize-none"
                     />

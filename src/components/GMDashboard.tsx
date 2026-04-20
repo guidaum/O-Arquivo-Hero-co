@@ -1436,20 +1436,28 @@ export default function GMDashboard() {
     setIsEditingCatalog(true);
   };
 
-  const handleUpdateCatalogItem = async () => {
-    if (!editingCatalogId) return;
+  const handleSaveCatalogItem = async () => {
     try {
-      await updateDoc(doc(db, 'itemCatalog', editingCatalogId), {
-        ...catalogItemForm,
-        lastUpdated: new Date().toISOString()
-      });
+      if (editingCatalogId) {
+        await updateDoc(doc(db, 'itemCatalog', editingCatalogId), {
+          ...catalogItemForm,
+          lastUpdated: new Date().toISOString()
+        });
+        setSaveStatus({ type: 'success', message: 'Item do catálogo atualizado!' });
+      } else {
+        await addDoc(collection(db, 'itemCatalog'), {
+          ...catalogItemForm,
+          createdBy: 'Mestre',
+          createdAt: new Date().toISOString()
+        });
+        setSaveStatus({ type: 'success', message: 'Item criado no catálogo!' });
+      }
       setIsEditingCatalog(false);
       setEditingCatalogId(null);
-      setSaveStatus({ type: 'success', message: 'Item do catálogo atualizado!' });
     } catch (err) {
-      console.error('Error updating catalog item:', err);
-      handleFirestoreError(err, OperationType.UPDATE, `itemCatalog/${editingCatalogId}`);
-      setSaveStatus({ type: 'error', message: 'Erro ao atualizar item.' });
+      console.error('Error saving catalog item:', err);
+      handleFirestoreError(err, editingCatalogId ? OperationType.UPDATE : OperationType.CREATE, editingCatalogId ? `itemCatalog/${editingCatalogId}` : 'itemCatalog');
+      setSaveStatus({ type: 'error', message: 'Erro ao salvar item.' });
     }
   };
 
@@ -2017,10 +2025,34 @@ export default function GMDashboard() {
                   <h3 className="text-2xl font-serif">Catálogo de Itens</h3>
                   <p className="text-sm text-parchment/40">Todos os itens criados pelos jogadores são salvos aqui para referência do mestre.</p>
                 </div>
-                <div className="flex items-center gap-3 px-4 py-2 glass rounded-2xl">
-                  <Package size={18} className="text-arcane" />
-                  <span className="text-sm font-medium">{itemCatalog.length} Itens Catalogados</span>
-                </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 px-4 py-2 glass rounded-2xl">
+                      <Package size={18} className="text-arcane" />
+                      <span className="text-sm font-medium">{itemCatalog.length} Itens Catalogados</span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setCatalogItemForm({
+                          name: '',
+                          category: 'Geral',
+                          rarity: 'Common',
+                          weight: 0,
+                          value: 0,
+                          description: '',
+                          image: '',
+                          stats: {},
+                          damage: '',
+                          defense: 0
+                        });
+                        setEditingCatalogId(null);
+                        setIsEditingCatalog(true);
+                      }}
+                      className="flex items-center gap-2 px-6 py-2 bg-arcane text-obsidian rounded-xl font-bold hover:scale-105 transition-all text-xs"
+                    >
+                      <Plus size={16} />
+                      Criar Novo Item
+                    </button>
+                  </div>
               </div>
 
               {isEditingCatalog && (
@@ -2034,10 +2066,10 @@ export default function GMDashboard() {
                       <div className="w-10 h-10 bg-arcane/20 rounded-xl flex items-center justify-center text-arcane">
                         <Edit2 size={20} />
                       </div>
-                      <div>
-                        <h3 className="text-xl font-serif">Editar Item do Catálogo</h3>
-                        <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Modificando entradas globais</p>
-                      </div>
+      <div>
+        <h3 className="text-xl font-serif">{editingCatalogId ? 'Editar Item do Catálogo' : 'Criar Novo Item no Catálogo'}</h3>
+        <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{editingCatalogId ? 'Modificando entradas globais' : 'Adicionando à biblioteca global'}</p>
+      </div>
                     </div>
                     <button onClick={() => setIsEditingCatalog(false)} className="text-parchment/40 hover:text-parchment p-2 rounded-full hover:bg-white/5 transition-colors">
                       <X size={20} />
@@ -2172,11 +2204,11 @@ export default function GMDashboard() {
                       Cancelar
                     </button>
                     <button 
-                      onClick={handleUpdateCatalogItem}
+                      onClick={handleSaveCatalogItem}
                       className="flex items-center gap-2 px-8 py-3 bg-arcane text-obsidian rounded-2xl hover:scale-[1.02] active:scale-95 transition-all font-bold shadow-lg shadow-arcane/20"
                     >
                       <Save size={18} />
-                      Salvar Alterações
+                      {editingCatalogId ? 'Salvar Alterações' : 'Criar Item'}
                     </button>
                   </div>
                 </motion.div>
