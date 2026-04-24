@@ -77,6 +77,7 @@ export default function CharacterSheet() {
   const [loading, setLoading] = React.useState(true);
 
   const [inventory, setInventory] = React.useState<any[]>([]);
+  const [catalogItems, setCatalogItems] = React.useState<any[]>([]);
   const [characterSkills, setCharacterSkills] = React.useState<string[]>([]);
   const [characterPowers, setCharacterPowers] = React.useState<string[]>([]);
   const [availableSkills, setAvailableSkills] = React.useState<any[]>([]);
@@ -328,11 +329,19 @@ export default function CharacterSheet() {
       handleFirestoreError(error, OperationType.LIST, 'traits');
     });
 
+    const catalogQuery = query(collection(db, 'itemCatalog'));
+    const unsubscribeCatalog = onSnapshot(catalogQuery, (snapshot) => {
+      setCatalogItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'itemCatalog');
+    });
+
     return () => {
       unsubscribeTalents();
       unsubscribeSkills();
       unsubscribePowers();
       unsubscribeTraits();
+      unsubscribeCatalog();
     };
   }, []);
 
@@ -785,8 +794,63 @@ export default function CharacterSheet() {
     }
   };
 
-  const handleFormulaRoll = (label: string, formula: string) => {
+  const handleFormulaRoll = async (label: string, formula: string, sourceItem?: any) => {
     if (!formula) return;
+
+    // Ammo consumption logic for weapons
+    if (sourceItem && sourceItem.damage) {
+      const catalogId = sourceItem.catalogId;
+      
+      const linkedAmmoInCatalog = catalogItems.filter(i => i.category === 'ammo' && i.relatedWeapons?.includes(catalogId));
+      const linkedAmmoInInventory = inventory.filter(i => i.category === 'ammo' && i.relatedWeapons?.includes(catalogId));
+      
+      const isAmmoRequired = linkedAmmoInCatalog.length > 0 || linkedAmmoInInventory.length > 0;
+
+      if (isAmmoRequired) {
+        const compatibleAmmo = inventory.find(i => 
+          i.category === 'ammo' && 
+          (i.relatedWeapons?.includes(catalogId) || 
+           linkedAmmoInCatalog.some(a => a.id === i.catalogId)) && 
+          (i.quantity || 1) > 0
+        );
+
+        if (!compatibleAmmo) {
+          setSaveStatus({ type: 'error', message: `FALHA: Sem munição para ${label}!` });
+          if (character.sessionId && auth.currentUser) {
+            await addDoc(collection(db, 'chatMessages'), {
+              sessionId: character.sessionId,
+              senderId: auth.currentUser.uid,
+              senderName: character.name || 'Herói',
+              senderPhoto: character.image || '',
+              text: `⚠️ A arma de ${character.name} (${label}) falhou! Está sem munição.`,
+              type: 'system',
+              createdAt: new Date().toISOString()
+            });
+          }
+          return;
+        }
+
+        // Consume 1 ammo
+        try {
+          let updatedInventory;
+          if ((compatibleAmmo.quantity || 1) > 1) {
+            updatedInventory = inventory.map(i => i.id === compatibleAmmo.id ? { ...i, quantity: i.quantity - 1 } : i);
+          } else {
+            updatedInventory = inventory.filter(i => i.id !== compatibleAmmo.id);
+          }
+
+          setInventory(updatedInventory);
+          await updateDoc(doc(db, 'characters', characterId!), {
+            equipment: updatedInventory
+          });
+          setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+        } catch (err) {
+          console.error("Erro ao consumir munição:", err);
+          return;
+        }
+      }
+    }
+
     const result = rollDiceFormula(formula, statsForFormula);
     setQuickRoll({ 
       result: result.total, 
@@ -1116,7 +1180,7 @@ export default function CharacterSheet() {
               </div>
               <div className="flex items-center gap-2 col-span-2 sm:col-span-1 justify-center sm:justify-start">
                 <Coins size={16} className="text-gold" />
-                <span className="text-base sm:text-lg font-serif">{character.money || 0} <span className="text-[10px] text-parchment/40 font-mono">GPs</span></span>
+                <span className="text-base sm:text-lg font-serif">{character.money || 0} <span className="text-[10px] text-parchment/40 font-mono">MO</span></span>
               </div>
             </div>
           </div>
@@ -1684,7 +1748,7 @@ export default function CharacterSheet() {
                           <p className="text-[10px] text-parchment/60 font-mono uppercase tracking-wider truncate" title={item.name}>{item.name}</p>
                         </div>
                         <button 
-                          onClick={() => handleFormulaRoll(item.name, item.damage)}
+                          onClick={() => handleFormulaRoll(item.name, item.damage, item)}
                           className="p-1.5 bg-arcane/10 hover:bg-arcane/20 rounded-lg text-arcane transition-colors"
                           title="Rolar Dano"
                         >
@@ -2379,13 +2443,13 @@ export default function CharacterSheet() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => toggleEquip(item.id)}
-                      className="p-2 glass rounded-xl hover:bg-ember/20 hover:text-ember transition-all text-parchment/40"
-                      title="Desequipar"
-                    >
-                      <X size={14} />
-                    </button>
+                      <button 
+                        onClick={() => toggleEquip(item.id)}
+                        className="p-2 glass rounded-xl hover:bg-arcane/20 hover:text-arcane transition-all text-parchment/40"
+                        title="Desequipar"
+                      >
+                        <Shield size={14} />
+                      </button>
                   </div>
                 </motion.div>
               ))}
@@ -2433,7 +2497,7 @@ export default function CharacterSheet() {
                             )}
                             title={item.equipped ? "Desequipar" : "Equipar"}
                           >
-                            <Zap size={12} />
+                            <Shield size={12} />
                           </button>
                           <span className="text-sm font-serif text-parchment/80 group-hover:text-arcane transition-colors">{item.name}</span>
                         </div>

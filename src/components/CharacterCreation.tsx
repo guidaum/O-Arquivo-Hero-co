@@ -68,7 +68,8 @@ export default function CharacterCreation() {
     image: 'https://picsum.photos/seed/paladin/400/600',
     color: 'arcane',
     icon: 'Shield',
-    sessionId: ''
+    sessionId: '',
+    money: 500
   });
 
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
@@ -198,10 +199,41 @@ export default function CharacterCreation() {
   };
 
   const removeEquip = (id: string) => {
+    const itemToRemove = equipment.find(e => e.id === id);
+    if (itemToRemove && itemToRemove.value) {
+      setBasics(prev => ({ ...prev, money: prev.money + (itemToRemove.value * (itemToRemove.quantity || 1)) }));
+    }
     setEquipment(equipment.filter(e => e.id !== id));
   };
 
   const importFromCatalog = (item: any) => {
+    const funnyFailMessages = [
+      "Seu bolso tem um eco maior que o Grande Cânion.",
+      "Acho que você esqueceu de conferir o saldo da sua conta de rabanetes.",
+      "O vendedor olhou para as suas moedas imaginárias e deu risada.",
+      "MO não nasce em árvore, aventureiro!",
+      "Sua carteira está mais vazia que a cabeça de um ogro.",
+      "Tente pagar com gratidão. Spoiler: não funcionou.",
+      "Você sacudiu a bolsa e só saiu poeira e uma teia de aranha.",
+      "Saldo insuficiente. Deseja tentar pagar com um poema épico? O mercador disse que não aceita rimas pobres.",
+      "Sua bolsa está tão leve que ela quase flutuou para longe. Traga moedas de verdade na próxima!",
+      "O mercador te deu um abraço de consolação. Mas o item continua custando o mesmo.",
+      "Você tentou convencer o mercador de que é o 'escolhido'. Ele disse que até o 'escolhido' tem que pagar as contas.",
+      "Olhando para sua bolsa, parece que você gastou tudo em poções de invisibilidade... para o seu dinheiro.",
+      "Erro 404: Ouro não encontrado.",
+      "Suas economias atuais permitem comprar: um fio de cabelo de goblin e uma pedra sem graça. Este item não.",
+      "O vendedor perguntou se você aceita lavar os pratos por um mês. Talvez assim você consiga.",
+      "Sua conta bancária mágica foi bloqueada por excesso de... falta de depósitos.",
+      "Você ofereceu amizade em troca do item. O mercador disse que prefere ouro."
+    ];
+
+    if (item.value > basics.money) {
+      const randomMessage = funnyFailMessages[Math.floor(Math.random() * funnyFailMessages.length)];
+      setSaveStatus({ type: 'error', message: `${randomMessage} (Preço: ${item.value} MO, Você tem: ${basics.money} MO)` });
+      return;
+    }
+
+    setBasics(prev => ({ ...prev, money: prev.money - (item.value || 0) }));
     setEquipment([...equipment, {
       ...item,
       id: Math.random().toString(36).substring(2, 9),
@@ -210,7 +242,7 @@ export default function CharacterCreation() {
       stats: item.stats || {}
     }]);
     setShowCatalog(false);
-    setSaveStatus({ type: 'success', message: 'Item importado do catálogo!' });
+    setSaveStatus({ type: 'success', message: `Item '${item.name}' adquirido por ${item.value} MO!` });
   };
 
   React.useEffect(() => {
@@ -278,6 +310,9 @@ export default function CharacterCreation() {
           setInitialPowerPoints(data.initialPowerPoints ?? 0);
           setSkillPoints(data.initialSkillPoints ?? 0);
           setPowerPoints(data.initialPowerPoints ?? 0);
+          if (data.initialMoney !== undefined) {
+            setBasics(prev => ({ ...prev, money: data.initialMoney }));
+          }
         }
       } catch (error) {
         console.error('Error fetching global settings:', error);
@@ -315,6 +350,7 @@ export default function CharacterCreation() {
         setMaxSingleAttr(session.maxSingleAttributeValue ?? baseGlobalSettings?.maxSingleAttributeValue ?? 100);
         setInitialSkillPoints(session.initialSkillPoints ?? baseGlobalSettings?.initialSkillPoints ?? 0);
         setInitialPowerPoints(session.initialPowerPoints ?? baseGlobalSettings?.initialPowerPoints ?? 0);
+        setBasics(prev => ({ ...prev, money: session.initialMoney ?? baseGlobalSettings?.initialMoney ?? 500 }));
       }
     } else {
       setGlobalSettings(baseGlobalSettings);
@@ -323,6 +359,7 @@ export default function CharacterCreation() {
         setMaxSingleAttr(baseGlobalSettings.maxSingleAttributeValue ?? 100);
         setInitialSkillPoints(baseGlobalSettings.initialSkillPoints ?? 0);
         setInitialPowerPoints(baseGlobalSettings.initialPowerPoints ?? 0);
+        setBasics(prev => ({ ...prev, money: baseGlobalSettings.initialMoney ?? 500 }));
       }
     }
     const initialValues: Record<string, number> = {};
@@ -646,6 +683,7 @@ export default function CharacterCreation() {
         ownerId: auth.currentUser.uid,
         name: basics.name || 'Sem Nome',
         class: basics.class,
+        money: basics.money,
         level: 1,
         xp: 0,
         xpMax: 1000,
@@ -1676,8 +1714,21 @@ export default function CharacterCreation() {
                 className="space-y-8"
               >
                 <header>
-                  <h2 className="text-4xl font-serif mb-2">Equipamento & Inventário</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Preparação para a Jornada</p>
+                  <div className="flex justify-between items-end mb-2">
+                    <div>
+                      <h2 className="text-4xl font-serif">Equipamento & Inventário</h2>
+                      <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Preparação para a Jornada</p>
+                    </div>
+                    <div className="flex items-center gap-3 bg-gold/10 px-6 py-3 rounded-2xl border border-gold/30">
+                      <div className="text-right">
+                        <p className="text-[10px] font-mono text-gold/60 uppercase tracking-widest">Ouro Inicial</p>
+                        <p className="text-xl font-serif text-gold">{basics.money} MO</p>
+                      </div>
+                      <div className="w-10 h-10 bg-gold/20 rounded-full flex items-center justify-center text-gold">
+                        <Dice6 size={20} />
+                      </div>
+                    </div>
+                  </div>
                 </header>
 
                 {/* Equipment Form */}
@@ -1800,9 +1851,9 @@ export default function CharacterCreation() {
                 <div className="space-y-4">
                   <h3 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Itens no Inventário</h3>
                   <div className="grid grid-cols-1 gap-4">
-                    {equipment.map((item, idx) => (
+                    {equipment.map((item) => (
                       <motion.div
-                        key={idx}
+                        key={item.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className="glass p-5 rounded-3xl flex items-center justify-between group border border-white/10 hover:border-arcane/30"
@@ -1832,7 +1883,7 @@ export default function CharacterCreation() {
                           </div>
                         </div>
                         <button 
-                          onClick={() => removeEquip(idx)}
+                          onClick={() => removeEquip(item.id)}
                           className="p-2 hover:bg-ember/10 text-parchment/20 hover:text-ember rounded-xl transition-all"
                         >
                           <Trash2 size={18} />
@@ -2092,31 +2143,50 @@ export default function CharacterCreation() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {itemCatalog
-                  .filter(i => i.name.toLowerCase().includes(catalogSearch.toLowerCase()))
+                  .filter(i => (i.isStartingItem === true) && i.name.toLowerCase().includes(catalogSearch.toLowerCase()))
                   .map((item) => (
                     <button
                       key={item.id}
                       onClick={() => importFromCatalog(item)}
-                      className="glass p-6 rounded-3xl text-left border border-white/10 hover:border-arcane/50 hover:bg-arcane/5 transition-all group"
+                      className="glass p-6 rounded-3xl text-left border border-white/10 hover:border-arcane/50 hover:bg-arcane/5 transition-all group flex flex-col justify-between"
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-serif text-xl group-hover:text-arcane transition-colors">{item.name}</h4>
-                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-[8px] font-mono uppercase tracking-widest text-parchment/40 border border-white/10">
-                          {item.rarity}
-                        </span>
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-serif text-xl group-hover:text-arcane transition-colors">{item.name}</h4>
+                          <span className="px-2 py-0.5 rounded-full bg-white/5 text-[8px] font-mono uppercase tracking-widest text-parchment/40 border border-white/10">
+                            {item.rarity}
+                          </span>
+                        </div>
+                        <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{item.description || 'Sem descrição.'}</p>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {item.damage && (
+                            <span className="px-2 py-0.5 rounded bg-ember/10 text-ember text-[9px] font-mono uppercase">
+                              Dano: {item.damage}
+                            </span>
+                          )}
+                          {item.defense > 0 && (
+                            <span className="px-2 py-0.5 rounded bg-gold/10 text-gold text-[9px] font-mono uppercase">
+                              DF: {item.defense}
+                            </span>
+                          )}
+                          {item.stats && Object.entries(item.stats).map(([k, v]) => (v as number) !== 0 && (
+                            <span key={k} className="px-2 py-0.5 rounded bg-arcane/10 text-arcane text-[9px] font-mono uppercase">
+                              {k}: {Number(v) > 0 ? '+' : ''}{v}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{item.description}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {item.damage && (
-                          <span className="px-2 py-0.5 rounded bg-ember/10 text-ember text-[9px] font-mono uppercase">
-                            Dano: {item.damage}
-                          </span>
-                        )}
-                        {item.stats && Object.entries(item.stats).map(([k, v]) => (v as number) !== 0 && (
-                          <span key={k} className="px-2 py-0.5 rounded bg-arcane/10 text-arcane text-[9px] font-mono uppercase">
-                            {k}: {Number(v) > 0 ? '+' : ''}{v}
-                          </span>
-                        ))}
+                      <div className="flex items-center justify-between border-t border-white/5 pt-4 mt-auto">
+                        <div className="flex items-center gap-1.5 min-w-[60px]">
+                          <span className="text-gold text-lg font-serif">{item.value || 0}</span>
+                          <span className="text-[10px] font-mono text-gold/40 uppercase">MO</span>
+                        </div>
+                        <span className={cn(
+                          "px-3 py-1 rounded-lg text-[10px] font-mono uppercase tracking-widest",
+                          basics.money >= (item.value || 0) ? "bg-arcane/10 text-arcane" : "bg-ember/10 text-ember"
+                        )}>
+                          {basics.money >= (item.value || 0) ? "Disponível" : "Sem Fundos"}
+                        </span>
                       </div>
                     </button>
                   ))}

@@ -21,10 +21,16 @@ import {
   Dice6,
   Sparkles,
   GripVertical,
-  Pencil
+  Pencil,
+  ShoppingBag,
+  ShoppingCart,
+  Search,
+  Target,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { cn, rollDiceFormula } from '../lib/utils';
-import { auth, db, doc, getDoc, setDoc, updateDoc, collection, addDoc } from '../firebase';
+import { auth, db, doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from '../firebase';
 import { handleFirestoreError, OperationType } from '../firebase';
 
 export default function Inventory({ hideHeader = false }: { hideHeader?: boolean }) {
@@ -35,16 +41,25 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
   const categories = [
     { id: 'weapons', label: 'Armas', icon: Sword, color: 'text-ember' },
     { id: 'armor', label: 'Armaduras', icon: Shield, color: 'text-arcane' },
-    { id: 'consumables', label: 'Consumíveis', icon: FlaskConical, color: 'text-gold' },
+    { id: 'ammo', label: 'Munição', icon: Target, color: 'text-gold' },
+    { id: 'consumables', label: 'Consumíveis', icon: FlaskConical, color: 'text-ember' },
     { id: 'misc', label: 'Diversos', icon: Scroll, color: 'text-parchment' },
   ];
 
   const [character, setCharacter] = React.useState<any>(null);
+  const [session, setSession] = React.useState<any>(null);
   const [globalSettings, setGlobalSettings] = React.useState<any>(null);
   const [items, setItems] = React.useState<any[]>([]);
+  const [catalogItems, setCatalogItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [activeCategory, setActiveCategory] = React.useState('weapons');
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isShopOpen, setIsShopOpen] = React.useState(false);
+  const [confirmingItem, setConfirmingItem] = React.useState<any>(null);
+  const [selectedShopItem, setSelectedShopItem] = React.useState<any>(null);
+  const [purchaseQuantity, setPurchaseQuantity] = React.useState(1);
+  const [shopCategory, setShopCategory] = React.useState('all');
+  const [shopSearch, setShopSearch] = React.useState('');
   const [modalMode, setModalMode] = React.useState<'add' | 'edit'>('add');
   const [editingItemId, setEditingItemId] = React.useState<string | number | null>(null);
   const [isMoneyModalOpen, setIsMoneyModalOpen] = React.useState(false);
@@ -64,7 +79,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     damage: '',
     defense: 0,
     equipped: false,
-    image: ''
+    image: '',
+    relatedWeapons: [] as string[]
   });
 
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string } | null>(null);
@@ -99,10 +115,63 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     }
   };
 
-  const handleQuickRoll = (name: string, damage: string) => {
+  const handleQuickRoll = async (item: any) => {
+    const { name, damage, catalogId } = item;
     if (!damage || !character) return;
     
-    // Prepare stats for formula evaluation
+    // Check for ammo requirements
+    // A weapon requires ammo if any ammo item in either catalog or inventory is linked to it
+    const linkedAmmoInCatalog = catalogItems.filter(i => i.category === 'ammo' && i.relatedWeapons?.includes(catalogId));
+    const linkedAmmoInInventory = items.filter(i => i.category === 'ammo' && i.relatedWeapons?.includes(catalogId));
+    
+    const isAmmoRequired = linkedAmmoInCatalog.length > 0 || linkedAmmoInInventory.length > 0;
+
+    if (isAmmoRequired) {
+      // Find suitable ammo in inventory
+      const compatibleAmmo = items.find(i => 
+        i.category === 'ammo' && 
+        (i.relatedWeapons?.includes(catalogId) || 
+         linkedAmmoInCatalog.some(a => a.id === i.catalogId)) && 
+        (i.quantity || 1) > 0
+      );
+
+      if (!compatibleAmmo) {
+        setSaveStatus({ type: 'error', message: `FALHA: Sem munição para ${name}!` });
+        if (character.sessionId && auth.currentUser) {
+          await addDoc(collection(db, 'chatMessages'), {
+            sessionId: character.sessionId,
+            senderId: auth.currentUser.uid,
+            senderName: character.name || 'Herói',
+            senderPhoto: character.image || '',
+            text: `⚠️ A arma de ${character.name} (${name}) falhou! Está sem munição.`,
+            type: 'system',
+            createdAt: new Date().toISOString()
+          });
+        }
+        return;
+      }
+
+      // Consume 1 ammo
+      try {
+        let updatedItems;
+        if ((compatibleAmmo.quantity || 1) > 1) {
+          updatedItems = items.map(i => i.id === compatibleAmmo.id ? { ...i, quantity: i.quantity - 1 } : i);
+        } else {
+          updatedItems = items.filter(i => i.id !== compatibleAmmo.id);
+        }
+
+        setItems(updatedItems);
+        await updateDoc(doc(db, 'characters', characterId!), {
+          equipment: updatedItems
+        });
+        setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+      } catch (err) {
+        console.error("Erro ao consumir munição:", err);
+        return;
+      }
+    }
+
+    // Proceed with roll
     const currentStats: Record<string, number> = {};
     const stats = character.stats || {};
     const mods = character.statsMods || {};
@@ -119,46 +188,80 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
   };
 
   React.useEffect(() => {
-    const fetchCharacter = async () => {
-      if (!characterId) {
-        setLoading(false);
-        return;
+    if (!characterId) {
+      setLoading(false);
+      return;
+    }
+
+    // Characters real-time sync
+    const unsubscribeChar = onSnapshot(doc(db, 'characters', characterId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCharacter(data);
+        const mappedItems = (data.equipment || []).map((item: any) => ({
+          ...item,
+          id: item.id || Math.random().toString(36).substring(2, 9),
+          category: item.category || (item.defense > 0 ? 'armor' : item.damage ? 'weapons' : 'misc'),
+          rarity: item.rarity || 'Comum',
+          weight: item.weight || 0,
+          value: item.value || 0,
+          stats: typeof item.stats === 'object' ? item.stats : {},
+          image: item.image || `https://picsum.photos/seed/${item.name}/100/100`
+        }));
+        setItems(mappedItems);
       }
+      setLoading(false);
+    }, (error) => {
+      console.error("Error watching character:", error);
+      setLoading(false);
+    });
+
+    // Global Settings
+    getDoc(doc(db, 'globalSettings', 'config')).then(snap => {
+      if (snap.exists()) setGlobalSettings(snap.data());
+    });
+
+    return () => unsubscribeChar();
+  }, [characterId]);
+
+  // Session sync
+  React.useEffect(() => {
+    if (!character?.sessionId) return;
+
+    const unsubscribeSession = onSnapshot(doc(db, 'gameSessions', character.sessionId), (snap) => {
+      if (snap.exists()) {
+        setSession(snap.data());
+      }
+    }, (error) => {
+      console.error("Error watching session:", error);
+    });
+
+    return () => unsubscribeSession();
+  }, [character?.sessionId]);
+
+  // Catalog sync
+  React.useEffect(() => {
+    const fetchCatalog = async () => {
       try {
-        const docRef = doc(db, 'characters', characterId);
-        const docSnap = await getDoc(docRef);
+        const querySnapshot = await getDocs(collection(db, 'itemCatalog'));
+        let catalog = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
-        // Fetch Global Settings
-        const settingsSnap = await getDoc(doc(db, 'globalSettings', 'config'));
-        if (settingsSnap.exists()) {
-          setGlobalSettings(settingsSnap.data());
+        // Filter by session shop settings if available
+        if (session?.shopItemIds && session.shopItemIds.length > 0) {
+          catalog = catalog.filter(item => session.shopItemIds.includes(item.id));
         }
 
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setCharacter(data);
-          // Ensure items have necessary fields for the Inventory UI
-          const mappedItems = (data.equipment || []).map((item: any) => ({
-            ...item,
-            id: item.id || Math.random().toString(36).substring(2, 9),
-            category: item.category || (item.defense > 0 ? 'armor' : item.damage ? 'weapons' : 'misc'),
-            rarity: item.rarity || 'Comum',
-            weight: item.weight || 0,
-            value: item.value || 0,
-            stats: typeof item.stats === 'object' ? item.stats : {},
-            image: item.image || `https://picsum.photos/seed/${item.name}/100/100`
-          }));
-          setItems(mappedItems);
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `characters/${characterId}`);
-      } finally {
-        setLoading(false);
+        setCatalogItems(catalog);
+      } catch (err) {
+        console.error('Error fetching catalog:', err);
       }
     };
-
-    fetchCharacter();
-  }, [characterId]);
+    
+    fetchCatalog();
+  }, [session?.shopItemIds]);
 
   React.useEffect(() => {
     if (saveStatus) {
@@ -219,6 +322,99 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     }
   };
 
+  const handlePurchase = (catalogItem: any) => {
+    if (!characterId || !character) return;
+    
+    const itemValue = catalogItem.value || 0;
+    if (itemValue > (character.money || 0)) {
+      const funnyFailMessages = [
+        "Seu bolso tem um eco maior que o Grande Cânion.",
+        "Acho que você esqueceu de conferir o saldo da sua conta de rabanetes.",
+        "O vendedor olhou para as suas moedas imaginárias e deu risada.",
+        "MO não nasce em árvore, aventureiro!",
+        "Sua carteira está mais vazia que a cabeça de um ogro.",
+        "Tente pagar com gratidão. Spoiler: não funcionou.",
+        "Você sacudiu a bolsa e só saiu poeira e uma teia de aranha.",
+        "Saldo insuficiente. Deseja tentar pagar com um poema épico? O mercador disse que não aceita rimas pobres.",
+        "Sua bolsa está tão leve que ela quase flutuou para longe. Traga moedas de verdade na próxima!",
+        "O mercador te deu um abraço de consolação. Mas o item continua custando o mesmo.",
+        "Você tentou convencer o mercador de que é o 'escolhido'. Ele disse que até o 'escolhido' tem que pagar as contas.",
+        "Olhando para sua bolsa, parece que você gastou tudo em poções de invisibilidade... para o seu dinheiro.",
+        "Erro 404: Ouro não encontrado.",
+        "Suas economias atuais permitem comprar: um fio de cabelo de goblin e uma pedra sem graça. Este item não.",
+        "O vendedor perguntou se você aceita lavar os pratos por um mês. Talvez assim você consiga.",
+        "Sua conta bancária mágica foi bloqueada por excesso de... falta de depósitos.",
+        "Você ofereceu amizade em troca do item. O mercador disse que prefere ouro."
+      ];
+      const randomMessage = funnyFailMessages[Math.floor(Math.random() * funnyFailMessages.length)];
+      setSaveStatus({ type: 'error', message: `${randomMessage} (Preço: ${itemValue} MO, Você tem: ${character.money || 0} MO)` });
+      return;
+    }
+
+    setConfirmingItem(catalogItem);
+    setPurchaseQuantity(1);
+  };
+
+  const confirmPurchase = async () => {
+    if (!confirmingItem || !characterId || !character) return;
+    
+    const qty = (confirmingItem.category === 'ammo' || confirmingItem.category === 'consumables') ? purchaseQuantity : 1;
+    const itemValue = (confirmingItem.value || 0) * qty;
+    
+    try {
+      let updatedInventory = [...items];
+      const isStackable = confirmingItem.category === 'ammo' || confirmingItem.category === 'consumables';
+      
+      if (isStackable) {
+        const existingItemIndex = updatedInventory.findIndex(i => i.catalogId === confirmingItem.id || i.name === confirmingItem.name);
+        if (existingItemIndex > -1) {
+          updatedInventory[existingItemIndex] = {
+            ...updatedInventory[existingItemIndex],
+            quantity: (updatedInventory[existingItemIndex].quantity || 1) + qty
+          };
+        } else {
+          const newItem = {
+            ...confirmingItem,
+            catalogId: confirmingItem.id,
+            id: Math.random().toString(36).substring(2, 9),
+            quantity: qty,
+            equipped: false,
+            stats: confirmingItem.stats || {}
+          };
+          updatedInventory.push(newItem);
+        }
+      } else {
+        const newItem = {
+          ...confirmingItem,
+          catalogId: confirmingItem.id,
+          id: Math.random().toString(36).substring(2, 9),
+          quantity: 1,
+          equipped: false,
+          stats: confirmingItem.stats || {}
+        };
+        updatedInventory.push(newItem);
+      }
+
+      const newMoney = (character.money || 0) - itemValue;
+
+      await updateDoc(doc(db, 'characters', characterId), {
+        equipment: updatedInventory,
+        money: newMoney
+      });
+
+      setItems(updatedInventory);
+      setCharacter({ ...character, money: newMoney });
+      setSaveStatus({ 
+        type: 'success', 
+        message: `${qty > 1 ? qty + 'x ' : ''}${confirmingItem.name} adquirido com sucesso! (-${itemValue} MO)` 
+      });
+      setConfirmingItem(null);
+      setPurchaseQuantity(1);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `characters/${characterId}`);
+    }
+  };
+
   const [sortBy, setSortBy] = React.useState('Manual');
   const [filterRarity, setFilterRarity] = React.useState('Todas');
 
@@ -256,18 +452,35 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
         image: newItem.image.trim() || `https://picsum.photos/seed/${newItem.name}/100/100`
       };
 
-      let updatedItems;
+      let updatedItems = [...items];
+      const isStackable = itemData.category === 'ammo' || itemData.category === 'consumables';
+
       if (modalMode === 'edit' && editingItemId !== null) {
         updatedItems = items.map(item => 
           item.id === editingItemId ? { ...itemData, id: editingItemId } : item
         );
         setSaveStatus({ type: 'success', message: 'Item atualizado' });
+      } else if (isStackable) {
+        const existingItemIndex = updatedItems.findIndex(i => i.name.toLowerCase() === itemData.name.toLowerCase() && i.category === itemData.category);
+        if (existingItemIndex > -1) {
+          updatedItems[existingItemIndex] = {
+            ...updatedItems[existingItemIndex],
+            quantity: (updatedItems[existingItemIndex].quantity || 1) + (itemData.quantity || 1)
+          };
+          setSaveStatus({ type: 'success', message: 'Quantidade adicionada ao item existente!' });
+        } else {
+          updatedItems.push({
+            ...itemData,
+            id: Math.random().toString(36).substring(2, 9)
+          });
+          setSaveStatus({ type: 'success', message: 'Item adicionado' });
+        }
       } else {
         const itemToAdd = {
           ...itemData,
           id: Math.random().toString(36).substring(2, 9)
         };
-        updatedItems = [...items, itemToAdd];
+        updatedItems.push(itemToAdd);
         setSaveStatus({ type: 'success', message: 'Item adicionado' });
       }
       
@@ -293,7 +506,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       damage: '',
       defense: 0,
       equipped: false,
-      image: ''
+      image: '',
+      relatedWeapons: []
     });
     setEditingItemId(null);
     setModalMode('add');
@@ -317,6 +531,25 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     setItems(updatedItems);
     await saveToFirestore(updatedItems);
     setSaveStatus({ type: 'success', message: 'Item removido' });
+  };
+
+  const useItem = async (id: string | number) => {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+
+    if ((item.quantity || 1) > 1) {
+      const updatedItems = items.map(i => 
+        i.id === id ? { ...i, quantity: (i.quantity || 1) - 1 } : i
+      );
+      setItems(updatedItems);
+      await saveToFirestore(updatedItems);
+      setSaveStatus({ type: 'success', message: `Você usou um ${item.name}. Restam ${(item.quantity || 1) - 1}.` });
+    } else {
+      const updatedItems = items.filter(i => i.id !== id);
+      setItems(updatedItems);
+      await saveToFirestore(updatedItems);
+      setSaveStatus({ type: 'success', message: `Você usou o último ${item.name}.` });
+    }
   };
 
   const toggleEquip = async (id: string | number) => {
@@ -385,10 +618,14 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               "bg-white/90 border-white/20 text-obsidian"
             )}
           >
-            {saveStatus.type === 'success' ? <Check size={20} /> : 
+            {saveStatus.type === 'success' ? (
+              <div className="flex items-center gap-2">
+                {saveStatus.message.includes('MO') ? <Coins size={20} className="text-obsidian" /> : <Check size={20} />}
+              </div>
+            ) : 
              saveStatus.type === 'error' ? <X size={20} /> : 
              <Info size={20} />}
-            <span className="font-medium">{saveStatus.message}</span>
+            <span className="font-bold">{saveStatus.message}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -419,8 +656,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               </div>
               <div>
                 <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-widest">Dinheiro</p>
-                <p className="text-base sm:text-lg font-serif">{character?.money || 0} <span className="text-xs text-gold">GPs</span></p>
-                <p className="text-[8px] text-parchment/20 font-mono uppercase tracking-widest mt-0.5">Total: {(character?.money || 0) + items.reduce((acc, item) => acc + (item.value || 0), 0)} GPs</p>
+                <p className="text-base sm:text-lg font-serif">{character?.money || 0} <span className="text-xs text-gold">MO</span></p>
+                <p className="text-[8px] text-parchment/20 font-mono uppercase tracking-widest mt-0.5">Total: {(character?.money || 0) + items.reduce((acc, item) => acc + (item.value || 0), 0)} MO</p>
               </div>
             </div>
             <button 
@@ -446,8 +683,32 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
         {/* Categories Sidebar */}
         <div className="space-y-4 lg:sticky lg:top-10 h-fit">
-          <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest px-4">Categorias</h4>
+          <div className="flex items-center justify-between px-4">
+            <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Navegação</h4>
+          </div>
+          
           <nav className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible pb-4 lg:pb-0 no-scrollbar">
+            {/* Shop Shortcut */}
+            {(session?.shopEnabled !== false) && (
+              <>
+                <button
+                  onClick={() => setIsShopOpen(true)}
+                  className="flex-shrink-0 lg:w-full flex items-center justify-between p-3 sm:p-4 rounded-2xl transition-all group glass bg-gold/5 border border-gold/20 text-gold hover:bg-gold/10"
+                >
+                  <div className="flex items-center gap-3">
+                    <ShoppingCart size={18} sm:size={20} className="transition-transform group-hover:scale-110" />
+                    <span className="font-medium text-sm sm:text-base whitespace-nowrap font-serif tracking-wide">Mercado & Loja</span>
+                  </div>
+                  <div className="hidden lg:flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-gold/40">VISITAR</span>
+                    <ChevronRight size={16} className="transition-transform group-hover:translate-x-1" />
+                  </div>
+                </button>
+
+                <div className="hidden lg:block h-px bg-white/5 my-2" />
+              </>
+            )}
+
             {categories.map((cat) => (
               <button
                 key={cat.id}
@@ -565,7 +826,14 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                 </div>
                 <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
-                      <h5 className="font-serif text-lg">{item.name}</h5>
+                      <div className="flex items-center gap-2">
+                        <h5 className="font-serif text-lg">{item.name}</h5>
+                        {item.quantity && item.quantity > 1 && (
+                          <span className="bg-gold text-obsidian text-[10px] font-bold px-2 py-0.5 rounded-lg shadow-lg shadow-gold/20">
+                            {item.quantity}x
+                          </span>
+                        )}
+                      </div>
                       <span className={cn(
                         "text-[8px] px-1.5 py-0.5 rounded-full font-mono uppercase tracking-widest",
                         item.rarity === 'Lendário' ? "bg-gold/10 text-gold border border-gold/20" :
@@ -583,6 +851,18 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                             .join(' | ')
                         : ''}
                     </p>
+                    {item.category === 'ammo' && item.relatedWeapons?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {item.relatedWeapons.map((weaponId: string) => {
+                          const weapon = catalogItems.find(i => i.id === weaponId);
+                          return weapon ? (
+                            <span key={weaponId} className="text-[8px] font-mono text-arcane/60 uppercase border border-arcane/20 px-1.5 py-0.5 rounded bg-arcane/5">
+                              {weapon.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                     <div className="flex items-center gap-4 text-[10px] text-parchment/40 font-mono">
                       <span className="flex items-center gap-1"><Weight size={10} /> {item.weight} KG</span>
                       <span className="flex items-center gap-1"><Coins size={10} /> {item.value} Dinheiro</span>
@@ -596,13 +876,25 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleQuickRoll(item.name, item.damage || '');
+                        handleQuickRoll(item);
                       }}
                       className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-arcane"
                       title="Rolar Dano"
                     >
                       <Dice6 size={16} />
                     </button>
+                    {(item.category === 'consumables' || item.category === 'ammo') && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          useItem(item.id);
+                        }}
+                        className="p-2 hover:bg-white/5 rounded-lg transition-colors text-gold hover:text-white"
+                        title="Usar / Consumir"
+                      >
+                        <Zap size={16} className="fill-gold/10" />
+                      </button>
+                    )}
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
@@ -612,8 +904,9 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                         "p-2 rounded-lg transition-colors",
                         item.equipped ? "bg-arcane/20 text-arcane" : "hover:bg-white/5 text-parchment/40 hover:text-arcane"
                       )}
+                      title={item.equipped ? "Desequipar" : "Equipar"}
                     >
-                      <Zap size={16} />
+                      <Check size={16} className={cn(item.equipped ? "opacity-100" : "opacity-30")} />
                     </button>
                     <button 
                       onClick={(e) => {
@@ -640,7 +933,10 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                               .join(', ');
                           }
                         }
-                        alert(`${item.name}\n\n${item.description || 'Sem descrição.'}${statsSummary}`);
+                        setSaveStatus({ 
+                          type: 'info', 
+                          message: `${item.name}: ${item.description || 'Sem descrição.'}${statsSummary}` 
+                        });
                       }}
                       className="p-2 hover:bg-white/5 rounded-lg transition-colors text-parchment/40 hover:text-gold"
                     >
@@ -699,7 +995,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                   </div>
                   <div>
                     <h3 className="text-2xl font-serif">Gerenciar Dinheiro</h3>
-                    <p className="text-parchment/40 font-mono text-[10px] uppercase tracking-widest">Saldo Atual: {character?.money || 0} GPs</p>
+                    <p className="text-parchment/40 font-mono text-[10px] uppercase tracking-widest">Saldo Atual: {character?.money || 0} MO</p>
                   </div>
                 </div>
                 <button 
@@ -813,6 +1109,35 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                       />
                     </div>
                   </div>
+
+                  {newItem.category === 'ammo' && (
+                    <div className="space-y-2 px-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest block">Armas Compatíveis (No Catálogo)</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto no-scrollbar glass p-3 rounded-xl border border-white/5">
+                        {catalogItems.filter(i => i.category === 'weapons').map(weapon => (
+                          <label key={weapon.id} className="flex items-center gap-2 p-1.5 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group">
+                            <input 
+                              type="checkbox"
+                              checked={newItem.relatedWeapons?.includes(weapon.id)}
+                              onChange={e => {
+                                const current = newItem.relatedWeapons || [];
+                                if (e.target.checked) {
+                                  setNewItem({ ...newItem, relatedWeapons: [...current, weapon.id] });
+                                } else {
+                                  setNewItem({ ...newItem, relatedWeapons: current.filter(id => id !== weapon.id) });
+                                }
+                              }}
+                              className="w-4 h-4 rounded border-white/10 bg-white/5 text-arcane focus:ring-arcane/50"
+                            />
+                            <span className="text-[10px] text-parchment/60 group-hover:text-parchment transition-colors truncate">{weapon.name}</span>
+                          </label>
+                        ))}
+                        {catalogItems.filter(i => i.category === 'weapons').length === 0 && (
+                          <p className="text-[10px] text-parchment/40 italic p-1">Nenhuma arma cadastrada no sistema.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
@@ -938,6 +1263,406 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                 >
                   {modalMode === 'edit' ? 'Salvar Alterações' : 'Adicionar ao Inventário'}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Shop Modal */}
+      <AnimatePresence>
+        {isShopOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsShopOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="glass w-full max-w-4xl max-h-[85vh] rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col relative z-10"
+            >
+              {/* Shop Header */}
+              <div className="p-8 pb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gold/10 rounded-2xl flex items-center justify-center text-gold">
+                    <ShoppingBag size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-serif text-parchment">Loja de Itens</h3>
+                    <div className="flex items-center gap-4 mt-1">
+                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                        Mercado de {globalSettings?.campaignName || 'Aventureiro'}
+                      </p>
+                      <div className="flex items-center gap-1 text-gold">
+                        <Coins size={12} />
+                        <span className="text-xs font-mono">{character?.money || 0} MO</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsShopOpen(false)}
+                  className="p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Shop Filters */}
+              <div className="px-8 flex flex-col lg:flex-row items-start lg:items-center gap-4 mb-6">
+                <div className="relative flex-1 group w-full">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20 group-focus-within:text-gold transition-colors" size={18} />
+                  <input
+                    type="text"
+                    value={shopSearch}
+                    onChange={(e) => setShopSearch(e.target.value)}
+                    placeholder="Buscar itens no mercado..."
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-12 py-3 text-sm focus:outline-none focus:border-gold/50 transition-colors"
+                  />
+                  {(shopSearch || shopCategory !== 'all') && (
+                    <button 
+                      onClick={() => { setShopSearch(''); setShopCategory('all'); }}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-lg text-parchment/60 hover:text-parchment transition-all"
+                      title="Limpar filtros"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 no-scrollbar w-full lg:w-auto">
+                  {['all', ...new Set(catalogItems.map(item => item.category))].filter(Boolean).map(cat => (
+                    <button
+                      key={cat as string}
+                      onClick={() => setShopCategory(cat as string)}
+                      className={cn(
+                        "px-4 py-2 rounded-xl text-[9px] font-mono uppercase tracking-widest transition-all whitespace-nowrap border",
+                        shopCategory === cat 
+                          ? "bg-gold/10 border-gold/40 text-gold shadow-lg shadow-gold/5" 
+                          : "bg-white/5 border-white/10 text-parchment/40 hover:text-parchment hover:bg-white/10"
+                      )}
+                    >
+                      {cat === 'all' ? 'Ver Tudo' : categories.find(c => c.id === cat)?.label || cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Empty State */}
+              {catalogItems
+                .filter(item => shopCategory === 'all' || item.category === shopCategory)
+                .filter(item => !shopSearch || item.name.toLowerCase().includes(shopSearch.toLowerCase()) || item.description?.toLowerCase().includes(shopSearch.toLowerCase()))
+                .length === 0 && (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+                  <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center text-parchment/20 mb-4">
+                    <Search size={32} />
+                  </div>
+                  <h4 className="text-xl font-serif text-parchment/60 mb-2">Nenhum item encontrado</h4>
+                  <p className="text-sm text-parchment/40 max-w-xs">
+                    Tente ajustar sua busca ou categoria para encontrar o que procura.
+                  </p>
+                </div>
+              )}
+
+              {/* Shop Grid */}
+              <div className="flex-1 overflow-y-auto p-8 pt-0 grid grid-cols-1 sm:grid-cols-2 gap-4 no-scrollbar">
+                {catalogItems
+                  .filter(item => shopCategory === 'all' || item.category === shopCategory)
+                  .filter(item => !shopSearch || item.name.toLowerCase().includes(shopSearch.toLowerCase()) || item.description?.toLowerCase().includes(shopSearch.toLowerCase()))
+                  .map((catalogItem) => (
+                    <div 
+                      key={catalogItem.id}
+                      onClick={() => setSelectedShopItem(catalogItem)}
+                      className="glass p-5 rounded-3xl border border-white/5 hover:border-gold/30 transition-all group flex flex-col cursor-pointer relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Info size={14} className="text-gold/40" />
+                      </div>
+
+                      <div className="flex items-start gap-4">
+                        <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10 shrink-0 group-hover:scale-110 transition-transform">
+                          <img 
+                            src={catalogItem.image || `https://picsum.photos/seed/${catalogItem.name}/150/150`} 
+                            alt={catalogItem.name}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="font-serif text-lg leading-tight truncate group-hover:text-gold transition-colors">{catalogItem.name}</h4>
+                            <span className={cn(
+                              "text-[8px] font-mono px-2 py-0.5 rounded-full uppercase tracking-widest border shrink-0",
+                              catalogItem.rarity === 'Legendary' ? "text-gold border-gold/50 bg-gold/10" :
+                              catalogItem.rarity === 'Rare' ? "text-arcane border-arcane/50 bg-arcane/10" :
+                              catalogItem.rarity === 'Uncommon' ? "text-ember border-ember/50 bg-ember/10" :
+                              "text-parchment/60 border-white/10"
+                            )}>
+                              {catalogItem.rarity || 'Common'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-mono text-parchment/40 uppercase mb-2">
+                            {categories.find(c => c.id === catalogItem.category)?.label || catalogItem.category || 'Geral'} • {catalogItem.weight || 0}kg
+                          </p>
+                          <p className="text-xs text-parchment/60 leading-relaxed line-clamp-2 italic mb-2">
+                            {catalogItem.description || 'Nenhuma descrição disponível.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 mt-auto border-t border-white/5">
+                        <div className="flex items-center gap-2 text-gold">
+                          <Coins size={16} />
+                          <span className="font-serif text-lg">{catalogItem.value || 0} MO</span>
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handlePurchase(catalogItem); }}
+                          disabled={catalogItem.value > (character?.money || 0)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest transition-all",
+                            catalogItem.value > (character?.money || 0) 
+                              ? "bg-white/5 text-parchment/20 cursor-not-allowed" 
+                              : "bg-gold text-obsidian font-bold shadow-lg shadow-gold/20 hover:scale-105 active:scale-95"
+                          )}
+                        >
+                          <ShoppingCart size={14} />
+                          Comprar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Item Detail Modal (Shop Integration) */}
+      <AnimatePresence>
+        {selectedShopItem && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedShopItem(null)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="glass max-w-2xl w-full rounded-[3rem] border border-white/10 shadow-3xl relative z-10 overflow-hidden flex flex-col"
+            >
+              <div className="relative h-64 sm:h-80 w-full overflow-hidden">
+                <img 
+                  src={selectedShopItem.image || `https://picsum.photos/seed/${selectedShopItem.name}/600/400`} 
+                  alt={selectedShopItem.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-obsidian via-obsidian/40 to-transparent" />
+                
+                <button 
+                  onClick={() => setSelectedShopItem(null)}
+                  className="absolute top-6 right-6 p-2 bg-black/50 hover:bg-black/70 backdrop-blur-md rounded-xl transition-all text-parchment"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="absolute bottom-6 left-8 right-8">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className={cn(
+                      "text-[10px] font-mono px-3 py-1 rounded-full uppercase tracking-[0.2em] border shadow-lg backdrop-blur-sm",
+                      selectedShopItem.rarity === 'Legendary' ? "text-gold border-gold/50 bg-gold/10" :
+                      selectedShopItem.rarity === 'Rare' ? "text-arcane border-arcane/50 bg-arcane/10" :
+                      selectedShopItem.rarity === 'Uncommon' ? "text-ember border-ember/50 bg-ember/10" :
+                      "text-parchment/60 border-white/10"
+                    )}>
+                      {selectedShopItem.rarity || 'Comum'}
+                    </span>
+                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full backdrop-blur-sm border border-white/5">
+                      {categories.find(c => c.id === selectedShopItem.category)?.label || selectedShopItem.category || 'Geral'}
+                    </span>
+                  </div>
+                  <h3 className="text-4xl font-serif text-parchment text-glow-white mb-1">{selectedShopItem.name}</h3>
+                </div>
+              </div>
+
+              <div className="p-8 pb-10 flex flex-col gap-8">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="glass p-4 rounded-2xl border border-white/5 flex flex-col items-center gap-1">
+                    <Coins size={16} className="text-gold mb-1" />
+                    <span className="text-lg font-serif text-parchment">{selectedShopItem.value || 0}</span>
+                    <span className="text-[8px] font-mono text-parchment/40 uppercase tracking-widest">Valor</span>
+                  </div>
+                  <div className="glass p-4 rounded-2xl border border-white/5 flex flex-col items-center gap-1">
+                    <Weight size={16} className="text-ember mb-1" />
+                    <span className="text-lg font-serif text-parchment">{selectedShopItem.weight || 0}kg</span>
+                    <span className="text-[8px] font-mono text-parchment/40 uppercase tracking-widest">Peso</span>
+                  </div>
+                  <div className="glass p-4 rounded-2xl border border-white/5 flex flex-col items-center gap-1">
+                    <Shield size={16} className="text-arcane mb-1" />
+                    <span className="text-lg font-serif text-parchment">{selectedShopItem.defense || 0}</span>
+                    <span className="text-[8px] font-mono text-parchment/40 uppercase tracking-widest">Defesa</span>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h5 className="text-[10px] font-mono text-gold/40 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                       <span className="w-8 h-px bg-gold/20" /> Atributos e Bônus
+                    </h5>
+                    {selectedShopItem.stats && Object.keys(selectedShopItem.stats).length > 0 ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {Object.entries(selectedShopItem.stats).map(([k, v]) => (
+                          <div key={k} className="flex items-center justify-between px-4 py-3 bg-white/5 rounded-xl border border-white/5 hover:border-gold/10 transition-colors">
+                            <span className="text-[10px] font-mono text-parchment/60 uppercase">{k}</span>
+                            <span className="text-sm font-serif text-gold">{Number(v) > 0 ? '+' : ''}{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-parchment/40 italic">Nenhum bônus de atributo concedido por este item.</p>
+                    )}
+                  </div>
+
+                  {selectedShopItem.category === 'ammo' && selectedShopItem.relatedWeapons?.length > 0 && (
+                    <div>
+                      <h5 className="text-[10px] font-mono text-gold/40 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                         <span className="w-8 h-px bg-gold/20" /> Armas Compatíveis
+                      </h5>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedShopItem.relatedWeapons.map((weaponId: string) => {
+                          const weapon = catalogItems.find(i => i.id === weaponId);
+                          return weapon ? (
+                            <span key={weaponId} className="px-3 py-1 bg-white/5 border border-white/10 rounded-lg text-[10px] text-parchment/60 font-mono">
+                              {weapon.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <h5 className="text-[10px] font-mono text-gold/40 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                       <span className="w-8 h-px bg-gold/20" /> Lore & Descrição
+                    </h5>
+                    <p className="text-sm text-parchment/60 leading-relaxed italic border-l-2 border-gold/20 pl-4 py-1">
+                      {selectedShopItem.description || 'Uma relíquia misteriosa encontrada em locais esquecidos. Suas origens exatas são desconhecidas até mesmo pelos sábios mais renomados.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 mt-2">
+                  <button
+                    onClick={() => { setSelectedShopItem(null); handlePurchase(selectedShopItem); }}
+                    disabled={selectedShopItem.value > (character?.money || 0)}
+                    className={cn(
+                      "flex-1 py-4 rounded-2xl flex items-center justify-center gap-3 font-bold uppercase tracking-widest text-[10px] transition-all shadow-xl",
+                      selectedShopItem.value > (character?.money || 0) 
+                        ? "bg-white/5 text-parchment/20 border border-white/10 cursor-not-allowed" 
+                        : "bg-gold text-obsidian shadow-gold/20 hover:scale-[1.02] active:scale-95"
+                    )}
+                  >
+                    <ShoppingCart size={18} />
+                    Adquirir Item
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {confirmingItem && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmingItem(null)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="glass max-w-md w-full rounded-[2.5rem] border border-gold/30 shadow-2xl relative z-10 overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="w-20 h-20 bg-gold/10 rounded-3xl mx-auto flex items-center justify-center text-gold mb-6 border border-gold/20">
+                  <ShoppingCart size={32} />
+                </div>
+                <h3 className="text-2xl font-serif text-parchment mb-2 text-glow-gold">Confirmar Compra</h3>
+                <p className="text-sm text-parchment/60 mb-6 leading-relaxed">
+                  Você deseja adquirir <span className="text-gold font-bold italic">{confirmingItem.name}</span> por <span className="text-gold font-bold">{confirmingItem.value} MO</span>?
+                </p>
+
+                {(confirmingItem.category === 'ammo' || confirmingItem.category === 'consumables') && (
+                  <div className="mb-8 p-4 glass rounded-2xl border border-white/5 space-y-3">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest block text-left px-2">Quantidade</label>
+                    <div className="flex items-center justify-between bg-black/20 rounded-xl p-2 border border-white/5">
+                      <button 
+                        onClick={() => setPurchaseQuantity(Math.max(1, purchaseQuantity - 1))}
+                        className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/5 transition-colors text-parchment/40 hover:text-parchment"
+                      >
+                        <Minus size={20} />
+                      </button>
+                      
+                      <div className="flex flex-col items-center">
+                        <input 
+                          type="number"
+                          value={purchaseQuantity}
+                          onChange={(e) => setPurchaseQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-20 bg-transparent text-center font-serif text-2xl text-gold focus:outline-none"
+                        />
+                        <span className="text-[8px] font-mono text-parchment/20 uppercase tracking-[0.2em] -mt-1">Unidades</span>
+                      </div>
+
+                      <button 
+                        onClick={() => setPurchaseQuantity(purchaseQuantity + 1)}
+                        className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/5 transition-colors text-parchment/40 hover:text-parchment"
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between px-2 pt-2 text-[10px] font-mono">
+                      <span className="text-parchment/30 uppercase">Total:</span>
+                      <span className="text-gold font-bold">{(confirmingItem.value || 0) * purchaseQuantity} MO</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={confirmPurchase}
+                    className="w-full py-4 bg-gold text-obsidian rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-gold/20"
+                  >
+                    Selar Transação
+                  </button>
+                  <button
+                    onClick={() => setConfirmingItem(null)}
+                    className="w-full py-4 bg-white/5 text-parchment/60 rounded-2xl font-bold uppercase tracking-widest text-[10px] hover:bg-white/10 transition-all border border-white/10"
+                  >
+                    Mudar de Ideia
+                  </button>
+                </div>
+              </div>
+              
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-gold/20">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: '100%' }}
+                  className="h-full bg-gold"
+                />
               </div>
             </motion.div>
           </div>

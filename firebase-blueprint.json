@@ -143,6 +143,12 @@
         "initialPowerPoints": { "type": "integer" },
         "description": { "type": "string" },
         "active": { "type": "boolean" },
+        "shopEnabled": { "type": "boolean", "description": "Whether the shop is visible to players" },
+        "shopItemIds": { 
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of items from CatalogItem that are available in the shop"
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["gmId", "name", "code"]

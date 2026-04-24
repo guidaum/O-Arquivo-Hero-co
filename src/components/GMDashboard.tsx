@@ -35,7 +35,9 @@ import {
   RefreshCw,
   Backpack,
   Package,
-  Settings
+  Settings,
+  ShoppingCart,
+  ShoppingBag
 } from 'lucide-react';
 import { 
   auth,
@@ -83,7 +85,10 @@ interface GameSession {
   diffEasyMod?: number;
   diffHardDiv?: number;
   diffExtremeDiv?: number;
+  initialMoney?: number;
   attributes?: { id: string; label: string; icon: string; color: string }[];
+  shopEnabled?: boolean;
+  shopItemIds?: string[];
 }
 
 interface Character {
@@ -218,6 +223,7 @@ export default function GMDashboard() {
   const [npcDefaultAttrPoints, setNpcDefaultAttrPoints] = React.useState(120);
   const [npcDefaultSkillPoints, setNpcDefaultSkillPoints] = React.useState(10);
   const [npcDefaultPowerPoints, setNpcDefaultPowerPoints] = React.useState(5);
+  const [initialMoney, setInitialMoney] = React.useState(500);
   const [pvFormula, setPvFormula] = React.useState('((FOR / 2) + CON) * 10');
   const [atpFormula, setAtpFormula] = React.useState('(INT + 3) * 3');
   const [socoFormula, setSocoFormula] = React.useState('FOR');
@@ -261,6 +267,8 @@ export default function GMDashboard() {
   const [diffEasyMod, setDiffEasyMod] = React.useState(2);
   const [diffHardDiv, setDiffHardDiv] = React.useState(2);
   const [diffExtremeDiv, setDiffExtremeDiv] = React.useState(5);
+  const [shopEnabled, setShopEnabled] = React.useState(true);
+  const [shopItemIds, setShopItemIds] = React.useState<string[]>([]);
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
@@ -295,6 +303,15 @@ export default function GMDashboard() {
   const [managingCharacter, setManagingCharacter] = React.useState<Character | null>(null);
   const [pointsToAdd, setPointsToAdd] = React.useState({ skills: 5, powers: 2, attributes: 10, level: 1 });
 
+  const toggleShopItem = (itemId: string) => {
+    setShopItemIds(prev => {
+      if (prev.includes(itemId)) {
+        return prev.filter(id => id !== itemId);
+      }
+      return [...prev, itemId];
+    });
+  };
+
   const applySettingsToUI = React.useCallback((data: any) => {
     if (!data) return;
     setMaxAttributePoints(data.maxAttributePoints ?? 120);
@@ -310,6 +327,7 @@ export default function GMDashboard() {
     setNpcDefaultAttrPoints(data.npcDefaultAttrPoints ?? 120);
     setNpcDefaultSkillPoints(data.npcDefaultSkillPoints ?? 10);
     setNpcDefaultPowerPoints(data.npcDefaultPowerPoints ?? 5);
+    setInitialMoney(data.initialMoney ?? 500);
     setPvFormula(data.pvFormula || '((FOR / 2) + CON) * 10');
     setAtpFormula(data.atpFormula || '(INT + 3) * 3');
     setSocoFormula(data.socoFormula || 'FOR');
@@ -343,6 +361,8 @@ export default function GMDashboard() {
     setDiffEasyMod(data.diffEasyMod ?? 2);
     setDiffHardDiv(data.diffHardDiv ?? 2);
     setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
+    setShopEnabled(data.shopEnabled ?? true);
+    setShopItemIds(data.shopItemIds || []);
   }, []);
 
   React.useEffect(() => {
@@ -615,11 +635,13 @@ export default function GMDashboard() {
     rarity: 'Common',
     weight: 0,
     value: 0,
+    isStartingItem: false,
     description: '',
     image: '',
     stats: {} as Record<string, number>,
     damage: '',
-    defense: 0
+    defense: 0,
+    relatedWeapons: [] as string[]
   });
 
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, success: boolean, name: string, attr: string } | null>(null);
@@ -897,6 +919,7 @@ export default function GMDashboard() {
         npcDefaultAttrPoints: Number(npcDefaultAttrPoints),
         npcDefaultSkillPoints: Number(npcDefaultSkillPoints),
         npcDefaultPowerPoints: Number(npcDefaultPowerPoints),
+        initialMoney: Number(initialMoney),
         pvFormula,
         atpFormula,
         socoFormula,
@@ -915,6 +938,8 @@ export default function GMDashboard() {
         diffEasyMod: Number(diffEasyMod),
         diffHardDiv: Number(diffHardDiv),
         diffExtremeDiv: Number(diffExtremeDiv),
+        shopEnabled,
+        shopItemIds,
         updatedAt: new Date().toISOString()
       });
 
@@ -941,6 +966,7 @@ export default function GMDashboard() {
         npcDefaultAttrPoints: Number(npcDefaultAttrPoints),
         npcDefaultSkillPoints: Number(npcDefaultSkillPoints),
         npcDefaultPowerPoints: Number(npcDefaultPowerPoints),
+        initialMoney: Number(initialMoney),
         pvFormula,
         atpFormula,
         socoFormula,
@@ -1426,14 +1452,35 @@ export default function GMDashboard() {
       rarity: item.rarity || 'Common',
       weight: item.weight || 0,
       value: item.value || 0,
+      isStartingItem: item.isStartingItem || false,
       description: item.description || '',
       image: item.image || '',
       stats: item.stats || {},
       damage: item.damage || '',
-      defense: item.defense || 0
+      defense: item.defense || 0,
+      relatedWeapons: item.relatedWeapons || []
     });
     setEditingCatalogId(item.id);
     setIsEditingCatalog(true);
+  };
+
+  const handleDuplicateCatalogItem = async (item: any) => {
+    try {
+      const newItem = {
+        ...item,
+        name: `${item.name} (Cópia)`,
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+        createdBy: 'Mestre'
+      };
+      delete newItem.id; // Correct way to handle id for addDoc
+      
+      await addDoc(collection(db, 'itemCatalog'), newItem);
+      setSaveStatus({ type: 'success', message: 'Item duplicado com sucesso!' });
+    } catch (err) {
+      console.error('Error duplicating catalog item:', err);
+      setSaveStatus({ type: 'error', message: 'Erro ao duplicar item.' });
+    }
   };
 
   const handleSaveCatalogItem = async () => {
@@ -2020,29 +2067,60 @@ export default function GMDashboard() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-6"
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/5 p-6 rounded-[2.5rem] border border-white/10">
-                <div>
-                  <h3 className="text-2xl font-serif">Catálogo de Itens</h3>
-                  <p className="text-sm text-parchment/40">Todos os itens criados pelos jogadores são salvos aqui para referência do mestre.</p>
-                </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-3 px-4 py-2 glass rounded-2xl">
-                      <Package size={18} className="text-arcane" />
-                      <span className="text-sm font-medium">{itemCatalog.length} Itens Catalogados</span>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/5 p-6 md:p-8 rounded-[2.5rem] border border-white/10">
+                <div className="flex flex-col md:flex-row md:items-center gap-6">
+                  <div>
+                    <h3 className="text-2xl font-serif text-glow-gold">Catálogo de Itens</h3>
+                    <p className="text-sm text-parchment/40">Gerencie a biblioteca global de itens e escolha quais estarão na loja da campanha.</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-4 border-l border-white/10 pl-6">
+                    <div className={cn(
+                      "flex flex-col px-4 py-2 rounded-2xl border transition-all",
+                      shopEnabled ? "bg-gold/5 border-gold/20" : "bg-white/5 border-white/5 opacity-50"
+                    )}>
+                      <p className="text-[8px] font-mono text-parchment/40 uppercase tracking-widest leading-none mb-1">Status da Loja</p>
+                      <div className="flex items-center gap-2">
+                        <div className={cn("w-1.5 h-1.5 rounded-full", shopEnabled ? "bg-gold animate-pulse" : "bg-parchment/20")} />
+                        <span className={cn("text-xs font-bold uppercase tracking-wider", shopEnabled ? "text-gold" : "text-parchment/30")}>
+                          {shopEnabled ? "Ativada" : "Desativada"}
+                        </span>
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => {
+
+                    <div className="flex flex-col px-4 py-2 rounded-2xl bg-white/5 border border-white/5">
+                      <p className="text-[8px] font-mono text-parchment/40 uppercase tracking-widest leading-none mb-1">Itens na Loja</p>
+                      <div className="flex items-center gap-2">
+                        <ShoppingCart size={12} className="text-arcane" />
+                        <span className="text-xs font-bold text-arcane">{shopItemIds.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={handleSaveSettings}
+                    className="flex items-center gap-2 px-6 py-3 bg-white/10 text-parchment rounded-2xl font-bold hover:bg-white/20 transition-all text-xs border border-white/10"
+                  >
+                    <Save size={16} />
+                    Salvar Loja
+                  </button>
+                  <button 
+                    onClick={() => {
                         setCatalogItemForm({
                           name: '',
-                          category: 'Geral',
+                          category: 'misc',
                           rarity: 'Common',
                           weight: 0,
                           value: 0,
+                          isStartingItem: false,
                           description: '',
                           image: '',
                           stats: {},
                           damage: '',
-                          defense: 0
+                          defense: 0,
+                          relatedWeapons: []
                         });
                         setEditingCatalogId(null);
                         setIsEditingCatalog(true);
@@ -2090,12 +2168,17 @@ export default function GMDashboard() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Categoria</label>
-                          <input 
-                            type="text" 
+                          <select 
                             value={catalogItemForm.category}
                             onChange={e => setCatalogItemForm({ ...catalogItemForm, category: e.target.value })}
                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                          />
+                          >
+                            <option value="weapons">Armas</option>
+                            <option value="armor">Armaduras</option>
+                            <option value="ammo">Munição</option>
+                            <option value="consumables">Consumíveis</option>
+                            <option value="misc">Diversos</option>
+                          </select>
                         </div>
                         <div className="space-y-2">
                           <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Raridade</label>
@@ -2132,6 +2215,18 @@ export default function GMDashboard() {
                           />
                         </div>
                       </div>
+                      <div className="flex items-center gap-3 px-2 py-4">
+                        <input 
+                          type="checkbox"
+                          id="isStartingItem"
+                          checked={catalogItemForm.isStartingItem}
+                          onChange={e => setCatalogItemForm({ ...catalogItemForm, isStartingItem: e.target.checked })}
+                          className="w-5 h-5 rounded border-white/10 bg-white/5 text-arcane focus:ring-arcane/50"
+                        />
+                        <label htmlFor="isStartingItem" className="text-xs font-mono text-parchment/60 uppercase tracking-widest cursor-pointer select-none">
+                          Item Inicial (Visível na criação de personagem)
+                        </label>
+                      </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Imagem URL</label>
                         <input 
@@ -2141,6 +2236,35 @@ export default function GMDashboard() {
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                         />
                       </div>
+
+                      {catalogItemForm.category === 'ammo' && (
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Armas Relacionadas</label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto no-scrollbar glass p-3 rounded-xl border border-white/10">
+                            {itemCatalog.filter(i => i.category === 'weapons').map(weapon => (
+                              <label key={weapon.id} className="flex items-center gap-2 p-2 hover:bg-white/5 rounded-lg cursor-pointer transition-colors group">
+                                <input 
+                                  type="checkbox"
+                                  checked={catalogItemForm.relatedWeapons?.includes(weapon.id)}
+                                  onChange={e => {
+                                    const current = catalogItemForm.relatedWeapons || [];
+                                    if (e.target.checked) {
+                                      setCatalogItemForm({ ...catalogItemForm, relatedWeapons: [...current, weapon.id] });
+                                    } else {
+                                      setCatalogItemForm({ ...catalogItemForm, relatedWeapons: current.filter(id => id !== weapon.id) });
+                                    }
+                                  }}
+                                  className="w-4 h-4 rounded border-white/10 bg-white/5 text-arcane focus:ring-arcane/50"
+                                />
+                                <span className="text-xs text-parchment/60 group-hover:text-parchment transition-colors truncate">{weapon.name}</span>
+                              </label>
+                            ))}
+                            {itemCatalog.filter(i => i.category === 'weapons').length === 0 && (
+                              <p className="text-[10px] text-parchment/40 italic p-2">Nenhuma arma cadastrada no catálogo.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-4">
@@ -2296,13 +2420,35 @@ export default function GMDashboard() {
                           ))}
                         </div>
                         
-                        <div className="flex gap-2 mt-4">
+                        <div className="flex gap-2 mb-2">
+                           <button 
+                             onClick={() => toggleShopItem(item.id)}
+                             className={cn(
+                               "flex-1 py-3 rounded-xl border transition-all flex items-center justify-center gap-2 font-bold text-[10px] uppercase tracking-widest",
+                               shopItemIds.includes(item.id)
+                                 ? "bg-gold text-obsidian border-gold shadow-lg shadow-gold/20"
+                                 : "bg-white/5 text-parchment/40 border-white/10 hover:border-gold/30 hover:text-gold"
+                             )}
+                           >
+                             <ShoppingCart size={14} className={cn(shopItemIds.includes(item.id) ? "fill-current" : "")} />
+                             {shopItemIds.includes(item.id) ? 'Disponível na Loja' : 'Add à Loja'}
+                           </button>
+                        </div>
+
+                        <div className="flex gap-2">
                           <button 
                             onClick={() => handleEditCatalogItem(item)}
                             className="flex-1 py-2 rounded-xl bg-arcane/10 text-arcane border border-arcane/20 text-[10px] font-bold uppercase tracking-widest hover:bg-arcane hover:text-obsidian transition-all flex items-center justify-center gap-2"
                           >
                             <Edit2 size={12} />
                             Editar
+                          </button>
+                          <button 
+                            onClick={() => handleDuplicateCatalogItem(item)}
+                            className="p-2 rounded-xl bg-gold/10 text-gold border border-gold/20 hover:bg-gold hover:text-obsidian transition-all"
+                            title="Duplicar Item"
+                          >
+                            <Copy size={12} />
                           </button>
                           <button 
                             onClick={async () => {
@@ -3750,6 +3896,37 @@ export default function GMDashboard() {
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                   />
                   <p className="text-[10px] text-parchment/40 font-mono px-2">Define quantos pontos os jogadores têm para comprar poderes.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Dinheiro Inicial (MO)</label>
+                  <input 
+                    type="number" 
+                    value={initialMoney}
+                    onChange={e => setInitialMoney(Number(e.target.value))}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                  />
+                  <p className="text-[10px] text-parchment/40 font-mono px-2">Define o capital inicial dos personagens para compra de equipamentos.</p>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xl font-serif mb-2">Acesso à Loja</h4>
+                    <p className="text-sm text-parchment/40">Controle se os jogadores podem acessar o mercado de itens em seus inventários.</p>
+                  </div>
+                  <button 
+                    onClick={() => setShopEnabled(!shopEnabled)}
+                    className={cn(
+                      "flex items-center gap-3 px-6 py-3 rounded-2xl font-bold transition-all border",
+                      shopEnabled 
+                        ? "bg-gold/20 border-gold/40 text-gold" 
+                        : "bg-white/5 border-white/10 text-parchment/40"
+                    )}
+                  >
+                    <ShoppingCart size={18} />
+                    <span>{shopEnabled ? 'Loja Ativada' : 'Loja Desativada'}</span>
+                  </button>
                 </div>
               </div>
 
