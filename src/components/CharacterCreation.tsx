@@ -31,7 +31,7 @@ import {
   Backpack,
   Pencil
 } from 'lucide-react';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
 
 // Helper to get icon component from name
@@ -40,6 +40,17 @@ const getIcon = (name: string) => {
     Sword, Shield, Zap, Eye, Brain, Heart, UserPlus, Dice6, Activity, Scroll, Plus, History, Sparkles, Flame, Star, Info, Target, Search, Filter, X
   };
   return icons[name] || Shield;
+};
+
+const RollingValue = ({ sides = 20, isDamage = false }: { sides?: number, isDamage?: boolean }) => {
+  const [val, setVal] = React.useState(1);
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setVal(Math.floor(Math.random() * (isDamage ? 20 : sides)) + 1);
+    }, 40);
+    return () => clearInterval(interval);
+  }, [sides, isDamage]);
+  return <>{val}</>;
 };
 
 const DEFAULT_ATTRIBUTES = [
@@ -52,6 +63,7 @@ const DEFAULT_ATTRIBUTES = [
   { id: 'int', label: 'Inteligência', icon: 'Brain', color: 'text-arcane', description: 'Agudeza mental e raciocínio.' },
   { id: 'cor', label: 'Coragem', icon: 'Heart', color: 'text-ember', description: 'Força de vontade e bravura.' },
 ];
+
 
 export default function CharacterCreation() {
   const navigate = useNavigate();
@@ -90,14 +102,20 @@ export default function CharacterCreation() {
   const [traitSearch, setTraitSearch] = React.useState('');
   const [traitTypeFilter, setTraitTypeFilter] = React.useState('all');
   const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
+  const [isRolling, setIsRolling] = React.useState(false);
   const [quickRoll, setQuickRoll] = React.useState<{ 
     result: number, 
     success?: boolean, 
     attr: string, 
     target?: number,
     type: 'test' | 'damage',
-    diceSides?: number
+    diceSides?: number,
+    rolling?: boolean,
+    isCritical?: boolean,
+    isFumble?: boolean
   } | null>(null);
+  const rollTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const rollingAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const [skills, setSkills] = React.useState<any[]>([]);
   const [powers, setPowers] = React.useState<any[]>([]);
@@ -629,6 +647,22 @@ export default function CharacterCreation() {
   };
 
   const handleQuickRoll = (attrLabel: string, attrValue: number, difficulty: 'easy' | 'normal' | 'hard' | 'extreme' = 'normal', diceSides: number = 20) => {
+    if (rollTimeoutRef.current) clearTimeout(rollTimeoutRef.current);
+    if (rollingAudioRef.current) {
+      rollingAudioRef.current.pause();
+      rollingAudioRef.current = null;
+    }
+    
+    const s = globalSettings || {};
+    const dSound = s.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3';
+    const sSound = s.successSound || 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3';
+    const fSound = s.failureSound || 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3';
+    const cSound = s.criticalSound || 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3';
+    const fbSound = s.fumbleSound || 'https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3';
+
+    // Play rolling sound (shortened)
+    rollingAudioRef.current = playAudio(dSound, 0.4);
+
     let target = attrValue;
     let diffLabel = 'Normal';
     
@@ -648,29 +682,109 @@ export default function CharacterCreation() {
     }
     
     const roll = Math.floor(Math.random() * diceSides) + 1;
+    const isCritical = roll === 1;
+    const isFumble = roll === diceSides;
     const success = roll <= target;
     
+    // Pre-initialize success/fail sounds
+    const criticalAudio = new Audio(cSound);
+    const fumbleAudio = new Audio(fbSound);
+    const successAudio = new Audio(sSound);
+    const failureAudio = new Audio(fSound);
+    
     setQuickRoll({ 
-      result: roll, 
-      success, 
+      result: 0, 
+      success: false, 
       attr: `${attrLabel} [${diffLabel}]`,
       target,
       type: 'test',
-      diceSides
+      diceSides,
+      rolling: true
     });
-    
-    setTimeout(() => setQuickRoll(null), 5000);
+
+    setTimeout(() => {
+      // Stop rolling sound
+      if (rollingAudioRef.current) {
+        rollingAudioRef.current.pause();
+        rollingAudioRef.current = null;
+      }
+
+      setQuickRoll({ 
+        result: roll, 
+        success, 
+        attr: `${attrLabel} [${diffLabel}]`,
+        target,
+        type: 'test',
+        diceSides,
+        rolling: false,
+        isCritical,
+        isFumble
+      });
+
+      if (isCritical) {
+        criticalAudio.volume = 0.6;
+        criticalAudio.play().catch(() => {});
+      } else if (isFumble) {
+        fumbleAudio.volume = 0.6;
+        fumbleAudio.play().catch(() => {});
+      } else if (success) {
+        successAudio.volume = 0.5;
+        successAudio.play().catch(() => {});
+      } else {
+        failureAudio.volume = 0.5;
+        failureAudio.play().catch(() => {});
+      }
+
+      rollTimeoutRef.current = setTimeout(() => setQuickRoll(null), 5000);
+    }, 1000);
   };
 
   const handleFormulaRoll = (label: string, formula: string) => {
+    if (rollTimeoutRef.current) clearTimeout(rollTimeoutRef.current);
+    if (rollingAudioRef.current) {
+      rollingAudioRef.current.pause();
+      rollingAudioRef.current = null;
+    }
+    
+    const s = globalSettings || {};
+    const dSound = s.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3';
+    const sSound = s.successSound || 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3';
+
+    // Play rolling sound
+    rollingAudioRef.current = playAudio(dSound, 0.4);
+
     if (!formula) return;
     const result = rollDiceFormula(formula, statsForFormula);
+    
+    // Pre-initialize sound
+    const damageAudio = new Audio(sSound);
+    
     setQuickRoll({ 
-      result: result.total, 
+      result: 0, 
       attr: label,
-      type: 'damage'
+      type: 'damage',
+      rolling: true
     });
-    setTimeout(() => setQuickRoll(null), 5000);
+
+    setTimeout(() => {
+      // Stop rolling sound
+      if (rollingAudioRef.current) {
+        rollingAudioRef.current.pause();
+        rollingAudioRef.current = null;
+      }
+
+      setQuickRoll({ 
+        result: result.total, 
+        attr: label,
+        type: 'damage',
+        rolling: false
+      });
+      
+      damageAudio.volume = 0.5;
+      damageAudio.play().catch(() => {});
+
+      rollTimeoutRef.current = setTimeout(() => setQuickRoll(null), 5000);
+    }, 1000);
   };
 
   const handleSaveCharacter = async () => {
@@ -2418,56 +2532,105 @@ export default function CharacterCreation() {
           </div>
         )}
       </AnimatePresence>
+
       {/* Quick Roll Result Notification */}
       <AnimatePresence>
         {quickRoll && (
           <motion.div
-            initial={{ opacity: 0, y: 50, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 50, x: '-50%' }}
+            initial={{ opacity: 0, y: 50, x: '-50%', scale: 0.8, rotateX: 45 }}
+            animate={{ opacity: 1, y: 0, x: '-50%', scale: 1, rotateX: 0 }}
+            exit={{ opacity: 0, y: 20, x: '-50%', scale: 0.8, rotateX: -45 }}
+            transition={{ type: "spring", damping: 15 }}
+            style={{ perspective: "1000px" }}
             className={cn(
-              "fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border shadow-2xl flex items-center gap-4",
-              quickRoll.type === 'test' ? "border-arcane/30" : "border-ember/30"
+              "fixed bottom-24 left-1/2 z-[100] glass px-8 py-5 rounded-[2.5rem] border shadow-2xl flex items-center gap-6 transition-all duration-500",
+              quickRoll.rolling ? "border-white/20" : 
+              quickRoll.isCritical ? "border-gold shadow-[0_0_30px_rgba(255,215,0,0.4)] bg-gold/10" :
+              quickRoll.isFumble ? "border-ember shadow-[0_0_30px_rgba(255,68,68,0.4)] bg-ember/10" :
+              (quickRoll.success ? "border-arcane/50" : "border-ember/50")
             )}
           >
             <div className="flex flex-col">
-              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest mb-1">
                 {quickRoll.type === 'test' ? 'Teste: ' : 'Dano/Efeito: '}
                 {quickRoll.attr}
               </span>
-              <div className="flex items-baseline gap-2">
+              <div className="flex items-baseline gap-3">
                 {quickRoll.type === 'test' ? (
                   <>
                     <span className={cn(
-                      "text-2xl font-serif",
-                      quickRoll.success ? "text-glow-arcane" : "text-ember"
+                      "text-3xl font-serif min-w-[100px]",
+                      quickRoll.rolling ? "text-parchment/40" : 
+                      quickRoll.isCritical ? "text-gold animate-bounce" :
+                      quickRoll.isFumble ? "text-ember animate-pulse" :
+                      (quickRoll.success ? "text-glow-arcane" : "text-ember")
                     )}>
-                      {quickRoll.success ? 'Sucesso' : 'Falha'}
+                      {quickRoll.rolling ? 'Rolando...' : 
+                       quickRoll.isCritical ? 'CRÍTICO!' : 
+                       quickRoll.isFumble ? 'DESASTRE!' : 
+                       (quickRoll.success ? 'Sucesso' : 'Falha')}
                     </span>
-                    <span className="text-xs text-parchment/40 font-mono">
-                      (d{quickRoll.diceSides || 20}: {quickRoll.result} vs {quickRoll.target})
+                    <span className={cn(
+                      "text-sm font-mono bg-white/5 px-2 py-1 rounded-lg border",
+                      quickRoll.isCritical ? "text-gold border-gold/30" : 
+                      quickRoll.isFumble ? "text-ember border-ember/30" : 
+                      "text-parchment/40 border-white/5"
+                    )}>
+                      (d{quickRoll.diceSides || 20}: {quickRoll.rolling ? <RollingValue sides={quickRoll.diceSides} /> : quickRoll.result} vs {quickRoll.target})
                     </span>
                   </>
                 ) : (
                   <>
-                    <span className="text-2xl font-serif text-ember">
-                      {quickRoll.result}
+                    <span className="text-3xl font-serif text-ember min-w-[40px]">
+                      {quickRoll.rolling ? <RollingValue isDamage /> : quickRoll.result}
                     </span>
-                    <span className="text-xs text-parchment/40 font-mono">
+                    <span className="text-sm text-parchment/40 font-mono">
                       Total
                     </span>
                   </>
                 )}
               </div>
             </div>
-            {quickRoll.type === 'test' ? (
-              <>
-                {quickRoll.success && <Sparkles className="text-gold animate-bounce" size={20} />}
-                {!quickRoll.success && <Zap className="text-ember animate-pulse" size={20} />}
-              </>
-            ) : (
-              <Sword className="text-ember animate-pulse" size={20} />
-            )}
+
+            <motion.div
+              animate={quickRoll.rolling ? { 
+                rotate: [0, 360],
+                scale: [1, 1.2, 1],
+                x: [0, -3, 3, -3, 3, 0],
+                y: [0, -3, 3, -3, 3, 0],
+                rotateX: [0, 90, 180, 270, 360],
+                rotateY: [0, 90, 180, 270, 360]
+              } : { rotate: 0, scale: 1, x: 0, y: 0, rotateX: 0, rotateY: 0 }}
+              transition={quickRoll.rolling ? { 
+                rotate: { repeat: Infinity, duration: 0.3, ease: "linear" },
+                scale: { repeat: Infinity, duration: 0.4 },
+                x: { repeat: Infinity, duration: 0.15 },
+                y: { repeat: Infinity, duration: 0.2 },
+                rotateX: { repeat: Infinity, duration: 0.5, ease: "linear" },
+                rotateY: { repeat: Infinity, duration: 0.6, ease: "linear" }
+              } : { type: "spring", damping: 12 }}
+            >
+              {quickRoll.rolling ? (
+                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-parchment/40 border border-white/10">
+                  <Dice6 size={28} />
+                </div>
+              ) : (
+                <>
+                  {quickRoll.type === 'test' ? (
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center border transition-colors",
+                      quickRoll.success ? "bg-arcane/20 text-arcane border-arcane/30" : "bg-ember/20 text-ember border-ember/30"
+                    )}>
+                      {quickRoll.success ? <Sparkles size={28} className="animate-pulse" /> : <Zap size={28} className="animate-bounce" />}
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 bg-ember/20 rounded-2xl flex items-center justify-center text-ember border border-ember/30">
+                      <Sword size={28} className="animate-pulse" />
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

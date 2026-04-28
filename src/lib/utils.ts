@@ -77,3 +77,15 @@ export const rollDiceFormula = (formula: string, stats: Record<string, number>) 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export const playAudio = (url: string, volume: number = 0.5) => {
+  try {
+    if (!url) return null;
+    const audio = new Audio(url);
+    audio.volume = volume;
+    audio.play().catch(() => {});
+    return audio;
+  } catch (e) {
+    return null;
+  }
+};

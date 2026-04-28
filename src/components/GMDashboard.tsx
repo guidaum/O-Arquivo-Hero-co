@@ -37,7 +37,9 @@ import {
   Package,
   Settings,
   ShoppingCart,
-  ShoppingBag
+  ShoppingBag,
+  HeartCrack,
+  Play
 } from 'lucide-react';
 import { 
   auth,
@@ -52,10 +54,11 @@ import {
   updateDoc,
   addDoc,
   deleteDoc,
+  getDocs,
   OperationType, 
   handleFirestoreError 
 } from '../firebase';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio } from '../lib/utils';
 import SessionJournal from './SessionJournal';
 import SessionChat from './SessionChat';
 
@@ -224,6 +227,13 @@ export default function GMDashboard() {
   const [npcDefaultSkillPoints, setNpcDefaultSkillPoints] = React.useState(10);
   const [npcDefaultPowerPoints, setNpcDefaultPowerPoints] = React.useState(5);
   const [initialMoney, setInitialMoney] = React.useState(500);
+  
+  const [diceRollSound, setDiceRollSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3');
+  const [successSound, setSuccessSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3');
+  const [failureSound, setFailureSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+  const [criticalSound, setCriticalSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3');
+  const [fumbleSound, setFumbleSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3');
+
   const [pvFormula, setPvFormula] = React.useState('((FOR / 2) + CON) * 10');
   const [atpFormula, setAtpFormula] = React.useState('(INT + 3) * 3');
   const [socoFormula, setSocoFormula] = React.useState('FOR');
@@ -281,6 +291,98 @@ export default function GMDashboard() {
   const [editingAttributeName, setEditingAttributeName] = React.useState('');
 
   const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
+
+  // Player Management State
+  const [inviteEmail, setInviteEmail] = React.useState('');
+  const [isInviting, setIsInviting] = React.useState(false);
+  const [sessionPlayers, setSessionPlayers] = React.useState<{ id: string, name: string, email: string, image?: string }[]>([]);
+
+  React.useEffect(() => {
+    if (!session?.playerIds) {
+      setSessionPlayers([]);
+      return;
+    }
+
+    const fetchPlayers = async () => {
+      try {
+        const playerDetails = await Promise.all(
+          session.playerIds.map(async (id) => {
+            const userSnap = await getDoc(doc(db, 'users', id));
+            if (userSnap.exists()) {
+              const data = userSnap.data();
+              return {
+                id: userSnap.id,
+                name: data.displayName || 'Jogador Misterioso',
+                email: data.email || 'N/A',
+                image: data.photoURL || ''
+              };
+            }
+            return { id, name: 'Usuário Desconhecido', email: 'N/A' };
+          })
+        );
+        setSessionPlayers(playerDetails);
+      } catch (err) {
+        console.error('Error fetching session players:', err);
+      }
+    };
+
+    fetchPlayers();
+  }, [session?.playerIds]);
+
+  const handleInvitePlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim() || !sessionId || !session) return;
+
+    setIsInviting(true);
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', inviteEmail.trim().toLowerCase()));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        setSaveStatus({ type: 'error', message: 'Usuário não encontrado com este e-mail.' });
+        setIsInviting(false);
+        return;
+      }
+
+      const userDoc = querySnapshot.docs[0];
+      const userId = userDoc.id;
+
+      if (session.playerIds?.includes(userId)) {
+        setSaveStatus({ type: 'info', message: 'Este jogador já faz parte da sessão.' });
+        setIsInviting(false);
+        return;
+      }
+
+      const updatedPlayerIds = [...(session.playerIds || []), userId];
+      await updateDoc(doc(db, 'gameSessions', sessionId), {
+        playerIds: updatedPlayerIds
+      });
+
+      setInviteEmail('');
+      setSaveStatus({ type: 'success', message: 'Jogador convidado com sucesso!' });
+      setIsInviting(false);
+    } catch (err) {
+      console.error('Error inviting player:', err);
+      setSaveStatus({ type: 'error', message: 'Erro ao processar convite.' });
+      setIsInviting(false);
+    }
+  };
+
+  const handleRemovePlayer = async (playerId: string) => {
+    if (!sessionId || !session || !window.confirm('Deseja remover este jogador da sessão?')) return;
+
+    try {
+      const updatedPlayerIds = session.playerIds.filter(id => id !== playerId);
+      await updateDoc(doc(db, 'gameSessions', sessionId), {
+        playerIds: updatedPlayerIds
+      });
+      setSaveStatus({ type: 'success', message: 'Jogador removido com sucesso!' });
+    } catch (err) {
+      console.error('Error removing player:', err);
+      setSaveStatus({ type: 'error', message: 'Erro ao remover jogador.' });
+    }
+  };
 
   const handleDeleteCharacter = async (id: string) => {
     try {
@@ -363,6 +465,12 @@ export default function GMDashboard() {
     setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
     setShopEnabled(data.shopEnabled ?? true);
     setShopItemIds(data.shopItemIds || []);
+    
+    setDiceRollSound(data.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3');
+    setSuccessSound(data.successSound || 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3');
+    setFailureSound(data.failureSound || 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+    setCriticalSound(data.criticalSound || 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3');
+    setFumbleSound(data.fumbleSound || 'https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3');
   }, []);
 
   React.useEffect(() => {
@@ -644,7 +752,17 @@ export default function GMDashboard() {
     relatedWeapons: [] as string[]
   });
 
-  const [quickRoll, setQuickRoll] = React.useState<{ result: number, success: boolean, name: string, attr: string } | null>(null);
+  const [isRolling, setIsRolling] = React.useState(false);
+  const [quickRoll, setQuickRoll] = React.useState<{ 
+    result: number, 
+    success: boolean, 
+    name: string, 
+    attr: string,
+    isCritical?: boolean,
+    isFumble?: boolean
+  } | null>(null);
+  const rollTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const rollingAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const sendRollToChat = async (label: string, result: any, charName?: string, charImage?: string, success?: boolean) => {
     if (!sessionId || !auth.currentUser) return;
@@ -677,14 +795,67 @@ export default function GMDashboard() {
   };
 
   const handleQuickRoll = (name: string, attrLabel: string, attrValue: number) => {
-    const result = rollDiceFormula('1D10', {});
+    if (rollTimeoutRef.current) clearTimeout(rollTimeoutRef.current);
+    if (rollingAudioRef.current) {
+      rollingAudioRef.current.pause();
+      rollingAudioRef.current = null;
+    }
+
+    // Play rolling sound (shortened)
+    rollingAudioRef.current = playAudio(diceRollSound, 0.4);
+
+    setIsRolling(true);
+    setQuickRoll(null);
+    
+    // Simulate rolling delay
+    setTimeout(() => {
+      // Stop rolling sound
+      if (rollingAudioRef.current) {
+        rollingAudioRef.current.pause();
+        rollingAudioRef.current = null;
+      }
+
+      const result = rollDiceFormula('1D10', {});
     const naturalRoll = result.rolls[0]?.values[0] || 0;
+    const isCritical = naturalRoll === 1;
+    const isFumble = naturalRoll === 10;
     const success = naturalRoll <= attrValue;
-    setQuickRoll({ result: naturalRoll, success, name, attr: attrLabel });
     
-    sendRollToChat(`${name} - ${attrLabel}`, result, undefined, undefined, success);
+    // Pre-initialize success/fail sounds
+    const criticalAudio = new Audio(criticalSound);
+    const fumbleAudio = new Audio(fumbleSound);
+    const successAudio = new Audio(successSound);
+    const failureAudio = new Audio(failureSound);
     
-    setTimeout(() => setQuickRoll(null), 5000);
+    setQuickRoll({ 
+        result: naturalRoll, 
+        success, 
+        name, 
+        attr: attrLabel,
+        isCritical,
+        isFumble
+      });
+      setIsRolling(false);
+      
+      if (isCritical) {
+        criticalAudio.volume = 0.6;
+        criticalAudio.play().catch(() => {});
+      } else if (isFumble) {
+        fumbleAudio.volume = 0.6;
+        fumbleAudio.play().catch(() => {});
+      } else if (success) {
+        successAudio.volume = 0.5;
+        successAudio.play().catch(() => {});
+      } else {
+        failureAudio.volume = 0.5;
+        failureAudio.play().catch(() => {});
+      }
+      
+      sendRollToChat(`${name} - ${attrLabel}`, result, undefined, undefined, success);
+      
+      // Auto close after 5 seconds
+      rollTimeoutRef.current = setTimeout(() => setQuickRoll(null), 5000);
+    }, 800);
   };
 
   const isOnline = (uid?: string) => {
@@ -728,7 +899,7 @@ export default function GMDashboard() {
   }, [characters]);
 
   React.useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !user) return;
 
     const sessionRef = doc(db, 'gameSessions', sessionId);
     const unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
@@ -940,6 +1111,11 @@ export default function GMDashboard() {
         diffExtremeDiv: Number(diffExtremeDiv),
         shopEnabled,
         shopItemIds,
+        diceRollSound,
+        successSound,
+        failureSound,
+        criticalSound,
+        fumbleSound,
         updatedAt: new Date().toISOString()
       });
 
@@ -985,6 +1161,11 @@ export default function GMDashboard() {
         diffEasyMod: Number(diffEasyMod),
         diffHardDiv: Number(diffHardDiv),
         diffExtremeDiv: Number(diffExtremeDiv),
+        diceRollSound,
+        successSound,
+        failureSound,
+        criticalSound,
+        fumbleSound,
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
@@ -3827,36 +4008,117 @@ export default function GMDashboard() {
               </div>
 
               {activeTab === 'settings' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 p-6 rounded-3xl border border-white/10">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome da Campanha</label>
-                    <input 
-                      type="text" 
-                      value={sessionName}
-                      onChange={e => setSessionName(e.target.value)}
-                      onBlur={() => setTouched(prev => ({ ...prev, sessionName: true }))}
-                      className={cn(
-                        "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors font-serif text-lg",
-                        touched.sessionName && !sessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                <div className="space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white/5 p-6 rounded-3xl border border-white/10">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome da Campanha</label>
+                      <input 
+                        type="text" 
+                        value={sessionName}
+                        onChange={e => setSessionName(e.target.value)}
+                        onBlur={() => setTouched(prev => ({ ...prev, sessionName: true }))}
+                        className={cn(
+                          "w-full bg-white/5 border rounded-xl px-4 py-3 focus:outline-none transition-colors font-serif text-lg",
+                          touched.sessionName && !sessionName.trim() ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                        )}
+                      />
+                      {touched.sessionName && !sessionName.trim() && (
+                        <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
                       )}
-                    />
-                    {touched.sessionName && !sessionName.trim() && (
-                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome da campanha é obrigatório</p>
-                    )}
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
+                      <input 
+                        type="text" 
+                        value={sessionImage}
+                        onChange={e => setSessionImage(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
-                    <input 
-                      type="text" 
-                      value={sessionImage}
-                      onChange={e => setSessionImage(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
-                    />
+
+                  <div className="pt-8 border-t border-white/10 space-y-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-xl font-serif mb-1">Gerenciar Jogadores</h4>
+                        <p className="text-sm text-parchment/40">Convide jogadores pelo e-mail para que eles possam participar desta campanha.</p>
+                      </div>
+                      <div className="bg-white/5 px-4 py-2 rounded-xl border border-white/10 flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Código da Sessão:</span>
+                        <code className="text-sm font-bold text-gold">{session?.code}</code>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleInvitePlayer} className="flex gap-4">
+                      <div className="flex-1 relative">
+                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-parchment/20">
+                          <UserPlus size={18} />
+                        </div>
+                        <input 
+                          type="email" 
+                          value={inviteEmail}
+                          onChange={e => setInviteEmail(e.target.value)}
+                          placeholder="E-mail do jogador para convidar..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
+                        />
+                      </div>
+                      <button 
+                        type="submit"
+                        disabled={isInviting || !inviteEmail}
+                        className="px-8 py-3 bg-arcane text-obsidian rounded-xl font-bold hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-arcane/20"
+                      >
+                        {isInviting ? <RefreshCw size={18} className="animate-spin" /> : <Plus size={18} />}
+                        <span>Convidar</span>
+                      </button>
+                    </form>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {sessionPlayers.length === 0 ? (
+                        <div className="col-span-full py-12 text-center glass rounded-3xl border border-dashed border-white/5">
+                          <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4 text-parchment/10">
+                            <Users size={32} />
+                          </div>
+                          <h5 className="text-parchment/40 font-serif text-lg">Nenhum jogador na mesa</h5>
+                          <p className="text-xs text-parchment/20 max-w-xs mx-auto">Use o e-mail acima para convidar seus amigos para a aventura.</p>
+                        </div>
+                      ) : (
+                        sessionPlayers.map(player => (
+                          <div key={player.id} className="glass p-5 rounded-2xl border border-white/10 flex items-center justify-between group hover:border-white/20 transition-all">
+                            <div className="flex items-center gap-3">
+                              {player.image ? (
+                                <img src={player.image} alt={player.name} className="w-11 h-11 rounded-full border-2 border-white/10" />
+                              ) : (
+                                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-white/10 to-white/5 flex items-center justify-center text-parchment/40 border border-white/10">
+                                  <User size={22} />
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <p className="text-sm font-bold truncate">{player.name}</p>
+                                <p className="text-[10px] font-mono text-parchment/40 truncate">{player.email}</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => handleRemovePlayer(player.id)}
+                              className="p-2.5 text-parchment/20 hover:text-ember hover:bg-ember/10 rounded-xl transition-all md:opacity-0 group-hover:opacity-100 flex-shrink-0"
+                              title="Remover da Mesa"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div>
+                  <h4 className="text-xl font-serif mb-2">Parâmetros de Criação</h4>
+                  <p className="text-sm text-parchment/40">Defina os limites e recursos iniciais que cada jogador terá ao criar seu personagem.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-2">
                   <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Pontos de Atributo Iniciais</label>
                   <input 
@@ -3908,6 +4170,7 @@ export default function GMDashboard() {
                   <p className="text-[10px] text-parchment/40 font-mono px-2">Define o capital inicial dos personagens para compra de equipamentos.</p>
                 </div>
               </div>
+            </div>
 
               <div className="pt-8 border-t border-white/10 space-y-6">
                 <div className="flex items-center justify-between">
@@ -4140,6 +4403,91 @@ export default function GMDashboard() {
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                     />
                     <p className="text-[10px] text-parchment/40 font-mono px-2">Atributo dividido por este valor (ex: / 5).</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-8 border-t border-white/10 space-y-6">
+                <div>
+                  <h4 className="text-xl font-serif mb-2">Efeitos Sonoros</h4>
+                  <p className="text-sm text-parchment/40">Personalize os sons do sistema fornecendo URLs de arquivos de áudio (MP3, WAV, etc).</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
+                      Som de Dados Rolando
+                      <button onClick={() => playAudio(diceRollSound)} className="text-arcane hover:text-white transition-colors">
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={diceRollSound}
+                      onChange={e => setDiceRollSound(e.target.value)}
+                      placeholder="URL do som de dados..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
+                      Som de Sucesso
+                      <button onClick={() => playAudio(successSound)} className="text-arcane hover:text-white transition-colors">
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={successSound}
+                      onChange={e => setSuccessSound(e.target.value)}
+                      placeholder="URL do som de sucesso..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
+                      Som de Falha
+                      <button onClick={() => playAudio(failureSound)} className="text-arcane hover:text-white transition-colors">
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={failureSound}
+                      onChange={e => setFailureSound(e.target.value)}
+                      placeholder="URL do som de falha..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
+                      Som de Crítico
+                      <button onClick={() => playAudio(criticalSound)} className="text-arcane hover:text-white transition-colors">
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={criticalSound}
+                      onChange={e => setCriticalSound(e.target.value)}
+                      placeholder="URL do som de crítico..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
+                      Som de Desastre
+                      <button onClick={() => playAudio(fumbleSound)} className="text-arcane hover:text-white transition-colors">
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={fumbleSound}
+                      onChange={e => setFumbleSound(e.target.value)}
+                      placeholder="URL do som de desastre..."
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                    />
                   </div>
                 </div>
               </div>
@@ -5149,33 +5497,95 @@ export default function GMDashboard() {
 
       {/* Quick Roll Result Notification */}
       <AnimatePresence>
+        {isRolling && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 50, x: '-50%' }}
+            animate={{ opacity: 1, scale: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, scale: 0.8, y: 50, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 z-[100] glass px-8 py-4 rounded-3xl border border-arcane/30 shadow-2xl flex items-center gap-4 overflow-hidden"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 0.5, ease: "linear" }}
+              className="text-arcane"
+            >
+              <Dice6 size={32} />
+            </motion.div>
+            <div className="flex flex-col">
+              <span className="text-xs font-mono text-parchment/40 uppercase tracking-widest animate-pulse">Rodando Dados...</span>
+              <span className="text-lg font-serif">Aguarde o resultado</span>
+            </div>
+          </motion.div>
+        )}
+
         {quickRoll && (
           <motion.div
-            initial={{ opacity: 0, y: 50, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: 50, x: '-50%' }}
-            className="fixed bottom-24 left-1/2 z-[100] glass px-6 py-3 rounded-2xl border border-arcane/30 shadow-2xl flex items-center gap-4"
+            initial={{ opacity: 0, y: 50, x: '-50%', scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+            exit={{ opacity: 0, y: 50, x: '-50%', scale: 0.9 }}
+            className={cn(
+              "fixed bottom-24 left-1/2 z-[100] glass px-8 py-5 rounded-[2.5rem] border shadow-2xl flex items-center gap-6 transition-all duration-500",
+              quickRoll.isCritical ? "border-gold shadow-[0_0_30px_rgba(255,215,0,0.4)] bg-gold/10" :
+              quickRoll.isFumble ? "border-ember shadow-[0_0_30px_rgba(255,68,68,0.4)] bg-ember/10" :
+              (quickRoll.success ? "border-arcane/50" : "border-ember/50")
+            )}
           >
             <div className="flex flex-col">
-              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">{quickRoll.name} • {quickRoll.attr}</span>
-              <div className="flex items-baseline gap-2">
+              <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest mb-1">{quickRoll.name} • {quickRoll.attr}</span>
+              <div className="flex items-baseline gap-3">
+                <motion.span 
+                  initial={{ scale: 0.5 }}
+                  animate={{ scale: 1 }}
+                  className={cn(
+                    "text-3xl font-serif",
+                    quickRoll.isCritical ? "text-gold animate-bounce" :
+                    quickRoll.isFumble ? "text-ember animate-pulse" :
+                    (quickRoll.success ? "text-glow-arcane" : "text-ember")
+                  )}
+                >
+                  {quickRoll.isCritical ? 'CRÍTICO!' : 
+                   quickRoll.isFumble ? 'DESASTRE!' : 
+                   (quickRoll.success ? 'Sucesso' : 'Falha')}
+                </motion.span>
                 <span className={cn(
-                  "text-2xl font-serif",
-                  quickRoll.success ? "text-glow-arcane" : "text-ember"
-                )}>
-                  {quickRoll.success ? 'Sucesso' : 'Falha'}
-                </span>
-                <span className="text-xs text-parchment/40 font-mono">(d10: {quickRoll.result})</span>
+                  "text-sm font-mono bg-white/5 px-2 py-1 rounded-lg border",
+                  quickRoll.isCritical ? "text-gold border-gold/30" : 
+                  quickRoll.isFumble ? "text-ember border-ember/30" : 
+                  "text-parchment/40 border-white/5"
+                )}>(d10: {quickRoll.result})</span>
               </div>
             </div>
-            {quickRoll.success && <Sparkles className="text-gold animate-bounce" size={20} />}
-            {!quickRoll.success && <Zap className="text-ember animate-pulse" size={20} />}
+            
+            <motion.div
+              initial={{ scale: 0, rotate: -45 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", damping: 12 }}
+            >
+              {quickRoll.isCritical ? (
+                <div className="w-12 h-12 bg-gold/20 rounded-2xl flex items-center justify-center text-gold border border-gold/30">
+                  <Sparkles size={24} className="animate-pulse" />
+                </div>
+              ) : quickRoll.isFumble ? (
+                <div className="w-12 h-12 bg-ember/20 rounded-2xl flex items-center justify-center text-ember border border-ember/30">
+                  <HeartCrack size={24} className="animate-bounce" />
+                </div>
+              ) : quickRoll.success ? (
+                <div className="w-12 h-12 bg-arcane/20 rounded-2xl flex items-center justify-center text-arcane border border-arcane/30">
+                  <Sparkles size={24} className="animate-pulse" />
+                </div>
+              ) : (
+                <div className="w-12 h-12 bg-ember/20 rounded-2xl flex items-center justify-center text-ember border border-ember/30">
+                  <HeartCrack size={24} className="animate-bounce" />
+                </div>
+              )}
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
       {sessionId && (
         <SessionChat 
           sessionId={sessionId} 
+          isGM={true}
           senderOverride={{ name: "Mestre", photo: auth.currentUser?.photoURL || "" }}
         />
       )}

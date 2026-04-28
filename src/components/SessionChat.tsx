@@ -11,7 +11,8 @@ import {
   ExternalLink,
   Maximize2,
   Minimize2,
-  Dice6
+  Dice6,
+  Trash2
 } from 'lucide-react';
 import { 
   db, 
@@ -22,7 +23,11 @@ import {
   where, 
   orderBy, 
   onSnapshot,
-  limit
+  limit,
+  getDocs,
+  deleteDoc,
+  doc,
+  writeBatch
 } from '../firebase';
 import { cn } from '../lib/utils';
 
@@ -51,9 +56,10 @@ interface SessionChatProps {
     name: string;
     photo: string;
   };
+  isGM?: boolean;
 }
 
-export default function SessionChat({ sessionId, senderOverride }: SessionChatProps) {
+export default function SessionChat({ sessionId, senderOverride, isGM }: SessionChatProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -115,6 +121,50 @@ export default function SessionChat({ sessionId, senderOverride }: SessionChatPr
   }, [isOpen, messages.length]);
 
   const unreadCount = Math.max(0, messages.length - lastReadCount);
+
+  const [isConfirmingClear, setIsConfirmingClear] = React.useState(false);
+  const [isClearing, setIsClearing] = React.useState(false);
+
+  const handleClearChat = async () => {
+    if (!isGM) return;
+    
+    if (!isConfirmingClear) {
+      setIsConfirmingClear(true);
+      setTimeout(() => setIsConfirmingClear(false), 3000); // Reset after 3 seconds
+      return;
+    }
+
+    try {
+      setIsClearing(true);
+      setIsConfirmingClear(false);
+
+      const q = query(collection(db, 'chatMessages'), where('sessionId', '==', sessionId));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        alert('O chat já está vazio.');
+        setIsClearing(false);
+        return;
+      }
+
+      // Delete in batches of 500
+      const docs = snapshot.docs;
+      for (let i = 0; i < docs.length; i += 500) {
+        const batch = writeBatch(db);
+        const chunk = docs.slice(i, i + 500);
+        chunk.forEach((document) => {
+          batch.delete(doc(db, 'chatMessages', document.id));
+        });
+        await batch.commit();
+      }
+      alert('Chat limpo com sucesso!');
+    } catch (err) {
+      console.error('Error clearing chat:', err);
+      alert('Erro ao limpar o chat. Verifique se você é o Mestre desta sessão.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,6 +239,24 @@ export default function SessionChat({ sessionId, senderOverride }: SessionChatPr
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                {isGM && (
+                  <button 
+                    onClick={handleClearChat}
+                    disabled={isClearing}
+                    className={cn(
+                      "p-2 rounded-xl transition-all duration-300 flex items-center gap-2",
+                      isClearing 
+                        ? "bg-white/5 text-parchment/20 cursor-wait" 
+                        : isConfirmingClear
+                          ? "bg-ember text-white px-3"
+                          : "hover:bg-ember/10 text-parchment/40 hover:text-ember"
+                    )}
+                    title={isConfirmingClear ? "Clique novamente para confirmar" : "Limpar Chat"}
+                  >
+                    <Trash2 size={18} className={cn(isConfirmingClear && "animate-pulse")} />
+                    {isConfirmingClear && <span className="text-[10px] font-bold uppercase tracking-wider">Confirmar?</span>}
+                  </button>
+                )}
                 <button 
                   onClick={() => setIsExpanded(!isExpanded)}
                   className="p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40 hover:text-parchment hidden sm:block"

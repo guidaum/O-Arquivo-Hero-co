@@ -214,6 +214,10 @@ service cloud.firestore {
              (!('playerIds' in data) || data.playerIds is list) &&
              (!('description' in data) || data.description is string) &&
              (!('active' in data) || data.active is bool) &&
+             (!('shopEnabled' in data) || data.shopEnabled is bool) &&
+             (!('shopItemIds' in data) || data.shopItemIds is list) &&
+             (!('gmNotes' in data) || data.gmNotes is string) &&
+             (!('image' in data) || data.image is string) &&
              (!('createdAt' in data) || data.createdAt is string);
     }
 
@@ -320,9 +324,13 @@ service cloud.firestore {
     }
 
     match /gameSessions/{sessionId} {
-      allow read: if isAuthenticated(); // Allow reading by code or if joined
+      allow read: if isAuthenticated(); 
       allow create: if isAuthenticated() && isValidGameSession(request.resource.data);
-      allow update: if (isGMOwner() || isAuthenticated()) && isValidGameSession(request.resource.data); // Allow players to join (add to playerIds)
+      allow update: if (isGMOwner() || isAuthenticated()) && (
+        // Allow anyone with code to join or players to stay in list
+        isValidGameSession(request.resource.data) ||
+        (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playerIds']))
+      );
       allow delete: if isGMOwner() || isAdmin();
     }
 
@@ -365,9 +373,9 @@ service cloud.firestore {
     }
 
     match /chatMessages/{messageId} {
-      allow read: if isAuthenticated() && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId));
-      allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGMOfSession(request.resource.data.sessionId) || isPlayerInSession(request.resource.data.sessionId));
-      allow update, delete: if false;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGM() || isPlayerInSession(request.resource.data.sessionId) || isGMOfSession(request.resource.data.sessionId));
+      allow update, delete: if isGM() || isGMOfSession(resource.data.sessionId);
     }
 
     match /itemCatalog/{itemId} {
