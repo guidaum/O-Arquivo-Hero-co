@@ -9,8 +9,13 @@
         "email": { "type": "string", "format": "email" },
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
-        "role": { "type": "string", "enum": ["admin", "user"] },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "bio": { "type": "string" },
+        "location": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "phoneNumber": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user", "gm"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActive": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "role"]
     },
@@ -269,6 +274,12 @@
         "senderPhoto": { "type": "string" },
         "text": { "type": "string" },
         "image": { "type": "string" },
+        "shouldNotify": { "type": "boolean", "description": "Whether this message should trigger a notification" },
+        "mentionedUserIds": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "List of user IDs mentioned in this message"
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["sessionId", "senderId", "senderName", "createdAt"]

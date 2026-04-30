@@ -12,14 +12,21 @@ import {
   Settings,
   Menu,
   X,
-  LogOut
+  LogOut,
+  User,
+  Shield
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from '../firebase';
+import NotificationBell from './NotificationBell';
 import DiceRoller from './DiceRoller';
+import ProfileModal from './ProfileModal';
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = React.useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+  const settingsRef = React.useRef<HTMLDivElement>(null);
   const user = auth.currentUser;
   const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
   const [playedCount, setPlayedCount] = React.useState(0);
@@ -57,11 +64,21 @@ export default function Layout() {
       }
     };
 
+    const handleClickOutside = (e: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setIsSettingsOpen(false);
+      }
+    };
+
     // Set initial state
     handleResize();
 
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   React.useEffect(() => {
@@ -84,12 +101,20 @@ export default function Layout() {
     const qMastered = query(collection(db, 'gameSessions'), where('gmId', '==', user.uid));
     const unsubscribeMastered = onSnapshot(qMastered, (snapshot) => {
       setMasteredCount(snapshot.size);
+    }, (error) => {
+      import('../firebase').then(({ handleFirestoreError, OperationType }) => {
+        handleFirestoreError(error, OperationType.LIST, 'gameSessions');
+      });
     });
 
     // Fetch played campaigns count
     const qPlayed = query(collection(db, 'gameSessions'), where('playerIds', 'array-contains', user.uid));
     const unsubscribePlayed = onSnapshot(qPlayed, (snapshot) => {
       setPlayedCount(snapshot.size);
+    }, (error) => {
+      import('../firebase').then(({ handleFirestoreError, OperationType }) => {
+        handleFirestoreError(error, OperationType.LIST, 'gameSessions');
+      });
     });
 
     return () => {
@@ -149,13 +174,85 @@ export default function Layout() {
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4">
-          <button className="p-2 hover:bg-white/5 rounded-full transition-colors relative hidden sm:block">
-            <Bell size={20} className="text-parchment/60" />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-ember rounded-full border-2 border-obsidian"></span>
-          </button>
-          <button className="p-2 hover:bg-white/5 rounded-full transition-colors hidden sm:block">
-            <Settings size={20} className="text-parchment/60" />
-          </button>
+          <div className="hidden sm:block">
+            <NotificationBell />
+          </div>
+          
+          <div className="relative hidden sm:block" ref={settingsRef}>
+            <button 
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={cn(
+                "p-2 rounded-full transition-all",
+                isSettingsOpen ? "bg-arcane/20 text-arcane" : "hover:bg-white/5 text-parchment/60"
+              )}
+            >
+              <Settings size={20} />
+            </button>
+
+            <AnimatePresence>
+              {isSettingsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="absolute right-0 mt-2 w-64 glass border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[100]"
+                >
+                  <div className="p-4 border-b border-white/5 bg-white/5">
+                    <p className="text-xs font-mono uppercase tracking-widest text-parchment/40">Preferências do Sistema</p>
+                  </div>
+                  <div className="p-2 space-y-1">
+                    <button 
+                      onClick={() => {
+                        setIsProfileModalOpen(true);
+                        setIsSettingsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-sm transition-colors text-left group"
+                    >
+                      <User size={18} className="text-arcane transition-transform group-hover:scale-110" />
+                      <div>
+                        <p className="font-medium">Meu Perfil</p>
+                        <p className="text-[10px] text-parchment/40">Dados, avatar e biografia</p>
+                      </div>
+                    </button>
+                    
+                    <button 
+                      onClick={() => {
+                        setIsProfileModalOpen(true); // Same modal for now, focus on verification
+                        setIsSettingsOpen(false);
+                      }}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-sm transition-colors text-left group"
+                    >
+                      <Shield size={18} className="text-ember transition-transform group-hover:scale-110" />
+                      <div>
+                        <p className="font-medium">Verificação de Cadastro</p>
+                        <p className="text-[10px] text-parchment/40">Status da sua conta</p>
+                      </div>
+                    </button>
+
+                    <button 
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 text-sm transition-colors text-left group opacity-50 cursor-not-allowed"
+                    >
+                      <Bell size={18} className="text-parchment/60" />
+                      <div>
+                        <p className="font-medium">Notificações</p>
+                        <p className="text-[10px] text-parchment/40">Em breve...</p>
+                      </div>
+                    </button>
+                  </div>
+                  <div className="p-2 bg-white/5 border-t border-white/5">
+                    <button 
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-ember/10 text-ember text-sm transition-colors text-left group"
+                    >
+                      <LogOut size={18} className="transition-transform group-hover:scale-110" />
+                      <span className="font-medium">Sair da Sessão</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <div className="flex items-center gap-3 pl-2 lg:pl-4 border-l border-white/10">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium">{user?.displayName || 'Arquivista'}</p>
@@ -272,6 +369,7 @@ export default function Layout() {
         </nav>
       </div>
       <DiceRoller />
+      <ProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
     </div>
   );
 }

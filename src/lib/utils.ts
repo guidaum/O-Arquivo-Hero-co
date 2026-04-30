@@ -44,13 +44,18 @@ export const rollDiceFormula = (formula: string, stats: Record<string, number>) 
       detail = detail.replace(regex, value.toString());
     });
 
+    // Replace ^ with ** for power operation
+    let processedFormula = detail.replace(/\^/g, '**');
+
     // 2. Find and roll dice (e.g., 1D6, D20)
     const diceRegex = /(\d*)D(\d+)/g;
     const allRolls: { die: string, values: number[] }[] = [];
     
-    let processedFormula = detail.replace(diceRegex, (match, qty, die) => {
+    processedFormula = processedFormula.replace(diceRegex, (match, qty, die) => {
       const q = parseInt(qty || '1');
       const d = parseInt(die);
+      // Ensure q and d are valid numbers to avoid infinity/NaN
+      if (isNaN(q) || isNaN(d) || q > 100) return '0';
       const rolls = Array.from({ length: q }, () => Math.floor(Math.random() * d) + 1);
       allRolls.push({ die: match, values: rolls });
       return `(${rolls.reduce((a, b) => a + b, 0)})`;

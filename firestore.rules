@@ -146,17 +146,20 @@ service cloud.firestore {
     }
 
     function isGMOfSession(sessionId) {
-      return isAuthenticated() && get(/databases/$(database)/documents/gameSessions/$(sessionId)).data.gmId == request.auth.uid;
+      let path = /databases/$(database)/documents/gameSessions/$(sessionId);
+      return isAuthenticated() && exists(path) && get(path).data.gmId == request.auth.uid;
     }
 
     function isPlayerInSession(sessionId) {
-      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/gameSessions/$(sessionId)).data.playerIds;
+      let path = /databases/$(database)/documents/gameSessions/$(sessionId);
+      return isAuthenticated() && exists(path) && get(path).data.get('playerIds', []).hasAny([request.auth.uid]);
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "guilherme.higino@gmail.com" && request.auth.token.email_verified == true)); // Default admin
+      return isAuthenticated() && (
+        (request.auth.token.email == "guilherme.higino@gmail.com" && request.auth.token.email_verified == true) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin')
+      );
     }
 
     function hasRequiredFields(fields) {
@@ -169,11 +172,18 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email', 'role']) &&
-             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt', 'lastActive']) &&
-             data.uid is string && data.uid == request.auth.uid &&
-             data.email is string &&
-             data.role in ['admin', 'user', 'gm'];
+      return (!('uid' in data) || (data.uid is string && data.uid == request.auth.uid)) &&
+             (!('email' in data) || data.email is string) &&
+             (!('role' in data) || data.role in ['admin', 'user', 'gm']) &&
+             (!('displayName' in data) || (data.displayName is string || data.displayName == null)) &&
+             (!('photoURL' in data) || (data.photoURL is string || data.photoURL == null)) &&
+             (!('bio' in data) || (data.bio is string || data.bio == null)) &&
+             (!('location' in data) || (data.location is string || data.location == null)) &&
+             (!('phoneNumber' in data) || (data.phoneNumber is string || data.phoneNumber == null)) &&
+             (!('isVerified' in data) || data.isVerified is bool) &&
+             (!('updatedAt' in data) || (data.updatedAt is string || data.updatedAt is timestamp || data.updatedAt == null)) &&
+             (!('createdAt' in data) || (data.createdAt is string || data.createdAt is timestamp || data.createdAt == null)) &&
+             (!('lastActive' in data) || (data.lastActive is string || data.lastActive is timestamp || data.lastActive == null));
     }
 
     function isValidCharacter(data) {
@@ -277,11 +287,16 @@ service cloud.firestore {
              data.senderName is string &&
              (!('text' in data) || data.text is string) &&
              (!('image' in data) || data.image is string) &&
+             (!('shouldNotify' in data) || data.shouldNotify is bool) &&
+             (!('mentionedUserIds' in data) || data.mentionedUserIds is list) &&
              data.createdAt is string;
     }
 
     function isGM() {
-      return isAuthenticated() && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'gm' || isAdmin());
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'gm') || 
+        isAdmin()
+      );
     }
 
     // ===============================================================
@@ -289,24 +304,37 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow get: if isAuthenticated(); 
+      allow list: if isAuthenticated() && (isAdmin() || isGM()); // Restrict listing to GMs/Admins (e.g. for invitations)
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isOwner(userId) && (
         // Allow heartbeat (only lastActive changed)
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActive']) ||
-        // Allow full update if valid
-        (isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin()))
+        // Allow profile update
+        (isValidUser(request.resource.data) && (
+          isAdmin() || (
+            // Regular user update restrictions
+            (request.resource.data.get('role', 'user') == resource.data.get('role', 'user') || !('role' in resource.data)) &&
+            (request.resource.data.get('isVerified', false) == resource.data.get('isVerified', false)) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'location', 'phoneNumber', 'updatedAt', 'lastActive', 'role'])
+          )
+        ))
       );
     }
 
     match /characters/{characterId} {
-      allow read: if isDocOwner() || isAdmin() || (resource.data.sessionId != null && isGMOfSession(resource.data.sessionId));
+      allow get: if isAuthenticated() && (isDocOwner() || isAdmin() || (resource.data.get('sessionId', null) != null && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId))));
+      allow list: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        isAdmin() || 
+        (resource.data.get('sessionId', null) != null && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId)))
+      );
       allow create: if isAuthenticated() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == request.auth.uid;
       allow update: if (
         (isGMOfSession(resource.data.sessionId) && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId) ||
         (isDocOwner() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId && (
           // Player can only change stats/mods if unlocked
-          resource.data.canEditStats == true || 
+          resource.data.get('canEditStats', false) == true || 
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['stats', 'statsMods', 'talentMods'])
         ) && (
           // Player cannot change canEditStats
@@ -317,14 +345,20 @@ service cloud.firestore {
     }
 
     match /journalEntries/{entryId} {
-      allow read: if isDocOwner() || isAdmin() || (resource.data.gameSessionId != null && (isGMOfSession(resource.data.gameSessionId) || isPlayerInSession(resource.data.gameSessionId)));
+      allow get: if isAuthenticated() && (isDocOwner() || isAdmin() || (resource.data.get('gameSessionId', null) != null && (isGMOfSession(resource.data.gameSessionId) || isPlayerInSession(resource.data.gameSessionId))));
+      allow list: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        isAdmin() || 
+        (resource.data.get('gameSessionId', null) != null && (isGMOfSession(resource.data.gameSessionId) || isPlayerInSession(resource.data.gameSessionId)))
+      );
       allow create: if isAuthenticated() && isValidJournalEntry(request.resource.data);
       allow update: if isDocOwner() && isValidJournalEntry(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId;
       allow delete: if isDocOwner() || isAdmin();
     }
 
     match /gameSessions/{sessionId} {
-      allow read: if isAuthenticated(); 
+      allow get: if isAuthenticated(); 
+      allow list: if isAuthenticated();
       allow create: if isAuthenticated() && isValidGameSession(request.resource.data);
       allow update: if (isGMOwner() || isAuthenticated()) && (
         // Allow anyone with code to join or players to stay in list
@@ -355,7 +389,7 @@ service cloud.firestore {
     }
 
     match /globalSettings/{config} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isGM();
     }
 
@@ -373,7 +407,11 @@ service cloud.firestore {
     }
 
     match /chatMessages/{messageId} {
-      allow read: if isAuthenticated();
+      allow get: if isAuthenticated();
+      allow list: if isAuthenticated() && (
+        (resource.data.get('sessionId', null) != null && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId))) ||
+        (resource.data.get('mentionedUserIds', []).hasAny([request.auth.uid]))
+      );
       allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGM() || isPlayerInSession(request.resource.data.sessionId) || isGMOfSession(request.resource.data.sessionId));
       allow update, delete: if isGM() || isGMOfSession(resource.data.sessionId);
     }

@@ -46,6 +46,8 @@ export default function Dashboard() {
       if (doc.exists()) {
         setGlobalSettings(doc.data());
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'globalSettings/config');
     });
     return () => unsubscribe();
   }, []);

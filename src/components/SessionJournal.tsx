@@ -34,7 +34,9 @@ import {
   updateDoc, 
   doc, 
   deleteDoc,
-  Timestamp 
+  Timestamp,
+  OperationType,
+  handleFirestoreError 
 } from '../firebase';
 
 interface TimelineItem {
@@ -95,6 +97,8 @@ export default function SessionJournal({ gameSessionId: propGameSessionId, chara
     const unsubscribeChars = onSnapshot(charQuery, (snapshot) => {
       const charData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setUserCharacters(charData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'characters');
     });
 
     return () => unsubscribeChars();
@@ -129,6 +133,9 @@ export default function SessionJournal({ gameSessionId: propGameSessionId, chara
       } else {
         setCurrentEntry(null);
       }
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'journalEntries');
       setLoading(false);
     });
 

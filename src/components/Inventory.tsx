@@ -164,7 +164,23 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
         await updateDoc(doc(db, 'characters', characterId!), {
           equipment: updatedItems
         });
-        setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+        
+        if ((compatibleAmmo.quantity || 1) <= 1) {
+          setSaveStatus({ type: 'error', message: `Munição ESGOTADA: ${compatibleAmmo.name}!` });
+          if (character.sessionId && auth.currentUser) {
+            await addDoc(collection(db, 'chatMessages'), {
+              sessionId: character.sessionId,
+              senderId: auth.currentUser.uid,
+              senderName: character.name || 'Herói',
+              senderPhoto: character.image || '',
+              text: `❗ A munição (${compatibleAmmo.name}) de ${character.name} acabou!`,
+              type: 'system',
+              createdAt: new Date().toISOString()
+            });
+          }
+        } else {
+          setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+        }
       } catch (err) {
         console.error("Erro ao consumir munição:", err);
         return;
@@ -212,7 +228,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
       }
       setLoading(false);
     }, (error) => {
-      console.error("Error watching character:", error);
+      handleFirestoreError(error, OperationType.GET, `characters/${characterId}`);
       setLoading(false);
     });
 
@@ -233,7 +249,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
         setSession(snap.data());
       }
     }, (error) => {
-      console.error("Error watching session:", error);
+      handleFirestoreError(error, OperationType.GET, `gameSessions/${character.sessionId}`);
     });
 
     return () => unsubscribeSession();

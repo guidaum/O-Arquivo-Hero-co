@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, collection, query, where, onSnapshot, getDocFromServer, Timestamp, arrayUnion, arrayRemove, orderBy, limit, serverTimestamp, initializeFirestore, writeBatch } from 'firebase/firestore';
 
 // Import the Firebase configuration
@@ -77,5 +77,5 @@ async function testConnection() {
 }
 testConnection();
 
-export { signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, collection, query, where, onSnapshot, Timestamp, arrayUnion, arrayRemove, orderBy, limit, serverTimestamp, writeBatch };
+export { signInWithPopup, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, collection, query, where, onSnapshot, Timestamp, arrayUnion, arrayRemove, orderBy, limit, serverTimestamp, writeBatch };
 export type { User };

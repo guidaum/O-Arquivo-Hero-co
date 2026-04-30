@@ -72,6 +72,9 @@ export default function CharacterCreation() {
   const [sessions, setSessions] = React.useState<any[]>([]);
   const [sessionSearch, setSessionSearch] = React.useState('');
   const [showSessionList, setShowSessionList] = React.useState(false);
+  const [sessionIndex, setSessionIndex] = React.useState(0);
+  const sessionListRef = React.useRef<HTMLDivElement>(null);
+  const sessionInputRef = React.useRef<HTMLInputElement>(null);
   const steps = ['Origens', 'Atributos', 'Vantagens/Defeitos', 'Perícias', 'Dificuldades', 'Poderes', 'Equipamento', 'Revisão'];
 
   const [basics, setBasics] = React.useState({
@@ -301,14 +304,31 @@ export default function CharacterCreation() {
   }, []);
 
   const filteredSessions = React.useMemo(() => {
-    if (!sessionSearch) return [];
-    const searchLower = sessionSearch.toLowerCase();
-    return sessions.filter(s => 
+    const searchLower = sessionSearch.toLowerCase().trim();
+    if (!searchLower && !showSessionList) return [];
+    
+    const results = sessions.filter(s => 
       s.name.toLowerCase().includes(searchLower) || 
       s.code.toLowerCase().includes(searchLower) ||
       s.gmName.toLowerCase().includes(searchLower)
     );
-  }, [sessions, sessionSearch]);
+
+    // If search is empty but focused, show first 5 available sessions
+    if (!searchLower && showSessionList) return sessions.slice(0, 5);
+    
+    return results;
+  }, [sessions, sessionSearch, showSessionList]);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sessionListRef.current && !sessionListRef.current.contains(event.target as Node) && 
+          sessionInputRef.current && !sessionInputRef.current.contains(event.target as Node)) {
+        setShowSessionList(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const [baseGlobalSettings, setBaseGlobalSettings] = React.useState<any>(null);
   const [globalSettings, setGlobalSettings] = React.useState<any>(null);
@@ -948,17 +968,42 @@ export default function CharacterCreation() {
                     <div className="space-y-2 relative">
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Vincular a uma Campanha (Obrigatório)</label>
                       <div className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
+                        <Search className={cn(
+                          "absolute left-4 top-1/2 -translate-y-1/2 transition-colors",
+                          showSessionList ? "text-arcane" : "text-parchment/20"
+                        )} size={18} />
                         <input 
+                          ref={sessionInputRef}
                           type="text" 
                           value={sessionSearch}
                           onChange={e => {
                             setSessionSearch(e.target.value);
                             setShowSessionList(true);
+                            setSessionIndex(0);
                             if (basics.sessionId) setBasics({...basics, sessionId: ''});
                           }}
                           onFocus={() => setShowSessionList(true)}
-                          onBlur={() => setTimeout(() => setTouched(prev => ({ ...prev, sessionId: true })), 200)}
+                          onKeyDown={(e) => {
+                            if (showSessionList && filteredSessions.length > 0) {
+                              if (e.key === 'ArrowDown') {
+                                e.preventDefault();
+                                setSessionIndex(prev => (prev + 1) % filteredSessions.length);
+                              } else if (e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                setSessionIndex(prev => (prev - 1 + filteredSessions.length) % filteredSessions.length);
+                              } else if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const session = filteredSessions[sessionIndex];
+                                if (session) {
+                                  setBasics({...basics, sessionId: session.id});
+                                  setSessionSearch(session.displayText);
+                                  setShowSessionList(false);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setShowSessionList(false);
+                              }
+                            }
+                          }}
                           placeholder="Busque por código ou nome da campanha..."
                           className={cn(
                             "w-full bg-white/5 border rounded-2xl pl-12 pr-6 py-4 text-xl font-serif focus:outline-none transition-colors",
@@ -968,27 +1013,58 @@ export default function CharacterCreation() {
                         {touched.sessionId && !basics.sessionId && (
                           <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">Selecione uma campanha</p>
                         )}
-                        {showSessionList && sessionSearch && (
-                          <div className="absolute z-50 w-full mt-2 glass rounded-2xl border border-white/10 overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar">
-                            {filteredSessions.length > 0 ? (
-                              filteredSessions.map(session => (
-                                <button
-                                  key={session.id}
-                                  onClick={() => {
-                                    setBasics({...basics, sessionId: session.id});
-                                    setSessionSearch(session.displayText);
-                                    setShowSessionList(false);
-                                  }}
-                                  className="w-full px-6 py-4 text-left hover:bg-white/5 transition-colors border-b border-white/5 last:border-none"
-                                >
-                                  <p className="font-serif text-lg">{session.displayText}</p>
-                                </button>
-                              ))
-                            ) : (
-                              <div className="px-6 py-4 text-parchment/40 font-mono text-xs uppercase tracking-widest">Nenhuma campanha encontrada</div>
-                            )}
-                          </div>
-                        )}
+                        
+                        <AnimatePresence>
+                          {showSessionList && (
+                            <motion.div 
+                              ref={sessionListRef}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 5 }}
+                              className="absolute z-50 w-full mt-2 glass rounded-2xl border border-white/10 overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                            >
+                              {filteredSessions.length > 0 ? (
+                                filteredSessions.map((session, i) => (
+                                  <button
+                                    key={session.id}
+                                    onMouseEnter={() => setSessionIndex(i)}
+                                    onClick={() => {
+                                      setBasics({...basics, sessionId: session.id});
+                                      setSessionSearch(session.displayText);
+                                      setShowSessionList(false);
+                                    }}
+                                    className={cn(
+                                      "w-full px-6 py-4 text-left transition-colors border-b border-white/5 last:border-none flex items-center justify-between group",
+                                      sessionIndex === i ? "bg-white/10" : "hover:bg-white/5"
+                                    )}
+                                  >
+                                    <div className="flex flex-col">
+                                      <p className={cn(
+                                        "font-serif text-lg transition-colors",
+                                        sessionIndex === i ? "text-arcane" : "text-parchment"
+                                      )}>{session.displayText}</p>
+                                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Mestre: {session.gmName}</span>
+                                    </div>
+                                    {sessionIndex === i && (
+                                      <div className="flex items-center gap-2 text-[10px] font-mono text-arcane/60 animate-pulse uppercase">
+                                        <ChevronRight size={12} />
+                                        <span>Enter</span>
+                                      </div>
+                                    )}
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-6 py-8 text-center space-y-2">
+                                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mx-auto text-parchment/20">
+                                    <Search size={20} />
+                                  </div>
+                                  <p className="text-parchment/40 font-mono text-[10px] uppercase tracking-widest">Nenhuma campanha encontrada</p>
+                                  <p className="text-[9px] text-parchment/20 italic">Tente buscar por um código diferente ou nome do mestre.</p>
+                                </div>
+                              )}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                       {basics.sessionId && !showSessionList && (
                         <div className="flex items-center gap-2 px-2">

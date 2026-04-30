@@ -175,6 +175,8 @@ export default function CharacterSheet() {
       if (doc.exists()) {
         setGlobalSettings(doc.data());
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'globalSettings/config');
     });
     return () => unsubscribeSettings();
   }, []);
@@ -932,7 +934,23 @@ export default function CharacterSheet() {
           await updateDoc(doc(db, 'characters', characterId!), {
             equipment: updatedInventory
           });
-          setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+          
+          if ((compatibleAmmo.quantity || 1) <= 1) {
+            setSaveStatus({ type: 'error', message: `Munição ESGOTADA: ${compatibleAmmo.name}!` });
+            if (character.sessionId && auth.currentUser) {
+              await addDoc(collection(db, 'chatMessages'), {
+                sessionId: character.sessionId,
+                senderId: auth.currentUser.uid,
+                senderName: character.name || 'Herói',
+                senderPhoto: character.image || '',
+                text: `❗ A munição (${compatibleAmmo.name}) de ${character.name} acabou!`,
+                type: 'system',
+                createdAt: new Date().toISOString()
+              });
+            }
+          } else {
+            setSaveStatus({ type: 'info', message: `Munição consumida: ${compatibleAmmo.name} (-1)` });
+          }
         } catch (err) {
           console.error("Erro ao consumir munição:", err);
           return;

@@ -27,6 +27,7 @@ import {
   addDoc, 
   updateDoc, 
   doc, 
+  getDoc,
   getDocs,
   OperationType, 
   handleFirestoreError,
@@ -69,6 +70,8 @@ function PlayerSessionCard({ session }: any) {
           setLastNpc(entry.npcs[entry.npcs.length - 1]);
         }
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'journalEntries');
     });
 
     // Fetch characters in this session
@@ -89,6 +92,8 @@ function PlayerSessionCard({ session }: any) {
       } else {
         setUserCharacterId(null);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'characters');
     });
 
     // Fetch player names
@@ -103,9 +108,9 @@ function PlayerSessionCard({ session }: any) {
       for (const uid of allUserIds) {
         if (!names[uid]) {
           try {
-            const userDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', uid)));
-            if (!userDoc.empty) {
-              names[uid] = userDoc.docs[0].data().displayName || 'Jogador';
+            const userDoc = await getDoc(doc(db, 'users', uid));
+            if (userDoc.exists()) {
+              names[uid] = userDoc.data().displayName || 'Jogador';
               playerNamesCache[uid] = names[uid];
               updated = true;
             }
@@ -271,9 +276,9 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
     // Fetch base settings from global config
     const fetchBaseSettings = async () => {
       try {
-        const settingsDoc = await getDocs(query(collection(db, 'globalSettings'), where('__name__', '==', 'config')));
-        if (!settingsDoc.empty) {
-          setBaseSettings(settingsDoc.docs[0].data());
+        const settingsDoc = await getDoc(doc(db, 'globalSettings', 'config'));
+        if (settingsDoc.exists()) {
+          setBaseSettings(settingsDoc.data());
         }
       } catch (error) {
         console.error('Error fetching base settings:', error);
@@ -289,12 +294,17 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
     const gmQuery = query(collection(db, 'gameSessions'), where('gmId', '==', user.uid));
     const unsubscribeGm = onSnapshot(gmQuery, (snapshot) => {
       setGmSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'gameSessions');
     });
 
     // Sessions where user is Player
     const playerQuery = query(collection(db, 'gameSessions'), where('playerIds', 'array-contains', user.uid));
     const unsubscribePlayer = onSnapshot(playerQuery, (snapshot) => {
       setPlayerSessions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'gameSessions');
       setLoading(false);
     });
 

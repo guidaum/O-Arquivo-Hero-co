@@ -25,6 +25,7 @@ import {
   onSnapshot,
   limit,
   getDocs,
+  getDoc,
   deleteDoc,
   doc,
   writeBatch
@@ -39,6 +40,8 @@ interface ChatMessage {
   senderPhoto: string;
   text: string;
   image?: string;
+  shouldNotify?: boolean;
+  mentionedUserIds?: string[];
   createdAt: string;
   type?: 'text' | 'roll';
   rollData?: {
@@ -64,6 +67,11 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = React.useState('');
+  const [mentionQuery, setMentionQuery] = React.useState('');
+  const [showMentions, setShowMentions] = React.useState(false);
+  const [mentionIndex, setMentionIndex] = React.useState(0);
+  const [sessionUsers, setSessionUsers] = React.useState<{id: string, name: string, photo?: string, isGM?: boolean}[]>([]);
+  const [userCharacter, setUserCharacter] = React.useState<any>(null);
   const [imageUrl, setImageUrl] = React.useState('');
   const [showImageInput, setShowImageInput] = React.useState(false);
   const [lastReadCount, setLastReadCount] = React.useState(0);
@@ -72,6 +80,60 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   React.useEffect(() => {
     if (!sessionId) return;
 
+    // Fetch participants - Session info and Characters
+    const unsubscribeCharacters = onSnapshot(
+      query(collection(db, 'characters'), where('sessionId', '==', sessionId)),
+      async (charsSnap) => {
+        const sessionDoc = await getDoc(doc(db, 'gameSessions', sessionId));
+        if (!sessionDoc.exists()) return;
+        
+        const data = sessionDoc.data();
+        const users: {id: string, name: string, photo?: string, isGM?: boolean}[] = [];
+        
+        // Add GM
+        if (data.gmId) {
+          const gmDoc = await getDoc(doc(db, 'users', data.gmId));
+          if (gmDoc.exists()) {
+            const gmData = gmDoc.data();
+            const gmPhoto = gmData.photoURL || '';
+            users.push({ id: data.gmId, name: 'GM', photo: gmPhoto, isGM: true });
+            users.push({ id: data.gmId, name: 'Mestre', photo: gmPhoto, isGM: true });
+            users.push({ id: data.gmId, name: gmData.displayName || 'Mestre', photo: gmPhoto, isGM: true });
+          }
+        }
+
+        // Add Players from Characters
+        charsSnap.docs.forEach(c => {
+          const charData = c.data();
+          if (charData.ownerId !== auth.currentUser?.uid) {
+            users.push({
+              id: charData.ownerId,
+              name: charData.name,
+              photo: charData.portrait || ''
+            });
+          }
+        });
+
+        // Unique by name to avoid pollution
+        const uniqueUsers = users.filter((u, index, self) => 
+          index === self.findIndex(t => t.name.toLowerCase() === u.name.toLowerCase())
+        );
+        
+        setSessionUsers(uniqueUsers);
+
+        // Fetch current user's character for rolls
+        const myChar = charsSnap.docs.find(d => d.data().ownerId === auth.currentUser?.uid);
+        if (myChar) {
+          setUserCharacter(myChar.data());
+        }
+      },
+      (error) => {
+        import('../firebase').then(({ handleFirestoreError, OperationType }) => {
+          handleFirestoreError(error, OperationType.LIST, 'characters');
+        });
+      }
+    );
+
     const q = query(
       collection(db, 'chatMessages'),
       where('sessionId', '==', sessionId),
@@ -79,7 +141,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
       limit(100)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeMessages = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -95,9 +157,16 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
           });
         }
       }, 100);
+    }, (error) => {
+      import('../firebase').then(({ handleFirestoreError, OperationType }) => {
+        handleFirestoreError(error, OperationType.LIST, 'chatMessages');
+      });
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeCharacters();
+      unsubscribeMessages();
+    };
   }, [sessionId]);
 
   // Update last read count when opening chat or receiving new messages while open
@@ -106,8 +175,6 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
     if (isOpen) {
       setLastReadCount(messages.length);
       
-      // Scroll to bottom when chat is opened
-      // We use a slightly longer timeout to ensure the Framer Motion animation has started/completed
       const timer = setTimeout(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTo({
@@ -142,7 +209,6 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
-        alert('O chat já está vazio.');
         setIsClearing(false);
         return;
       }
@@ -157,10 +223,8 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
         });
         await batch.commit();
       }
-      alert('Chat limpo com sucesso!');
     } catch (err) {
       console.error('Error clearing chat:', err);
-      alert('Erro ao limpar o chat. Verifique se você é o Mestre desta sessão.');
     } finally {
       setIsClearing(false);
     }
@@ -170,6 +234,58 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
     e.preventDefault();
     if ((!newMessage.trim() && !imageUrl.trim()) || !auth.currentUser) return;
 
+    const messageText = newMessage.trim();
+
+    // Handle Roll Command /r
+    if (messageText.startsWith('/r ')) {
+      const formula = messageText.substring(3).trim();
+      const stats = userCharacter ? { 
+        ...userCharacter.stats, 
+        ...userCharacter.statsMods,
+        ...userCharacter.talentMods 
+      } : {};
+      
+      const { rollDiceFormula } = await import('../lib/utils');
+      const result = rollDiceFormula(formula, stats);
+
+      try {
+        await addDoc(collection(db, 'chatMessages'), {
+          sessionId,
+          senderId: auth.currentUser.uid,
+          senderName: senderOverride?.name || auth.currentUser.displayName || 'Anônimo',
+          senderPhoto: senderOverride?.photo || auth.currentUser.photoURL || '',
+          text: `Rolou: ${formula}`,
+          type: 'roll',
+          rollData: {
+            total: result.total,
+            formula: formula,
+            details: result.detail,
+            rolls: result.rolls
+          },
+          createdAt: new Date().toISOString()
+        });
+        setNewMessage('');
+        return;
+      } catch (err) {
+        console.error('Error sending roll message:', err);
+      }
+    }
+
+    // Extract mentions
+    const mentionRegex = /@([\wÀ-ü]+)/g;
+    const mentionedUserIds: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(newMessage)) !== null) {
+      const mentionName = match[1].toLowerCase();
+      const user = sessionUsers.find(u => 
+        u.name.toLowerCase().replace(/\s/g, '') === mentionName || 
+        (u.isGM && (mentionName === 'gm' || mentionName === 'mestre'))
+      );
+      if (user) {
+        mentionedUserIds.push(user.id);
+      }
+    }
+
     try {
       await addDoc(collection(db, 'chatMessages'), {
         sessionId,
@@ -178,21 +294,68 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
         senderPhoto: senderOverride?.photo || auth.currentUser.photoURL || '',
         text: newMessage.trim(),
         image: imageUrl.trim(),
+        shouldNotify: mentionedUserIds.length > 0,
+        mentionedUserIds,
         createdAt: new Date().toISOString()
       });
       setNewMessage('');
       setImageUrl('');
       setShowImageInput(false);
+      setShowMentions(false);
     } catch (err) {
       console.error('Error sending message:', err);
     }
   };
 
-  const formatText = (text: string, isMe: boolean) => {
-    // Basic link detection
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.split(urlRegex).map((part, i) => {
-      if (part.match(urlRegex)) {
+  const insertMention = (userName: string) => {
+    const lastAtPos = newMessage.lastIndexOf('@');
+    if (lastAtPos === -1) return;
+    
+    const beforeAt = newMessage.substring(0, lastAtPos);
+    const textAfterAt = newMessage.substring(lastAtPos + 1);
+    const spaceIndex = textAfterAt.search(/\s/);
+    const afterMention = spaceIndex === -1 ? '' : textAfterAt.substring(spaceIndex);
+    
+    const updatedName = userName.replace(/\s/g, ''); 
+    setNewMessage(beforeAt + '@' + updatedName + ' ' + afterMention);
+    setShowMentions(false);
+    setMentionQuery('');
+    setMentionIndex(0);
+  };
+
+  const handleMessageChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    const cursorPosition = e.target.selectionStart || val.length;
+    setNewMessage(val);
+    
+    const textBeforeCursor = val.substring(0, cursorPosition);
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+    
+    if (lastAtIndex !== -1) {
+      const afterAt = textBeforeCursor.substring(lastAtIndex + 1);
+      if (!afterAt.includes(' ')) {
+        setMentionQuery(afterAt);
+        setShowMentions(true);
+        setMentionIndex(0);
+        return;
+      }
+    }
+    
+    setShowMentions(false);
+    setMentionQuery('');
+  };
+
+  const formatText = (text: string, isMe: boolean, mentionedUserIds?: string[]) => {
+    const currentUserId = auth.currentUser?.uid;
+    const amIMentioned = mentionedUserIds?.includes(currentUserId || '');
+
+    const parts = text.split(/((?:https?:\/\/[^\s]+)|(?:@[\wÀ-ü]+))/g);
+
+    return parts.map((part, i) => {
+      if (!part) return null;
+
+      // URL detection
+      if (part.startsWith('http')) {
         return (
           <a 
             key={i} 
@@ -208,7 +371,40 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
           </a>
         );
       }
-      return part;
+      
+      // Mention detection
+      if (part.startsWith('@')) {
+        const mentionName = part.substring(1).toLowerCase();
+        
+        const matchedUser = sessionUsers.find(u => {
+          const normalizedName = u.name.toLowerCase().replace(/\s/g, '');
+          const isGMTag = u.isGM && (mentionName === 'gm' || mentionName === 'mestre');
+          return normalizedName === mentionName || normalizedName.startsWith(mentionName) || isGMTag;
+        });
+
+        if (matchedUser) {
+          const isMentioningMe = matchedUser.id === currentUserId;
+          
+          return (
+            <span 
+              key={i} 
+              className={cn(
+                "font-bold px-1.5 py-0.5 rounded-md transition-all shadow-sm cursor-help",
+                isMe 
+                  ? "bg-obsidian/20 text-obsidian border border-obsidian/10" 
+                  : isMentioningMe || amIMentioned
+                    ? "bg-ember text-white animate-pulse shadow-lg shadow-ember/30" 
+                    : "text-arcane bg-arcane/10 border border-arcane/20"
+              )}
+              title={matchedUser.name}
+            >
+              {part}
+            </span>
+          );
+        }
+      }
+
+      return <span key={i}>{part}</span>;
     });
   };
 
@@ -331,7 +527,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                           </div>
                         )}
                         <p className="whitespace-pre-wrap break-words">
-                          {formatText(msg.text, isMe)}
+                          {formatText(msg.text, isMe, msg.mentionedUserIds)}
                         </p>
                         {msg.type === 'roll' && msg.rollData && (
                           <div className={cn(
@@ -369,6 +565,68 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
               className="p-4 border-t border-white/10 bg-white/5 space-y-3"
             >
               <AnimatePresence>
+                {showMentions && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="bg-obsidian/95 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden mb-2 max-h-60 overflow-y-auto w-full z-50 absolute bottom-full left-0 shadow-2xl"
+                  >
+                    {sessionUsers
+                      .filter(u => 
+                        u.name.toLowerCase().includes(mentionQuery.toLowerCase()) || 
+                        (u.isGM && (mentionQuery.toLowerCase() === 'gm' || mentionQuery.toLowerCase() === 'mestre'))
+                      )
+                      .length === 0 ? (
+                        <div className="p-4 text-center">
+                          <p className="text-parchment/40 text-xs italic">Nenhum aventureiro ou mestre encontrado</p>
+                          <p className="text-[10px] text-parchment/20 font-mono uppercase mt-1">Tente outro nome</p>
+                        </div>
+                      ) : sessionUsers
+                        .filter(u => 
+                          u.name.toLowerCase().includes(mentionQuery.toLowerCase()) || 
+                          (u.isGM && (mentionQuery.toLowerCase() === 'gm' || mentionQuery.toLowerCase() === 'mestre'))
+                        )
+                        .map((u, i) => (
+                          <button
+                            key={u.id + u.name}
+                            type="button"
+                            onMouseEnter={() => setMentionIndex(i)}
+                            onClick={() => insertMention(u.name)}
+                            className={cn(
+                              "w-full flex items-center gap-3 p-3 transition-colors text-left border-b border-white/5 last:border-0",
+                              mentionIndex === i ? "bg-white/10" : "hover:bg-white/5"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold overflow-hidden shrink-0 border-2",
+                              u.isGM ? "bg-ember/20 border-ember text-ember" : "bg-arcane/20 border-arcane text-arcane"
+                            )}>
+                              {u.photo ? (
+                                <img src={u.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                u.isGM ? 'GM' : u.name.substring(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-bold text-parchment truncate">{u.name}</div>
+                              <div className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest truncate">
+                                {u.isGM ? 'Mestre da Masmorra' : 'Jogador'}
+                              </div>
+                            </div>
+                            {mentionIndex === i && (
+                              <div className="text-[10px] bg-white/10 px-2 py-0.5 rounded font-mono text-parchment/40 transform -rotate-12 translate-x-2">
+                                ENTER
+                              </div>
+                            )}
+                          </button>
+                        ))
+                    }
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
                 {showImageInput && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
@@ -397,13 +655,37 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                 )}
               </AnimatePresence>
 
-              <div className="flex items-end gap-2">
+              <div className="flex items-end gap-2 relative">
                 <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl p-2 flex flex-col">
                   <textarea 
                     placeholder="Sua mensagem..."
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    onChange={handleMessageChange}
                     onKeyDown={(e) => {
+                      if (showMentions) {
+                        const filtered = sessionUsers.filter(u => 
+                          u.name.toLowerCase().includes(mentionQuery.toLowerCase()) || 
+                          (u.isGM && (mentionQuery.toLowerCase() === 'gm' || mentionQuery.toLowerCase() === 'mestre'))
+                        );
+                        
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault();
+                          setMentionIndex(prev => (prev + 1) % filtered.length);
+                        } else if (e.key === 'ArrowUp') {
+                          e.preventDefault();
+                          setMentionIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+                        } else if (e.key === 'Enter' || e.key === 'Tab') {
+                          if (filtered.length > 0) {
+                            e.preventDefault();
+                            insertMention(filtered[mentionIndex].name);
+                          }
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setShowMentions(false);
+                        }
+                        return;
+                      }
+
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
                         handleSendMessage(e);

@@ -2,22 +2,45 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { LogIn, Shield, Sword, ScrollText } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth, googleProvider, signInWithPopup, db, doc, setDoc, getDoc } from '../firebase';
+import { auth, googleProvider, signInWithPopup, db, doc, setDoc, getDoc, createUserWithEmailAndPassword, signInWithEmailAndPassword } from '../firebase';
 
 export default function Login() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
   const [role, setRole] = React.useState<'user' | 'gm'>('user');
+  
+  // Email/Password state
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [isRegistering, setIsRegistering] = React.useState(false);
+  const [emailAuthEnabled, setEmailAuthEnabled] = React.useState(import.meta.env.VITE_ENABLE_EMAIL_PASSWORD_AUTH === 'true');
 
-  const handleLogin = async () => {
+  React.useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        // We fetch without auth because firestore.rules allow public read for this doc
+        const settingsDoc = await getDoc(doc(db, 'globalSettings', 'config'));
+        if (settingsDoc.exists()) {
+          const data = settingsDoc.data();
+          if (data.enableEmailPasswordAuth !== undefined) {
+            setEmailAuthEnabled(data.enableEmailPasswordAuth);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching global settings:', err);
+        // Fallback to env var if firestore fetch fails
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
 
-      // Check if user exists in Firestore, if not create
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
         await setDoc(doc(db, 'users', user.uid), {
@@ -29,12 +52,51 @@ export default function Login() {
           createdAt: new Date().toISOString()
         });
       } else {
-        // Update role if it's different (optional, but good for this request)
         await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
       }
     } catch (err) {
       console.error('Login error:', err);
       setError('Falha ao entrar com Google. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      let user;
+      if (isRegistering) {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        user = result.user;
+        
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: email.split('@')[0],
+          role: role,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        user = result.user;
+        await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
+      }
+    } catch (err: any) {
+      console.error('Email auth error:', err);
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('O login por e-mail/senha não está ativado no Firebase Console. Entre no console e ative o provedor "Email/Password" em Authentication > Sign-in method.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este e-mail já está em uso.');
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setError('E-mail ou senha incorretos.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('A senha deve ter pelo menos 6 caracteres.');
+      } else {
+        setError('Erro ao autenticar. Tente novamente.');
+      }
     } finally {
       setLoading(false);
     }
@@ -90,15 +152,65 @@ export default function Login() {
             </button>
           </div>
 
+          {emailAuthEnabled && (
+            <form onSubmit={handleEmailAuth} className="space-y-4 mb-6 text-left">
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-parchment/40 uppercase tracking-widest pl-2">E-mail</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="seu@email.com"
+                  required
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-parchment placeholder:text-parchment/20 focus:outline-none focus:border-arcane/50 transition-colors"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-mono text-parchment/40 uppercase tracking-widest pl-2">Senha</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-parchment placeholder:text-parchment/20 focus:outline-none focus:border-arcane/50 transition-colors"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className={cn(
+                  "w-full py-4 rounded-xl font-bold transition-all active:scale-[0.98] disabled:opacity-50",
+                  role === 'gm' ? "bg-arcane/20 text-arcane border border-arcane/30" : "bg-white/10 text-parchment border border-white/20"
+                )}
+              >
+                {loading ? "Processando..." : isRegistering ? "Criar Conta" : "Entrar com Senha"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRegistering(!isRegistering)}
+                className="w-full text-xs font-mono text-parchment/40 hover:text-parchment transition-colors text-center"
+              >
+                {isRegistering ? "Já tem uma conta? Entre aqui" : "Novo por aqui? Crie uma conta"}
+              </button>
+
+              <div className="relative flex items-center py-4">
+                <div className="flex-grow border-t border-white/5"></div>
+                <span className="flex-shrink mx-4 text-xs font-mono text-parchment/20 uppercase">ou</span>
+                <div className="flex-grow border-t border-white/5"></div>
+              </div>
+            </form>
+          )}
+
           <button
-            onClick={handleLogin}
+            onClick={handleGoogleLogin}
             disabled={loading}
             className={cn(
               "w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-white/5",
               role === 'gm' ? "bg-arcane text-obsidian" : "bg-white text-obsidian"
             )}
           >
-            {loading ? (
+            {loading && !email ? (
               <div className="w-5 h-5 border-2 border-obsidian/20 border-t-obsidian rounded-full animate-spin" />
             ) : (
               <>

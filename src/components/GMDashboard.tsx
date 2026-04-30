@@ -278,6 +278,7 @@ export default function GMDashboard() {
   const [diffHardDiv, setDiffHardDiv] = React.useState(2);
   const [diffExtremeDiv, setDiffExtremeDiv] = React.useState(5);
   const [shopEnabled, setShopEnabled] = React.useState(true);
+  const [enableEmailPasswordAuth, setEnableEmailPasswordAuth] = React.useState(false);
   const [shopItemIds, setShopItemIds] = React.useState<string[]>([]);
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
@@ -464,6 +465,7 @@ export default function GMDashboard() {
     setDiffHardDiv(data.diffHardDiv ?? 2);
     setDiffExtremeDiv(data.diffExtremeDiv ?? 5);
     setShopEnabled(data.shopEnabled ?? true);
+    setEnableEmailPasswordAuth(data.enableEmailPasswordAuth ?? false);
     setShopItemIds(data.shopItemIds || []);
     
     setDiceRollSound(data.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3');
@@ -930,6 +932,8 @@ export default function GMDashboard() {
         const data = docSnap.data();
         setBaseSettings(data);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'globalSettings/config');
     });
 
     const charactersQuery = query(
@@ -944,16 +948,6 @@ export default function GMDashboard() {
       setCharacters(charData);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'characters');
-    });
-
-    // Presence Listener
-    const usersQuery = query(collection(db, 'users'));
-    const unsubscribePresence = onSnapshot(usersQuery, (snapshot) => {
-      const presence: Record<string, any> = {};
-      snapshot.docs.forEach(doc => {
-        presence[doc.id] = doc.data().lastActive;
-      });
-      setUserPresence(presence);
     });
 
     // Global Talents
@@ -1039,7 +1033,41 @@ export default function GMDashboard() {
       unsubscribeTraits();
       unsubscribeCatalog();
     };
-  }, [sessionId]);
+  }, [sessionId, user?.uid]);
+
+  React.useEffect(() => {
+    if (!sessionId || !session?.playerIds || session.playerIds.length === 0) return;
+
+    const unsubs: (() => void)[] = [];
+
+    // Track GM presence too
+    if (session.gmId) {
+      const unsubGM = onSnapshot(doc(db, 'users', session.gmId), (docSnap) => {
+        if (docSnap.exists()) {
+          setUserPresence(prev => ({
+            ...prev,
+            [session.gmId]: docSnap.data()?.lastActive
+          }));
+        }
+      });
+      unsubs.push(unsubGM);
+    }
+
+    // Track all players presence
+    session.playerIds.forEach(id => {
+      const unsub = onSnapshot(doc(db, 'users', id), (docSnap) => {
+        if (docSnap.exists()) {
+          setUserPresence(prev => ({
+            ...prev,
+            [id]: docSnap.data()?.lastActive
+          }));
+        }
+      });
+      unsubs.push(unsub);
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [sessionId, session?.playerIds, session?.gmId]);
 
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -1161,6 +1189,7 @@ export default function GMDashboard() {
         diffEasyMod: Number(diffEasyMod),
         diffHardDiv: Number(diffHardDiv),
         diffExtremeDiv: Number(diffExtremeDiv),
+        enableEmailPasswordAuth,
         diceRollSound,
         successSound,
         failureSound,
@@ -4192,6 +4221,29 @@ export default function GMDashboard() {
                   </button>
                 </div>
               </div>
+
+              {activeTab === 'baseSettings' && (
+                <div className="pt-8 border-t border-white/10 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xl font-serif mb-2">Autenticação de Teste</h4>
+                      <p className="text-sm text-parchment/40">Habilita a criação de conta e login via e-mail e senha para usuários externos.</p>
+                    </div>
+                    <button 
+                      onClick={() => setEnableEmailPasswordAuth(!enableEmailPasswordAuth)}
+                      className={cn(
+                        "flex items-center gap-3 px-6 py-3 rounded-2xl font-bold transition-all border",
+                        enableEmailPasswordAuth 
+                          ? "bg-arcane/20 border-arcane/40 text-arcane" 
+                          : "bg-white/5 border-white/10 text-parchment/40"
+                      )}
+                    >
+                      <Shield size={18} />
+                      <span>{enableEmailPasswordAuth ? 'Login-Senha Ativado' : 'Login-Senha Desativado'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-8 border-t border-white/10 space-y-6">
                 <div>
