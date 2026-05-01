@@ -119,14 +119,14 @@ export default function DiceRoller() {
   };
 
   return (
-    <div className="fixed bottom-24 right-6 lg:bottom-10 lg:right-10 z-[60]">
+    <div className="fixed bottom-[9.5rem] right-4 lg:bottom-10 lg:right-28 z-[60]">
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="absolute bottom-20 right-0 w-80 glass rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[70vh]"
+            className="absolute bottom-14 right-0 w-[calc(100vw-2rem)] sm:w-80 glass rounded-[2rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[70vh]"
           >
             {/* Header */}
             <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
@@ -296,13 +296,13 @@ export default function DiceRoller() {
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all border",
+          "w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl transition-all border",
           isOpen 
-            ? "bg-ember border-ember/50 text-obsidian" 
-            : "bg-arcane border-arcane/50 text-obsidian"
+            ? "bg-white/10 border-white/20 text-parchment backdrop-blur-xl" 
+            : "bg-ember border-ember/50 text-obsidian shadow-ember/20"
         )}
       >
-        {isOpen ? <X size={24} /> : <Dice6 size={24} />}
+        {isOpen ? <X size={20} /> : <Dice6 size={20} />}
       </motion.button>
     </div>
   );

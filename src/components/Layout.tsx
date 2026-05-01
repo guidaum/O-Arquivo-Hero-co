@@ -139,6 +139,10 @@ export default function Layout() {
     { to: '/sheet', icon: ScrollText, label: 'Ficha Geral' },
   ];
 
+  if (userRole === 'admin') {
+    navItems.push({ to: '/admin', icon: Shield, label: 'Painel Admin' });
+  }
+
   const userLevel = userRole === 'gm' ? masteredCount : playedCount;
 
   return (
@@ -297,7 +301,7 @@ export default function Layout() {
         {/* Side Nav Bar */}
         <aside className={cn(
           "glass border-r-0 fixed lg:sticky top-16 h-[calc(100vh-64px)] z-40 transition-all duration-300",
-          isSidebarOpen ? "w-64" : "w-20"
+          isSidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0 lg:w-20"
         )}>
           <nav className="p-4 space-y-2">
             {navItems.map((item) => (
@@ -319,7 +323,7 @@ export default function Layout() {
                 )} />
                 <span className={cn(
                   "font-medium transition-all duration-300 whitespace-nowrap overflow-hidden",
-                  isSidebarOpen ? "opacity-100 w-auto ml-3" : "opacity-0 w-0 ml-0"
+                  isSidebarOpen ? "opacity-100 w-auto ml-3" : "opacity-0 w-0 ml-0 lg:hidden"
                 )}>
                   {item.label}
                 </span>
@@ -336,7 +340,7 @@ export default function Layout() {
         {/* Main Content */}
         <main className={cn(
           "flex-1 min-w-0 p-4 lg:p-10 overflow-auto pb-24 lg:pb-10 transition-all duration-300",
-          "ml-20 lg:ml-0"
+          "ml-0 lg:ml-0"
         )}>
           <Outlet />
         </main>

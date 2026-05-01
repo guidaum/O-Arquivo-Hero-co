@@ -40,6 +40,7 @@ export default function Login() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
+      const isAdminEmail = user.email === 'guilherme.higino@gmail.com';
 
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
@@ -48,11 +49,16 @@ export default function Login() {
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
-          role: role,
+          role: isAdminEmail ? 'admin' : role,
           createdAt: new Date().toISOString()
         });
       } else {
-        await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
+        // If it is the admin email, force the role to 'admin'
+        if (isAdminEmail) {
+          await setDoc(doc(db, 'users', user.uid), { role: 'admin' }, { merge: true });
+        } else {
+          await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
+        }
       }
     } catch (err) {
       console.error('Login error:', err);

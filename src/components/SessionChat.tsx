@@ -409,7 +409,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   };
 
   return (
-    <div className="fixed bottom-40 right-6 lg:bottom-28 lg:right-10 z-[100]">
+    <div className="fixed bottom-[13.5rem] right-4 lg:bottom-28 lg:right-10 z-[100]">
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -417,10 +417,10 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={cn(
-              "absolute bottom-20 right-0 glass rounded-3xl shadow-2xl border border-white/10 flex flex-col overflow-hidden transition-all duration-300",
+              "absolute bottom-14 right-0 glass rounded-3xl shadow-2xl border border-white/10 flex flex-col overflow-hidden transition-all duration-300",
               isExpanded 
-                ? "w-[calc(100vw-3rem)] lg:w-[600px] h-[calc(100vh-12rem)]" 
-                : "w-[calc(100vw-3rem)] sm:w-[400px] h-[500px] max-h-[calc(100vh-10rem)]"
+                ? "w-[calc(100vw-2rem)] lg:w-[600px] h-[calc(100vh-12rem)]" 
+                : "w-[calc(100vw-2rem)] sm:w-[400px] h-[500px] max-h-[calc(100vh-10rem)]"
             )}
           >
             {/* Header */}
@@ -738,13 +738,13 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 relative",
+          "w-12 h-12 rounded-2xl shadow-xl flex items-center justify-center transition-all duration-300 relative border border-white/10",
           isOpen 
-            ? "bg-white/10 text-parchment backdrop-blur-xl border border-white/20" 
-            : "bg-arcane text-obsidian shadow-arcane/40"
+            ? "bg-white/10 text-parchment backdrop-blur-xl border-white/20" 
+            : "bg-arcane text-obsidian shadow-arcane/20"
         )}
       >
-        {isOpen ? <X size={24} /> : <MessageSquare size={24} />}
+        {isOpen ? <X size={20} /> : <MessageSquare size={20} />}
         {!isOpen && unreadCount > 0 && (
           <div className="absolute -top-1 -right-1 w-5 h-5 bg-ember text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-obsidian">
             {unreadCount > 99 ? '99+' : unreadCount}

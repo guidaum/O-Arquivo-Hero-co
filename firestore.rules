@@ -331,6 +331,7 @@ service cloud.firestore {
       );
       allow create: if isAuthenticated() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == request.auth.uid;
       allow update: if (
+        isAdmin() ||
         (isGMOfSession(resource.data.sessionId) && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId) ||
         (isDocOwner() && isValidCharacter(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId && (
           // Player can only change stats/mods if unlocked
@@ -352,7 +353,7 @@ service cloud.firestore {
         (resource.data.get('gameSessionId', null) != null && (isGMOfSession(resource.data.gameSessionId) || isPlayerInSession(resource.data.gameSessionId)))
       );
       allow create: if isAuthenticated() && isValidJournalEntry(request.resource.data);
-      allow update: if isDocOwner() && isValidJournalEntry(request.resource.data) && request.resource.data.ownerId == resource.data.ownerId;
+      allow update: if (isDocOwner() || isAdmin()) && isValidJournalEntry(request.resource.data) && (isAdmin() || request.resource.data.ownerId == resource.data.ownerId);
       allow delete: if isDocOwner() || isAdmin();
     }
 
@@ -360,7 +361,8 @@ service cloud.firestore {
       allow get: if isAuthenticated(); 
       allow list: if isAuthenticated();
       allow create: if isAuthenticated() && isValidGameSession(request.resource.data);
-      allow update: if (isGMOwner() || isAuthenticated()) && (
+      allow update: if (isGMOwner() || isAdmin() || isAuthenticated()) && (
+        isAdmin() ||
         // Allow anyone with code to join or players to stay in list
         isValidGameSession(request.resource.data) ||
         (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playerIds']))

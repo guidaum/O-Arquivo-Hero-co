@@ -1156,9 +1156,9 @@ export default function CharacterSheet() {
       {/* Mobile Sidebar Toggle */}
       <button 
         onClick={() => setIsMobileSidebarOpen(true)}
-        className="lg:hidden fixed bottom-28 right-6 z-50 w-14 h-14 bg-arcane text-obsidian rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
+        className="lg:hidden fixed bottom-24 right-4 z-50 w-12 h-12 bg-arcane text-obsidian rounded-2xl shadow-xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border border-arcane/20"
       >
-        <Menu size={24} />
+        <Menu size={20} />
       </button>
 
       {/* Mobile Sidebar Drawer */}
@@ -1184,7 +1184,7 @@ export default function CharacterSheet() {
         )}
       </AnimatePresence>
 
-      <div className="flex-1 space-y-10 pb-24 lg:pb-0">
+      <div className="flex-1 space-y-10 pb-32 lg:pb-12">
         {/* Category Navigation Bar (Horizontal Tabs) */}
         <div className="flex items-center gap-6 border-b border-white/10 overflow-x-auto no-scrollbar">
           {categories.map(cat => (
@@ -1249,10 +1249,10 @@ export default function CharacterSheet() {
               <Edit3 size={24} className="text-white" />
             </div>
           </div>
-          <div className="flex flex-col items-center sm:items-start">
-            <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mb-2">
-              <h2 className="text-3xl sm:text-5xl font-serif text-glow-arcane leading-tight">{character.name}</h2>
-              <span className="px-3 py-1 glass-arcane text-arcane text-[10px] font-mono uppercase tracking-widest rounded-full">Nível {character.level}</span>
+          <div className="flex flex-col items-center sm:items-start w-full">
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-2 w-full">
+              <h2 className="text-3xl sm:text-5xl font-serif text-glow-arcane leading-tight break-words max-w-full">{character.name}</h2>
+              <span className="shrink-0 px-3 py-1 glass-arcane text-arcane text-[10px] font-mono uppercase tracking-widest rounded-full">Nível {character.level}</span>
             </div>
             <div className="flex items-center gap-2 text-parchment/40 font-mono text-xs sm:text-sm uppercase tracking-widest">
               {(() => {
@@ -1508,7 +1508,7 @@ export default function CharacterSheet() {
                           className="p-1.5 sm:p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
                           title="Rolar com Dificuldade"
                         >
-                          <Dice6 size={14} sm:size={16} />
+                          <Dice6 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         </motion.button>
                       )}
                     </AnimatePresence>
@@ -2410,7 +2410,7 @@ export default function CharacterSheet() {
                   Talentos da Campanha
                 </h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {talents.map((talent, idx) => {
                   const baseValue = talent.composition.reduce((acc: number, attrId: string) => acc + getAttr(attrId), 0);
                   const traitMod = traitTalentMods[talent.id] || traitTalentMods[talent.name] || 0;
@@ -2423,16 +2423,16 @@ export default function CharacterSheet() {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: 0.3 + idx * 0.05 }}
-                      className="glass p-5 rounded-3xl border border-white/10 hover:border-gold/30 transition-all group"
+                      className="glass p-4 sm:p-5 rounded-3xl border border-white/10 hover:border-gold/30 transition-all group relative overflow-hidden"
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <h5 className="font-serif text-lg text-glow-gold">{talent.name}</h5>
-                        <div className="flex flex-col items-end gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Base: {baseValue}</span>
+                      <div className="flex justify-between items-start mb-2 relative z-10">
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-serif text-base sm:text-lg text-glow-gold truncate">{talent.name}</h5>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest whitespace-nowrap">B: {baseValue}</span>
                             {canPlayerEdit ? (
                               <div className="flex items-center gap-1">
-                                <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Mod:</span>
+                                <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest">M:</span>
                                 <input 
                                   type="number"
                                   value={modValue}
@@ -2441,78 +2441,79 @@ export default function CharacterSheet() {
                                     setTalentMods(newMods);
                                     handleSave({ talentMods: newMods });
                                   }}
-                                  className="w-10 bg-white/5 border border-white/10 rounded text-center text-xs font-mono text-ember focus:outline-none focus:border-ember/50"
+                                  className="w-8 h-4 bg-white/5 border border-white/10 rounded text-center text-[9px] font-mono text-ember focus:outline-none focus:border-ember/50"
                                 />
                               </div>
                             ) : (
-                              <span className="text-[10px] font-mono text-ember uppercase tracking-widest">Mod: {modValue >= 0 ? `+${modValue}` : modValue}</span>
+                              <span className="text-[9px] font-mono text-ember uppercase tracking-widest">M: {modValue >= 0 ? `+${modValue}` : modValue}</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="px-3 py-1 bg-gold/10 text-gold border border-gold/20 rounded-lg font-serif text-xl">
-                              {totalValue}
-                            </div>
-                            <div className="relative">
-                              <AnimatePresence mode="wait">
-                                {activeRollAttr === talent.id ? (
-                                  <motion.div 
-                                    key="diffs"
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.8 }}
-                                    className="absolute right-0 bottom-full mb-2 flex gap-2 glass p-1.5 rounded-xl border border-white/10 z-10"
-                                  >
-                                    {[
-                                      { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
-                                      { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
-                                      { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
-                                      { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
-                                    ].map(d => (
-                                      <button
-                                        key={d.id}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleQuickRoll(talent.name, totalValue, d.id as any);
-                                          setActiveRollAttr(null);
-                                        }}
-                                        className={cn("w-7 h-7 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
-                                        title={d.title}
-                                      >
-                                        {d.label}
-                                      </button>
-                                    ))}
-                                    <button 
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="px-2 py-1 bg-gold/10 text-gold border border-gold/20 rounded-xl font-serif text-lg sm:text-xl shadow-lg shadow-gold/5">
+                            {totalValue}
+                          </div>
+                          <div className="relative">
+                            <AnimatePresence mode="wait">
+                              {activeRollAttr === talent.id ? (
+                                <motion.div 
+                                  key="diffs"
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  className="absolute right-0 bottom-full mb-2 flex gap-1.5 glass p-1.5 rounded-2xl border border-white/10 z-20 shadow-2xl"
+                                >
+                                  {[
+                                    { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                                    { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                                    { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                                    { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                                  ].map(d => (
+                                    <button
+                                      key={d.id}
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        handleQuickRoll(talent.name, totalValue, d.id as any);
                                         setActiveRollAttr(null);
                                       }}
-                                      className="w-7 h-7 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                                      className={cn("w-8 h-8 rounded-xl glass text-[10px] font-bold transition-all hover:scale-110 active:scale-95", d.color)}
+                                      title={d.title}
                                     >
-                                      <X size={12} />
+                                      {d.label}
                                     </button>
-                                  </motion.div>
-                                ) : (
-                                  <motion.button 
-                                    key="dice"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
+                                  ))}
+                                  <button 
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setActiveRollAttr(talent.id);
+                                      setActiveRollAttr(null);
                                     }}
-                                    className="p-2 hover:bg-gold/20 rounded-lg text-parchment/40 hover:text-gold transition-colors"
-                                    title="Rolar Teste"
+                                    className="w-8 h-8 rounded-xl glass text-parchment/20 hover:text-ember transition-colors ml-1 pl-1 border-l border-white/10"
                                   >
-                                    <Brain size={18} />
-                                  </motion.button>
-                                )}
-                              </AnimatePresence>
-                            </div>
+                                    <X size={14} />
+                                  </button>
+                                </motion.div>
+                              ) : (
+                                <motion.button 
+                                  key="dice"
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveRollAttr(talent.id);
+                                  }}
+                                  className="p-2 hover:bg-gold/20 rounded-xl text-parchment/30 hover:text-gold transition-all hover:scale-110"
+                                  title="Rolar Teste"
+                                >
+                                  <Brain size={18} />
+                                </motion.button>
+                              )}
+                            </AnimatePresence>
                           </div>
                         </div>
                       </div>
-                      <p className="text-xs text-parchment/60 line-clamp-2 mb-4">{talent.description}</p>
-                      <div className="flex flex-wrap gap-1.5">
+                      <p className="text-[10px] text-parchment/40 line-clamp-2 mb-3 h-8">{talent.description}</p>
+                      <div className="flex flex-wrap gap-1 relative z-10">
                         {talent.composition.map(attrId => {
                           const attr = attributes.find(a => a.id === attrId);
                           if (!attr) return null;
@@ -2530,10 +2531,10 @@ export default function CharacterSheet() {
 
                           return (
                             <div key={attrId} className={cn(
-                              "flex items-center gap-1 px-2 py-0.5 rounded-md border text-[8px] font-mono uppercase tracking-wider transition-colors",
+                              "flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[7px] font-mono uppercase tracking-wider transition-colors",
                               tagStyles
                             )}>
-                              {React.createElement(getIcon(attr.icon), { size: 8 })}
+                              {React.createElement(getIcon(attr.icon), { size: 7 })}
                               {attr.label}
                             </div>
                           );
