@@ -682,7 +682,7 @@ export default function GMDashboard() {
 
       await addDoc(collection(db, 'characters'), npcData);
       setIsGeneratingNPC(false);
-      alert(`NPC ${name} gerado com sucesso!`);
+      setSaveStatus({ type: 'success', message: `NPC ${name} gerado com sucesso!` });
     } catch (err) {
       console.error('Error generating NPC:', err);
       handleFirestoreError(err, OperationType.CREATE, 'characters');
@@ -1735,7 +1735,7 @@ export default function GMDashboard() {
         status: 'approved',
         data: dataToSave
       });
-      alert('Sugestão aprovada e adicionada à biblioteca global!');
+      setSaveStatus({ type: 'success', message: 'Sugestão aprovada e adicionada à biblioteca global!' });
       setEditingSuggestion(null);
     } catch (err) {
       console.error('Error approving suggestion:', err);

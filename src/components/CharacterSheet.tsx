@@ -445,7 +445,7 @@ export default function CharacterSheet() {
 
     const currentPoints = character.skillPoints || 0;
     if (currentPoints < skill.purchaseCost) {
-      alert('Pontos de perícia insuficientes!');
+      setSaveStatus({ type: 'error', message: 'Pontos de perícia insuficientes!' });
       return;
     }
 
@@ -477,7 +477,7 @@ export default function CharacterSheet() {
 
     const currentPoints = character.powerPoints || 0;
     if (currentPoints < power.purchaseCost) {
-      alert('Pontos de poder insuficientes!');
+      setSaveStatus({ type: 'error', message: 'Pontos de poder insuficientes!' });
       return;
     }
 
@@ -547,7 +547,7 @@ export default function CharacterSheet() {
   const handleShare = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
-    alert('Link da ficha copiado para a área de transferência!');
+    setSaveStatus({ type: 'success', message: 'Link da ficha copiado para a área de transferência!' });
   };
 
   const handleDownload = () => {
@@ -570,7 +570,7 @@ export default function CharacterSheet() {
     const canEdit = isGM || (isOwner && canEditStats);
     
     if (!canEdit) {
-      alert('Você não tem permissão para editar a imagem deste personagem.');
+      setSaveStatus({ type: 'error', message: 'Você não tem permissão para editar a imagem deste personagem.' });
       return;
     }
 
@@ -1533,7 +1533,7 @@ export default function CharacterSheet() {
                                 const currentPoints = attributePoints;
                                 
                                 if (!isGM && diff > currentPoints) {
-                                  alert('Pontos de atributo insuficientes!');
+                                  setSaveStatus({ type: 'error', message: 'Pontos de atributo insuficientes!' });
                                   return;
                                 }
                                 

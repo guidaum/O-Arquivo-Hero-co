@@ -40,7 +40,8 @@ export default function Login() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
-      const isAdminEmail = user.email === 'guilherme.higino@gmail.com';
+      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+      const isAdminEmail = adminEmail && user.email === adminEmail;
 
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (!userDoc.exists()) {
