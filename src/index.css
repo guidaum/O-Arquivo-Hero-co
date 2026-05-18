@@ -6,17 +6,46 @@
   --font-sans: "Manrope", sans-serif;
   --font-mono: "Space Grotesk", monospace;
 
-  --color-obsidian: #161311;
-  --color-arcane: #47d6ff;
-  --color-ember: #ffb59c;
-  --color-gold: #eac34a;
-  --color-parchment: #d9d2c7;
-  --color-ink: #2a2624;
+  --color-obsidian: var(--bg-primary);
+  --color-arcane: var(--accent-primary);
+  --color-ember: var(--accent-secondary);
+  --color-gold: var(--accent-tertiary);
+  --color-parchment: var(--text-primary);
+  --color-ink: var(--bg-secondary);
+  --color-surface: var(--bg-secondary);
+}
+
+:root {
+  --bg-primary: #161311;
+  --bg-secondary: #2a2624;
+  --text-primary: #d9d2c7;
+  --text-secondary: #8c8479;
+  --accent-primary: #47d6ff;
+  --accent-secondary: #ffb59c;
+  --accent-tertiary: #eac34a;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --surface-low: rgba(255, 255, 255, 0.03);
+  --surface-high: rgba(255, 255, 255, 0.08);
+}
+
+.light {
+  --bg-primary: #f8f6f2;
+  --bg-secondary: #ffffff;
+  --text-primary: #2a2624;
+  --text-secondary: #5e544d;
+  --accent-primary: #0088aa;
+  --accent-secondary: #d15d3d;
+  --accent-tertiary: #b38f00;
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(42, 38, 36, 0.1);
+  --surface-low: rgba(42, 38, 36, 0.05);
+  --surface-high: rgba(42, 38, 36, 0.1);
 }
 
 @layer base {
   body {
-    @apply bg-obsidian text-parchment font-sans antialiased;
+    @apply bg-obsidian text-parchment font-sans antialiased transition-colors duration-300;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -25,15 +54,19 @@
 }
 
 .glass {
-  @apply bg-white/5 backdrop-blur-md border border-white/10;
+  @apply bg-[var(--glass-bg)] backdrop-blur-md border border-[var(--glass-border)] transition-colors duration-300;
+}
+
+.bg-low {
+  @apply bg-[var(--surface-low)];
 }
 
 .glass-ember {
-  @apply bg-ember/5 backdrop-blur-md border border-ember/20;
+  @apply bg-ember/10 backdrop-blur-md border border-ember/20 transition-colors duration-300;
 }
 
 .glass-arcane {
-  @apply bg-arcane/5 backdrop-blur-md border border-arcane/20;
+  @apply bg-arcane/10 backdrop-blur-md border border-arcane/20 transition-colors duration-300;
 }
 
 .text-glow-arcane {
@@ -45,6 +78,21 @@
 }
 
 @layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  }
+
+  .light .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-black/10 hover:bg-black/20;
+  }
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }

@@ -21,8 +21,11 @@ import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot, u
 import NotificationBell from './NotificationBell';
 import DiceRoller from './DiceRoller';
 import ProfileModal from './ProfileModal';
+import { useTheme } from './ThemeProvider';
+import ThemeToggle from './ThemeToggle';
 
 export default function Layout() {
+  const { theme } = useTheme();
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = React.useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -178,6 +181,8 @@ export default function Layout() {
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4">
+          <ThemeToggle className="p-2 sm:p-2.5" />
+
           <div className="hidden sm:block">
             <NotificationBell />
           </div>

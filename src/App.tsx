@@ -15,6 +15,7 @@ import GMDashboard from './components/GMDashboard';
 import AdminDashboard from './components/AdminDashboard';
 import Login from './components/Login';
 import { auth, onAuthStateChanged, User } from './firebase';
+import { ThemeProvider } from './components/ThemeProvider';
 
 export default function App() {
   const [user, setUser] = React.useState<User | null>(null);
@@ -41,19 +42,21 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="journal" element={<SessionJournal />} />
-          <Route path="inventory" element={<Inventory />} />
-          <Route path="create" element={<CharacterCreation />} />
-          <Route path="sheet" element={<CharacterSheet />} />
-          <Route path="gm/session/:sessionId" element={<GMDashboard />} />
-          <Route path="admin" element={<AdminDashboard />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="journal" element={<SessionJournal />} />
+            <Route path="inventory" element={<Inventory />} />
+            <Route path="create" element={<CharacterCreation />} />
+            <Route path="sheet" element={<CharacterSheet />} />
+            <Route path="gm/session/:sessionId" element={<GMDashboard />} />
+            <Route path="admin" element={<AdminDashboard />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

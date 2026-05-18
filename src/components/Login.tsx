@@ -138,12 +138,12 @@ export default function Login() {
 
         <div className="space-y-6">
           {/* Role Selection */}
-          <div className="flex p-1 bg-white/5 rounded-2xl border border-white/10 mb-6">
+          <div className="flex p-1 bg-parchment/10 rounded-2xl border border-white/5 mb-6">
             <button
               onClick={() => setRole('user')}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold transition-all",
-                role === 'user' ? "bg-white text-obsidian shadow-lg" : "text-parchment/40 hover:text-parchment"
+                role === 'user' ? "bg-parchment text-obsidian shadow-lg" : "text-parchment/40 hover:text-parchment"
               )}
             >
               Jogador
@@ -213,8 +213,8 @@ export default function Login() {
             onClick={handleGoogleLogin}
             disabled={loading}
             className={cn(
-              "w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-white/5",
-              role === 'gm' ? "bg-arcane text-obsidian" : "bg-white text-obsidian"
+              "w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-parchment/5",
+              role === 'gm' ? "bg-arcane text-obsidian" : "bg-parchment text-obsidian"
             )}
           >
             {loading && !email ? (

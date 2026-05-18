@@ -256,7 +256,7 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-3 lg:gap-4">
           <button 
             onClick={() => navigate('/create')}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white text-obsidian rounded-full font-bold hover:scale-105 transition-transform shadow-lg shadow-white/10 text-sm lg:text-base"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-parchment text-obsidian rounded-full font-bold hover:scale-105 transition-transform shadow-lg shadow-parchment/10 text-sm lg:text-base"
           >
             <Plus size={20} />
             <span>Nova Lenda</span>
