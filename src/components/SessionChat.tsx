@@ -484,8 +484,11 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                 messages.map((msg) => {
                   const isMe = msg.senderId === auth.currentUser?.uid;
                   return (
-                    <div 
+                    <motion.div 
                       key={msg.id}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.25, ease: 'easeOut' }}
                       className={cn(
                         "flex flex-col max-w-[85%]",
                         isMe ? "ml-auto items-end" : "items-start"
@@ -553,7 +556,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                           </div>
                         )}
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })
               )}

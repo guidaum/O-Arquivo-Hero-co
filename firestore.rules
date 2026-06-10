@@ -259,16 +259,6 @@ service cloud.firestore {
              (!('description' in data) || data.description is string);
     }
 
-    function isValidTrait(data) {
-      return data.keys().hasAll(['name', 'type']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.type in ['advantage', 'disadvantage'] &&
-             (!('modifier' in data) || data.modifier is int) &&
-             (!('modifierType' in data) || data.modifierType is string) &&
-             (!('effect' in data) || data.effect is string) &&
-             (!('description' in data) || data.description is string);
-    }
-
     function isValidGlobalSettings(data) {
       return isAdmin() && 
              (!('maxAttributePoints' in data) || data.maxAttributePoints is int) &&
