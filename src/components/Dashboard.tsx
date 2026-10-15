@@ -21,11 +21,13 @@ import {
   Dice6,
   Sparkles,
   X,
-  Trash2
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { auth, db, collection, query, where, onSnapshot, getDoc, doc, deleteDoc, OperationType, handleFirestoreError } from '../firebase';
+import { auth, db, collection, query, where, onSnapshot, getDoc, doc, deleteDoc, updateDoc, OperationType, handleFirestoreError } from '../firebase';
 import SessionManager from './SessionManager';
+import { ImagePickerModal } from './ImagePickerModal';
 
 const iconMap: Record<string, any> = {
   Shield, Sword, Zap, Flame, Eye, Brain, Heart, Activity, Scroll, Dice6, Sparkles
@@ -34,7 +36,7 @@ const iconMap: Record<string, any> = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const user = auth.currentUser;
-  const [userRole, setUserRole] = React.useState<'user' | 'gm'>('user');
+  const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
   const [viewMode, setViewMode] = React.useState<'user' | 'gm'>('user');
   const [characters, setCharacters] = React.useState<any[]>([]);
   const [gmSessions, setGmSessions] = React.useState<any[]>([]);
@@ -55,6 +57,7 @@ export default function Dashboard() {
   const [isCreatingSession, setIsCreatingSession] = React.useState(false);
   const [newSessionName, setNewSessionName] = React.useState('');
   const [newSessionImage, setNewSessionImage] = React.useState('https://picsum.photos/seed/campaign/800/400');
+  const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false);
 
   const [deleteConfirm, setDeleteConfirm] = React.useState<{ id: string, type: 'character' | 'session', name: string } | null>(null);
 
@@ -100,23 +103,58 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleViewMode = async (mode: 'user' | 'gm') => {
+    setViewMode(mode);
+    localStorage.setItem('preferredViewMode', mode);
+    window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: mode }));
+    if (user && userRole !== 'admin') {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          role: mode,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error('Error updating role in database:', err);
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    const handleGlobalModeChange = (e: any) => {
+      const newMode = e.detail || localStorage.getItem('preferredViewMode');
+      if (newMode && (newMode === 'user' || newMode === 'gm')) {
+        setViewMode(newMode);
+      }
+    };
+    window.addEventListener('viewModeChanged', handleGlobalModeChange);
+    window.addEventListener('storage', handleGlobalModeChange);
+    return () => {
+      window.removeEventListener('viewModeChanged', handleGlobalModeChange);
+      window.removeEventListener('storage', handleGlobalModeChange);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (!user) return;
 
-    // Fetch user role
-    const fetchUserRole = async () => {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          const role = userDoc.data().role || 'user';
-          setUserRole(role);
-          setViewMode(role);
+    // Real-time subscription to user document to immediately catch role changes
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribeUser = onSnapshot(userDocRef, (userDoc) => {
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        const role = (data.role || 'user') as 'user' | 'gm' | 'admin';
+        setUserRole(role);
+        
+        const preferred = localStorage.getItem('preferredViewMode');
+        if (preferred === 'gm' || preferred === 'user') {
+          setViewMode(preferred);
+        } else {
+          setViewMode(role === 'gm' || role === 'admin' ? 'gm' : 'user');
         }
-      } catch (error) {
-        console.error('Error fetching user role:', error);
       }
-    };
-    fetchUserRole();
+    }, (error) => {
+      console.error('Error listening to user document in Dashboard:', error);
+    });
 
     // Fetch characters (for players)
     const qChars = query(collection(db, 'characters'), where('ownerId', '==', user.uid));
@@ -139,6 +177,7 @@ export default function Dashboard() {
     });
 
     return () => {
+      unsubscribeUser();
       unsubscribeChars();
       unsubscribeSessions();
     };
@@ -246,11 +285,27 @@ export default function Dashboard() {
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl lg:text-4xl font-serif mb-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={cn(
+              "px-3 py-1 rounded-full text-[11px] font-mono uppercase tracking-wider font-bold border flex items-center gap-1.5 shadow-sm",
+              viewMode === 'gm' 
+                ? "bg-arcane/20 text-arcane border-arcane/40" 
+                : "bg-ember/20 text-ember border-ember/40"
+            )}>
+              {viewMode === 'gm' ? <Shield size={12} /> : <Sword size={12} />}
+              {viewMode === 'gm' ? 'Interface do Mestre' : 'Interface do Jogador'}
+            </span>
+            {userRole === 'admin' && (
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-gold/20 text-gold border border-gold/40">
+                Admin
+              </span>
+            )}
+          </div>
+          <h2 className="text-3xl lg:text-4xl font-serif mb-2 text-glow-arcane">
             {viewMode === 'gm' ? 'Painel do Mestre' : 'Minhas Lendas'}, {user?.displayName?.split(' ')[0]}
           </h2>
-          <p className="text-parchment/40 font-mono text-xs lg:text-sm uppercase tracking-widest">
-            {viewMode === 'gm' ? 'Gerencie suas campanhas e lendas' : 'As Crônicas da Sua Jornada'}
+          <p className="text-parchment/60 font-mono text-xs lg:text-sm uppercase tracking-widest">
+            {viewMode === 'gm' ? 'Gerencie suas campanhas, regras e fichas da mesa' : 'As Crônicas e Personagens da Sua Jornada'}
           </p>
         </div>
         <div className="flex flex-wrap gap-3 lg:gap-4">
@@ -273,31 +328,35 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Role Toggle for GMs */}
-      {userRole === 'gm' && (
-        <div className="flex justify-center">
-          <div className="glass p-1 rounded-2xl flex gap-1">
-            <button 
-              onClick={() => setViewMode('gm')}
-              className={cn(
-                "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-                viewMode === 'gm' ? "bg-arcane text-obsidian" : "text-parchment/40 hover:bg-white/5"
-              )}
-            >
-              Modo Mestre
-            </button>
-            <button 
-              onClick={() => setViewMode('user')}
-              className={cn(
-                "px-6 py-2 rounded-xl text-sm font-bold transition-all",
-                viewMode === 'user' ? "bg-ember text-obsidian" : "text-parchment/40 hover:bg-white/5"
-              )}
-            >
-              Modo Jogador
-            </button>
-          </div>
+      {/* Role Toggle: Allows quick switching between Mestre and Jogador */}
+      <div className="flex justify-center">
+        <div className="glass p-1.5 rounded-2xl flex gap-1.5 border border-white/10 shadow-xl">
+          <button 
+            onClick={() => handleToggleViewMode('gm')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+              viewMode === 'gm' 
+                ? "bg-arcane text-obsidian shadow-lg shadow-arcane/20" 
+                : "text-parchment/50 hover:text-parchment hover:bg-white/5"
+            )}
+          >
+            <Shield size={16} />
+            <span>Modo Mestre</span>
+          </button>
+          <button 
+            onClick={() => handleToggleViewMode('user')}
+            className={cn(
+              "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+              viewMode === 'user' 
+                ? "bg-ember text-obsidian shadow-lg shadow-ember/20" 
+                : "text-parchment/50 hover:text-parchment hover:bg-white/5"
+            )}
+          >
+            <Sword size={16} />
+            <span>Modo Jogador</span>
+          </button>
         </div>
-      )}
+      </div>
 
       {/* Session Manager */}
       <SessionManager viewMode={viewMode} />
@@ -308,7 +367,7 @@ export default function Dashboard() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass p-8 rounded-[2.5rem] w-full max-w-md border border-white/10 space-y-6"
+            className="glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] w-full max-w-md border border-white/25 space-y-6"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-2xl font-serif">Nova Campanha</h3>
@@ -332,14 +391,52 @@ export default function Dashboard() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
-                <input 
-                  type="text" 
-                  value={newSessionImage}
-                  onChange={e => setNewSessionImage(e.target.value)}
-                  placeholder="URL da imagem..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                />
+                <div className="flex items-center justify-between px-2">
+                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Capa da Campanha</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsImagePickerOpen(true)}
+                    className="text-xs font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <ImageIcon size={12} />
+                    Escolher Imagem
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3 p-3 glass rounded-xl border border-white/10">
+                  <div 
+                    onClick={() => setIsImagePickerOpen(true)}
+                    className="w-16 h-12 rounded-lg overflow-hidden border border-white/20 bg-white/5 shrink-0 cursor-pointer group relative"
+                    title="Clique para alterar a imagem"
+                  >
+                    <img 
+                      src={newSessionImage} 
+                      alt="Capa da Sessão" 
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-0 bg-obsidian/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                      <ImageIcon size={14} />
+                    </div>
+                  </div>
+                  <div className="flex-1 flex gap-2">
+                    <input 
+                      type="text" 
+                      value={newSessionImage}
+                      onChange={e => setNewSessionImage(e.target.value)}
+                      placeholder="URL da imagem..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsImagePickerOpen(true)}
+                      className="px-3 py-2 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <ImageIcon size={12} />
+                      Galeria
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -353,13 +450,27 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Session Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImagePickerOpen}
+        onClose={() => setIsImagePickerOpen(false)}
+        onConfirm={(url) => {
+          setNewSessionImage(url);
+          setIsImagePickerOpen(false);
+        }}
+        title="Capa da Campanha"
+        subtitle="Insira uma URL ou faça upload da capa da sessão"
+        confirmText="Definir Capa"
+        initialUrl={newSessionImage}
+      />
+
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-obsidian/90 backdrop-blur-md">
           <motion.div 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
+            className="glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
           >
             <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 size={40} className="text-red-500" />

@@ -9,8 +9,19 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const isMobileMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const isSmallScreen = window.innerWidth < 768;
+  const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  return isSmallScreen || isMobileUA;
+};
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
+    // Ao iniciar no modo mobile, sempre abrir no modo claro
+    if (isMobileMode()) {
+      return 'light';
+    }
     const saved = localStorage.getItem('theme');
     return (saved as Theme) || 'dark';
   });

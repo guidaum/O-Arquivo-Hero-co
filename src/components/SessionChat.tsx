@@ -14,6 +14,7 @@ import {
   Dice6,
   Trash2
 } from 'lucide-react';
+import { ImagePickerModal } from './ImagePickerModal';
 import { 
   db, 
   auth, 
@@ -74,6 +75,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   const [userCharacter, setUserCharacter] = React.useState<any>(null);
   const [imageUrl, setImageUrl] = React.useState('');
   const [showImageInput, setShowImageInput] = React.useState(false);
+  const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false);
   const [lastReadCount, setLastReadCount] = React.useState(0);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -417,7 +419,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={cn(
-              "absolute bottom-14 right-0 glass rounded-3xl shadow-2xl border border-white/10 flex flex-col overflow-hidden transition-all duration-300",
+              "absolute bottom-14 right-0 glass-popup bg-obsidian/85 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/25 flex flex-col overflow-hidden transition-all duration-300",
               isExpanded 
                 ? "w-[calc(100vw-2rem)] lg:w-[600px] h-[calc(100vh-12rem)]" 
                 : "w-[calc(100vw-2rem)] sm:w-[400px] h-[500px] max-h-[calc(100vh-10rem)]"
@@ -573,7 +575,7 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="bg-obsidian/95 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden mb-2 max-h-60 overflow-y-auto w-full z-50 absolute bottom-full left-0 shadow-2xl"
+                    className="glass-popup bg-obsidian/85 backdrop-blur-xl border border-white/25 rounded-xl overflow-hidden mb-2 max-h-60 overflow-y-auto w-full z-50 absolute bottom-full left-0 shadow-2xl"
                   >
                     {sessionUsers
                       .filter(u => 
@@ -630,7 +632,34 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
               </AnimatePresence>
 
               <AnimatePresence>
-                {showImageInput && (
+                {imageUrl && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden mb-2"
+                  >
+                    <div className="flex items-center gap-2 bg-white/5 border border-arcane/30 rounded-xl p-2">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/20 bg-black/40 shrink-0">
+                        <img src={imageUrl} alt="Anexo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-mono text-arcane truncate">Imagem anexada</p>
+                        <p className="text-[9px] text-parchment/40 truncate">{imageUrl}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl('')}
+                        className="p-1 hover:bg-white/10 rounded-lg text-ember hover:text-ember/80 cursor-pointer"
+                        title="Remover Imagem"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {showImageInput && !imageUrl && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
@@ -641,15 +670,22 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                       <ImageIcon size={16} className="text-parchment/40 shrink-0" />
                       <input 
                         type="text"
-                        placeholder="URL da imagem..."
+                        placeholder="insira a URL da imagem..."
                         value={imageUrl}
                         onChange={(e) => setImageUrl(e.target.value)}
                         className="flex-1 bg-transparent border-none focus:ring-0 text-xs text-parchment placeholder:text-parchment/20"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setIsImagePickerOpen(true)}
+                        className="px-2 py-1 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded text-[10px] font-mono uppercase tracking-wider cursor-pointer"
+                      >
+                        Galeria
+                      </button>
                       <button 
                         type="button"
                         onClick={() => setShowImageInput(false)}
-                        className="p-1 hover:bg-white/10 rounded-lg text-parchment/40"
+                        className="p-1 hover:bg-white/10 rounded-lg text-parchment/40 cursor-pointer"
                       >
                         <X size={14} />
                       </button>
@@ -699,18 +735,18 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
                   <div className="flex items-center gap-2 mt-1 px-1">
                     <button 
                       type="button"
-                      onClick={() => setShowImageInput(!showImageInput)}
+                      onClick={() => setIsImagePickerOpen(true)}
                       className={cn(
-                        "p-1.5 rounded-lg transition-colors",
-                        showImageInput ? "bg-arcane/20 text-arcane" : "text-parchment/40 hover:text-parchment hover:bg-white/10"
+                        "p-1.5 rounded-lg transition-colors cursor-pointer",
+                        imageUrl ? "bg-arcane/20 text-arcane" : "text-parchment/40 hover:text-parchment hover:bg-white/10"
                       )}
-                      title="Adicionar Imagem"
+                      title="Adicionar Imagem (URL ou Upload)"
                     >
                       <ImageIcon size={16} />
                     </button>
                     <button 
                       type="button"
-                      className="p-1.5 text-parchment/40 hover:text-parchment hover:bg-white/10 rounded-lg transition-colors"
+                      className="p-1.5 text-parchment/40 hover:text-parchment hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
                       title="Adicionar Link"
                       onClick={() => {
                         if (!newMessage.includes('http')) {
@@ -754,6 +790,21 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
           </div>
         )}
       </motion.button>
+
+      {/* Chat Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImagePickerOpen}
+        onClose={() => setIsImagePickerOpen(false)}
+        onConfirm={(url) => {
+          setImageUrl(url);
+          setIsImagePickerOpen(false);
+          setShowImageInput(false);
+        }}
+        title="Anexar Imagem ao Chat"
+        subtitle="Insira uma URL ou faça upload de uma imagem para o chat"
+        confirmText="Anexar Imagem"
+        initialUrl={imageUrl}
+      />
     </div>
   );
 }

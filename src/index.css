@@ -23,10 +23,12 @@
   --accent-primary: #47d6ff;
   --accent-secondary: #ffb59c;
   --accent-tertiary: #eac34a;
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --surface-low: rgba(255, 255, 255, 0.03);
-  --surface-high: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-modal-bg: rgba(22, 19, 17, 0.85);
+  --glass-modal-border: rgba(255, 255, 255, 0.28);
+  --surface-low: rgba(255, 255, 255, 0.05);
+  --surface-high: rgba(255, 255, 255, 0.11);
 }
 
 .light {
@@ -37,10 +39,12 @@
   --accent-primary: #0088aa;
   --accent-secondary: #d15d3d;
   --accent-tertiary: #b38f00;
-  --glass-bg: rgba(255, 255, 255, 0.8);
-  --glass-border: rgba(42, 38, 36, 0.1);
-  --surface-low: rgba(42, 38, 36, 0.05);
-  --surface-high: rgba(42, 38, 36, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.86);
+  --glass-border: rgba(42, 38, 36, 0.14);
+  --glass-modal-bg: rgba(248, 246, 242, 0.85);
+  --glass-modal-border: rgba(255, 255, 255, 0.75);
+  --surface-low: rgba(42, 38, 36, 0.07);
+  --surface-high: rgba(42, 38, 36, 0.14);
 }
 
 @layer base {
@@ -57,16 +61,38 @@
   @apply bg-[var(--glass-bg)] backdrop-blur-md border border-[var(--glass-border)] transition-colors duration-300;
 }
 
+/* Translucent Popups and Modals with 85% opacity and whitish border */
+.glass-modal,
+.glass-popup,
+.modal-window,
+.popup-window {
+  background-color: var(--glass-modal-bg) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-modal-border) !important;
+  transition: background-color 300ms, border-color 300ms;
+}
+
+/* Ensure all modal dialog windows inside overlay backdrops have 85% opacity and whitish border */
+.fixed.inset-0 > div > [class*="max-w-"]:not([class*="border-red"]):not([class*="border-gold"]),
+.fixed.inset-0 > [class*="max-w-"]:not([class*="border-red"]):not([class*="border-gold"]),
+.fixed.inset-0 [role="dialog"]:not([class*="border-red"]):not([class*="border-gold"]) {
+  background-color: var(--glass-modal-bg) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border-color: var(--glass-modal-border) !important;
+}
+
 .bg-low {
   @apply bg-[var(--surface-low)];
 }
 
 .glass-ember {
-  @apply bg-ember/10 backdrop-blur-md border border-ember/20 transition-colors duration-300;
+  @apply bg-ember/15 backdrop-blur-md border border-ember/25 transition-colors duration-300;
 }
 
 .glass-arcane {
-  @apply bg-arcane/10 backdrop-blur-md border border-arcane/20 transition-colors duration-300;
+  @apply bg-arcane/15 backdrop-blur-md border border-arcane/25 transition-colors duration-300;
 }
 
 .text-glow-arcane {

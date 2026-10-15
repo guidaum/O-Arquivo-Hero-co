@@ -94,3 +94,249 @@ export const playAudio = (url: string, volume: number = 0.5) => {
     return null;
   }
 };
+
+export const normalizeTraitType = (str: string): string => {
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+};
+
+// Returns the true configured modifier number preserving the exact sign (+ or -)
+// defects/disadvantages can have positive modifiers and advantages can have negative modifiers
+export const getTraitEffectiveModifier = (trait: any): number => {
+  if (!trait) return 0;
+  return Number(trait.modifier) || 0;
+};
+
+// Check if a trait's modifierType and effect refer to the same attribute or talent type.
+// If both refer to the same type (e.g. modifierType is 'int' and effect is 'INT' or 'Inteligência'),
+// the effect should be disregarded in calculation!
+// If they are of different types (e.g. modifierType is 'for' and effect is 'AGI'), the values should be considered.
+export const isTraitModifierSameAsEffect = (
+  trait: any,
+  attributesList: Array<{ id: string; label?: string }> = [],
+  talentsList: Array<{ id: string; name?: string }> = []
+): boolean => {
+  if (!trait) return false;
+  const modTypeRaw = normalizeTraitType(trait.modifierType || '');
+  const effectRaw = normalizeTraitType(trait.effect || '');
+  if (!modTypeRaw || !effectRaw) return false;
+
+  const DEFAULT_ATTRS = [
+    { id: 'for', label: 'Força' },
+    { id: 'con', label: 'Constituição' },
+    { id: 'agi', label: 'Agilidade' },
+    { id: 'per', label: 'Percepção' },
+    { id: 'vel', label: 'Velocidade' },
+    { id: 'ini', label: 'Iniciativa' },
+    { id: 'int', label: 'Inteligência' },
+    { id: 'cor', label: 'Coragem' },
+  ];
+
+  const allAttrs = attributesList && attributesList.length > 0 ? attributesList : DEFAULT_ATTRS;
+  const attrMap: Record<string, string> = {};
+  allAttrs.forEach(a => {
+    const idNorm = normalizeTraitType(a.id);
+    attrMap[idNorm] = idNorm;
+    if (a.label) {
+      attrMap[normalizeTraitType(a.label)] = idNorm;
+    }
+  });
+
+  const talentMap: Record<string, string> = {};
+  if (talentsList) {
+    talentsList.forEach(t => {
+      const idNorm = normalizeTraitType(t.id);
+      talentMap[idNorm] = idNorm;
+      if (t.name) {
+        talentMap[normalizeTraitType(t.name)] = idNorm;
+      }
+    });
+  }
+
+  // Direct match
+  if (modTypeRaw === effectRaw) return true;
+
+  const extractAttr = (text: string): string | null => {
+    if (!text) return null;
+    if (attrMap[text]) return attrMap[text];
+    const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    for (const w of words) {
+      const cleanW = w.trim();
+      if (cleanW && attrMap[cleanW]) {
+        return attrMap[cleanW];
+      }
+    }
+    return null;
+  };
+
+  const extractTalent = (text: string): string | null => {
+    if (!text) return null;
+    if (talentMap[text]) return talentMap[text];
+    const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    for (const w of words) {
+      const cleanW = w.trim();
+      if (cleanW && talentMap[cleanW]) {
+        return talentMap[cleanW];
+      }
+    }
+    return null;
+  };
+
+  const modAttrId = extractAttr(modTypeRaw);
+  const modTalentId = extractTalent(modTypeRaw);
+  const effectAttrId = extractAttr(effectRaw);
+  const effectTalentId = extractTalent(effectRaw);
+
+  if (modAttrId && effectAttrId && modAttrId === effectAttrId) {
+    return true;
+  }
+  if (modTalentId && effectTalentId && modTalentId === effectTalentId) {
+    return true;
+  }
+
+  return false;
+};
+
+// Gets the list of attribute and talent IDs that this trait legitimately affects.
+// If modifierType and effect refer to the same attribute/talent (isTraitModifierSameAsEffect is true),
+// the effect is disregarded in calculations and origins: ONLY the modifier is considered.
+// If effect refers to a different attribute/talent (e.g. modifier in FOR and effect in AGI), both are considered.
+export const getTraitTargets = (
+  trait: any,
+  attributesList: Array<{ id: string; label?: string }> = [],
+  talentsList: Array<{ id: string; name?: string }> = []
+): { attrIds: string[]; talentIds: string[] } => {
+  if (!trait) {
+    return { attrIds: [], talentIds: [] };
+  }
+
+  const DEFAULT_ATTRS = [
+    { id: 'for', label: 'Força' },
+    { id: 'con', label: 'Constituição' },
+    { id: 'agi', label: 'Agilidade' },
+    { id: 'per', label: 'Percepção' },
+    { id: 'vel', label: 'Velocidade' },
+    { id: 'ini', label: 'Iniciativa' },
+    { id: 'int', label: 'Inteligência' },
+    { id: 'cor', label: 'Coragem' },
+  ];
+
+  const allAttrs = attributesList && attributesList.length > 0 ? attributesList : DEFAULT_ATTRS;
+  const attrMap: Record<string, string> = {};
+  allAttrs.forEach(a => {
+    const idNorm = normalizeTraitType(a.id);
+    const canonicalId = a.id.toLowerCase();
+    attrMap[idNorm] = canonicalId;
+    if (a.label) {
+      attrMap[normalizeTraitType(a.label)] = canonicalId;
+    }
+  });
+
+  const talentMap: Record<string, string> = {};
+  if (talentsList) {
+    talentsList.forEach(t => {
+      const idNorm = normalizeTraitType(t.id);
+      const canonicalId = t.id.toLowerCase();
+      talentMap[idNorm] = canonicalId;
+      if (t.name) {
+        talentMap[normalizeTraitType(t.name)] = canonicalId;
+      }
+    });
+  }
+
+  const attrIds = new Set<string>();
+  const talentIds = new Set<string>();
+
+  const checkAndAdd = (rawStr: string) => {
+    if (!rawStr) return;
+    const norm = normalizeTraitType(rawStr);
+    if (attrMap[norm]) attrIds.add(attrMap[norm]);
+    if (talentMap[norm]) talentIds.add(talentMap[norm]);
+
+    const words = norm.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    for (const w of words) {
+      const cleanW = w.trim();
+      if (cleanW && attrMap[cleanW]) attrIds.add(attrMap[cleanW]);
+      if (cleanW && talentMap[cleanW]) talentIds.add(talentMap[cleanW]);
+    }
+  };
+
+  // The modifier is always considered
+  checkAndAdd(trait.modifierType);
+
+  // If the effect is of the same type as the modifier, the effect is disregarded (only modifier considered).
+  // If the effect is of a different type (e.g. modifier FOR and effect AGI), the effect is also considered!
+  const isSameType = isTraitModifierSameAsEffect(trait, allAttrs, talentsList);
+  if (!isSameType && trait.effect) {
+    checkAndAdd(trait.effect);
+  }
+
+  return {
+    attrIds: Array.from(attrIds),
+    talentIds: Array.from(talentIds)
+  };
+};
+
+// Returns the full readable display name of an attribute or talent from its alias / modifierType
+export const getTraitTargetDisplayName = (
+  rawTarget: string,
+  attributesList: Array<{ id: string; label?: string }> = [],
+  talentsList: Array<{ id: string; name?: string }> = []
+): string => {
+  if (!rawTarget) return 'Geral';
+  const norm = normalizeTraitType(rawTarget);
+
+  const DEFAULT_ATTRS = [
+    { id: 'for', label: 'Força' },
+    { id: 'con', label: 'Constituição' },
+    { id: 'agi', label: 'Agilidade' },
+    { id: 'per', label: 'Percepção' },
+    { id: 'vel', label: 'Velocidade' },
+    { id: 'ini', label: 'Iniciativa' },
+    { id: 'int', label: 'Inteligência' },
+    { id: 'cor', label: 'Coragem' },
+  ];
+
+  const allAttrs = attributesList && attributesList.length > 0 ? attributesList : DEFAULT_ATTRS;
+
+  // 1. Direct match on attribute ID or label
+  for (const a of allAttrs) {
+    if (normalizeTraitType(a.id) === norm || normalizeTraitType(a.label || '') === norm) {
+      return a.label || a.id.toUpperCase();
+    }
+  }
+
+  // 2. Direct match on talent ID or name
+  if (talentsList) {
+    for (const t of talentsList) {
+      if (normalizeTraitType(t.id) === norm || normalizeTraitType(t.name || '') === norm) {
+        return t.name || t.id;
+      }
+    }
+  }
+
+  // 3. Substring / token match in attributes
+  for (const a of allAttrs) {
+    const aIdNorm = normalizeTraitType(a.id);
+    const aLabelNorm = normalizeTraitType(a.label || '');
+    if (norm === aIdNorm || (aLabelNorm && norm.includes(aLabelNorm)) || (aIdNorm && norm.includes(aIdNorm))) {
+      return a.label || a.id.toUpperCase();
+    }
+  }
+
+  // 4. Substring / token match in talents
+  if (talentsList) {
+    for (const t of talentsList) {
+      const tIdNorm = normalizeTraitType(t.id);
+      const tNameNorm = normalizeTraitType(t.name || '');
+      if (norm === tIdNorm || (tNameNorm && (norm.includes(tNameNorm) || tNameNorm.includes(norm)))) {
+        return t.name || t.id;
+      }
+    }
+  }
+
+  return rawTarget.charAt(0).toUpperCase() + rawTarget.slice(1);
+};

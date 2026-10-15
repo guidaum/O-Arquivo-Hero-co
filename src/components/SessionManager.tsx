@@ -511,7 +511,7 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl"
+              className="relative w-full max-w-md glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl"
             >
               <button 
                 onClick={() => setIsCreating(false)}
@@ -562,7 +562,7 @@ export default function SessionManager({ viewMode = 'user' }: { viewMode?: 'user
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl"
+              className="relative w-full max-w-md glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl"
             >
               <button 
                 onClick={() => setIsJoining(false)}

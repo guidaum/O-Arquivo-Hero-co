@@ -39,8 +39,16 @@ import {
   ShoppingCart,
   ShoppingBag,
   HeartCrack,
-  Play
+  Play,
+  Image as ImageIcon,
+  Feather,
+  Music,
+  Volume2
 } from 'lucide-react';
+import { ImagePickerModal } from './ImagePickerModal';
+import QuickNotes from './QuickNotes';
+import SoundEffectManager from './SoundEffectManager';
+import { SoundConfig, DEFAULT_SOUNDS } from '../lib/soundEngine';
 import { 
   auth,
   db, 
@@ -210,10 +218,17 @@ export default function GMDashboard() {
   const [suggestions, setSuggestions] = React.useState<Suggestion[]>([]);
   const [editingSuggestion, setEditingSuggestion] = React.useState<Suggestion | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits' | 'vars' | 'categories' | 'catalog' | 'baseSettings'>('characters');
+  const [activeTab, setActiveTab] = React.useState<'characters' | 'journal' | 'notes' | 'settings' | 'talents' | 'skills' | 'powers' | 'suggestions' | 'traits' | 'vars' | 'categories' | 'catalog' | 'baseSettings' | 'sounds'>('characters');
   const [showConfigMenu, setShowConfigMenu] = React.useState(false);
   const configMenuRef = React.useRef<HTMLDivElement>(null);
   const [gmNotes, setGmNotes] = React.useState('');
+  const [isGmQuickNotesOpen, setIsGmQuickNotesOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem('last_active_session_id', sessionId);
+    }
+  }, [sessionId]);
   const [maxAttributePoints, setMaxAttributePoints] = React.useState(120);
   const [maxSingleAttributeValue, setMaxSingleAttributeValue] = React.useState(100);
   const [initialSkillPoints, setInitialSkillPoints] = React.useState(0);
@@ -282,6 +297,8 @@ export default function GMDashboard() {
   const [shopItemIds, setShopItemIds] = React.useState<string[]>([]);
   const [sessionName, setSessionName] = React.useState('');
   const [sessionImage, setSessionImage] = React.useState('');
+  const [isSessionImagePickerOpen, setIsSessionImagePickerOpen] = React.useState(false);
+  const [isCatalogImagePickerOpen, setIsCatalogImagePickerOpen] = React.useState(false);
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
   const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [editingSkillType, setEditingSkillType] = React.useState<string | null>(null);
@@ -907,8 +924,9 @@ export default function GMDashboard() {
     const unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // SECURITY CHECK: Only the GM of this specific session can access this dashboard
-        if (data.gmId !== user?.uid) {
+        // SECURITY CHECK: Only the GM of this specific session or an admin can access this dashboard
+        const isAdmin = user?.email === 'guilherme.higino@gmail.com' || (import.meta.env.VITE_ADMIN_EMAIL && user?.email === import.meta.env.VITE_ADMIN_EMAIL);
+        if (data.gmId !== user?.uid && !isAdmin) {
           navigate('/');
           return;
         }
@@ -1203,6 +1221,66 @@ export default function GMDashboard() {
       setSaveStatus({ type: 'error', message: 'Erro ao salvar configurações base.' });
       console.error('Error saving base settings:', err);
       handleFirestoreError(err, OperationType.UPDATE, 'globalSettings/config');
+    }
+  };
+
+  const handleSaveSounds = async (soundConfig: SoundConfig, alsoSaveGlobal: boolean) => {
+    try {
+      if (sessionId) {
+        await updateDoc(doc(db, 'gameSessions', sessionId), {
+          diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
+          successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
+          failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
+          criticalSound: soundConfig.criticalSound || DEFAULT_SOUNDS.criticalSound,
+          fumbleSound: soundConfig.fumbleSound || DEFAULT_SOUNDS.fumbleSound,
+          updatedAt: new Date().toISOString()
+        });
+        localStorage.setItem('last_active_session_id', sessionId);
+      }
+
+      if (alsoSaveGlobal) {
+        await setDoc(doc(db, 'globalSettings', 'config'), {
+          diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
+          successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
+          failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
+          criticalSound: soundConfig.criticalSound || DEFAULT_SOUNDS.criticalSound,
+          fumbleSound: soundConfig.fumbleSound || DEFAULT_SOUNDS.fumbleSound,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
+
+      setDiceRollSound(soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound);
+      setSuccessSound(soundConfig.successSound || DEFAULT_SOUNDS.successSound);
+      setFailureSound(soundConfig.failureSound || DEFAULT_SOUNDS.failureSound);
+      setCriticalSound(soundConfig.criticalSound || DEFAULT_SOUNDS.criticalSound);
+      setFumbleSound(soundConfig.fumbleSound || DEFAULT_SOUNDS.fumbleSound);
+    } catch (err) {
+      console.error('Error saving sounds:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `gameSessions/${sessionId || 'globalSettings'}`);
+      throw err;
+    }
+  };
+
+  const handleSaveGlobalSounds = async (soundConfig: SoundConfig) => {
+    try {
+      await setDoc(doc(db, 'globalSettings', 'config'), {
+        diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
+        successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
+        failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
+        criticalSound: soundConfig.criticalSound || DEFAULT_SOUNDS.criticalSound,
+        fumbleSound: soundConfig.fumbleSound || DEFAULT_SOUNDS.fumbleSound,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      setDiceRollSound(soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound);
+      setSuccessSound(soundConfig.successSound || DEFAULT_SOUNDS.successSound);
+      setFailureSound(soundConfig.failureSound || DEFAULT_SOUNDS.failureSound);
+      setCriticalSound(soundConfig.criticalSound || DEFAULT_SOUNDS.criticalSound);
+      setFumbleSound(soundConfig.fumbleSound || DEFAULT_SOUNDS.fumbleSound);
+    } catch (err) {
+      console.error('Error saving global sounds:', err);
+      handleFirestoreError(err, OperationType.UPDATE, 'globalSettings/config');
+      throw err;
     }
   };
 
@@ -1611,14 +1689,19 @@ export default function GMDashboard() {
   const handleCreateTrait = async () => {
     if (!user || !newTrait.name) return;
     try {
+      const traitPayload = {
+        ...newTrait,
+        modifier: Number(newTrait.modifier) || 0
+      };
+
       if (editingTraitId) {
         await updateDoc(doc(db, 'traits', editingTraitId), {
-          ...newTrait,
+          ...traitPayload,
           updatedAt: new Date().toISOString()
         });
       } else {
         await addDoc(collection(db, 'traits'), {
-          ...newTrait,
+          ...traitPayload,
           createdAt: new Date().toISOString()
         });
       }
@@ -1926,6 +2009,26 @@ export default function GMDashboard() {
             >
               Config. Campanha
             </button>
+            <button 
+              onClick={() => setActiveTab('sounds')}
+              className={cn(
+                "px-3 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5",
+                activeTab === 'sounds' ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" : "glass hover:bg-white/5 text-parchment"
+              )}
+              title="Gerenciador de Efeitos Sonoros"
+            >
+              <Music size={16} />
+              <span>Efeitos Sonoros</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => setIsGmQuickNotesOpen(true)}
+              className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all glass hover:bg-ember/20 text-ember border border-ember/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+              title="Anotações Rápidas da Campanha"
+            >
+              <Feather size={16} />
+              <span>Anotações Rápidas</span>
+            </button>
 
             {/* Config Menu Dropdown */}
             <div className="relative" ref={configMenuRef}>
@@ -1933,7 +2036,7 @@ export default function GMDashboard() {
                 onClick={() => setShowConfigMenu(!showConfigMenu)}
                 className={cn(
                   "p-2 rounded-xl transition-all glass hover:bg-white/10 flex items-center justify-center",
-                  showConfigMenu || ['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions'].includes(activeTab) 
+                  showConfigMenu || ['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions', 'sounds'].includes(activeTab) 
                     ? "bg-arcane text-obsidian" 
                     : "text-parchment/60"
                 )}
@@ -1948,7 +2051,7 @@ export default function GMDashboard() {
                     initial={{ opacity: 0, scale: 0.95, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="absolute right-0 top-full mt-2 w-56 glass border border-white/10 rounded-2xl shadow-2xl p-2 z-[100] overflow-hidden"
+                    className="absolute right-0 top-full mt-2 w-56 glass-popup bg-obsidian/85 backdrop-blur-xl border border-white/25 rounded-2xl shadow-2xl p-2 z-[100] overflow-hidden"
                   >
                     <div className="flex flex-col gap-1">
                       <button 
@@ -2016,6 +2119,16 @@ export default function GMDashboard() {
                         )}
                       >
                         Catálogo
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('sounds'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left flex items-center justify-between",
+                          activeTab === 'sounds' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                        )}
+                      >
+                        <span>Efeitos Sonoros</span>
+                        <Music size={14} className="text-arcane" />
                       </button>
                       <button 
                         onClick={() => { setActiveTab('baseSettings'); setShowConfigMenu(false); }}
@@ -2250,7 +2363,7 @@ export default function GMDashboard() {
                             <Edit2 size={18} />
                           </button>
                           <Link 
-                            to={`/sheet?id=${char.id}`}
+                            to={`/sheet?id=${char.id}&fromSession=${sessionId}`}
                             className="p-2 glass rounded-xl hover:bg-arcane/20 transition-colors text-arcane"
                           >
                             <ChevronRightIcon size={20} />
@@ -2438,13 +2551,34 @@ export default function GMDashboard() {
                         </label>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Imagem URL</label>
-                        <input 
-                          type="text" 
-                          value={catalogItemForm.image}
-                          onChange={e => setCatalogItemForm({ ...catalogItemForm, image: e.target.value })}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
-                        />
+                        <div className="flex items-center justify-between px-2">
+                          <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Imagem URL</label>
+                          <button
+                            type="button"
+                            onClick={() => setIsCatalogImagePickerOpen(true)}
+                            className="text-xs font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <ImageIcon size={12} />
+                            Escolher Imagem
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={catalogItemForm.image}
+                            onChange={e => setCatalogItemForm({ ...catalogItemForm, image: e.target.value })}
+                            placeholder="https://..."
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsCatalogImagePickerOpen(true)}
+                            className="px-3 py-2 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            <ImageIcon size={14} />
+                            Galeria
+                          </button>
+                        </div>
                       </div>
 
                       {catalogItemForm.category === 'ammo' && (
@@ -2704,13 +2838,24 @@ export default function GMDashboard() {
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-2xl font-serif">Notas do Mestre</h3>
-                <button 
-                  onClick={handleSaveNotes}
-                  className="flex items-center gap-2 px-4 py-2 bg-arcane/20 text-arcane rounded-xl hover:bg-arcane/30 transition-all text-sm font-medium"
-                >
-                  <Save size={18} />
-                  Salvar Notas
-                </button>
+                <div className="flex items-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsGmQuickNotesOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-ember/20 text-ember border border-ember/30 rounded-xl hover:bg-ember/30 transition-all text-sm font-medium cursor-pointer"
+                    title="Abrir Anotações Rápidas da Campanha"
+                  >
+                    <Feather size={16} />
+                    Abrir Anotações Rápidas
+                  </button>
+                  <button 
+                    onClick={handleSaveNotes}
+                    className="flex items-center gap-2 px-4 py-2 bg-arcane/20 text-arcane rounded-xl hover:bg-arcane/30 transition-all text-sm font-medium"
+                  >
+                    <Save size={18} />
+                    Salvar Notas
+                  </button>
+                </div>
               </div>
               <textarea 
                 value={gmNotes}
@@ -3996,6 +4141,38 @@ export default function GMDashboard() {
             </motion.div>
           )}
 
+          {activeTab === 'sounds' && (
+            <motion.div
+              key="sounds"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="glass p-6 sm:p-8 rounded-[2.5rem] space-y-6"
+            >
+              <SoundEffectManager
+                currentSettings={{
+                  diceRollSound,
+                  successSound,
+                  failureSound,
+                  criticalSound,
+                  fumbleSound
+                }}
+                sessionName={sessionName}
+                sessionId={sessionId}
+                isGlobalMode={false}
+                onSaveSession={handleSaveSounds}
+                onSaveGlobal={handleSaveGlobalSounds}
+                onUpdateSound={(key, val) => {
+                  if (key === 'diceRollSound') setDiceRollSound(val);
+                  else if (key === 'successSound') setSuccessSound(val);
+                  else if (key === 'failureSound') setFailureSound(val);
+                  else if (key === 'criticalSound') setCriticalSound(val);
+                  else if (key === 'fumbleSound') setFumbleSound(val);
+                }}
+              />
+            </motion.div>
+          )}
+
           {(activeTab === 'settings' || activeTab === 'baseSettings') && (
             <motion.div
               key={activeTab}
@@ -4056,13 +4233,58 @@ export default function GMDashboard() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem de Capa</label>
-                      <input 
-                        type="text" 
-                        value={sessionImage}
-                        onChange={e => setSessionImage(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-sm"
-                      />
+                      <div className="flex items-center justify-between px-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Capa da Campanha</label>
+                        <button
+                          type="button"
+                          onClick={() => setIsSessionImagePickerOpen(true)}
+                          className="text-xs font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <ImageIcon size={12} />
+                          Escolher Imagem
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-3 p-3 glass rounded-xl border border-white/10">
+                        <div 
+                          onClick={() => setIsSessionImagePickerOpen(true)}
+                          className="w-16 h-12 rounded-lg overflow-hidden border border-white/20 bg-white/5 shrink-0 cursor-pointer group relative"
+                          title="Clique para alterar a imagem"
+                        >
+                          {sessionImage ? (
+                            <img 
+                              src={sessionImage} 
+                              alt="Capa da Sessão" 
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform" 
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-parchment/30">
+                              <ImageIcon size={16} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-obsidian/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                            <ImageIcon size={14} />
+                          </div>
+                        </div>
+                        <div className="flex-1 flex gap-2">
+                          <input 
+                            type="text" 
+                            value={sessionImage}
+                            onChange={e => setSessionImage(e.target.value)}
+                            placeholder="URL da imagem..."
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsSessionImagePickerOpen(true)}
+                            className="px-3 py-2 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                          >
+                            <ImageIcon size={12} />
+                            Galeria
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -4460,88 +4682,27 @@ export default function GMDashboard() {
               </div>
 
               <div className="pt-8 border-t border-white/10 space-y-6">
-                <div>
-                  <h4 className="text-xl font-serif mb-2">Efeitos Sonoros</h4>
-                  <p className="text-sm text-parchment/40">Personalize os sons do sistema fornecendo URLs de arquivos de áudio (MP3, WAV, etc).</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
-                      Som de Dados Rolando
-                      <button onClick={() => playAudio(diceRollSound)} className="text-arcane hover:text-white transition-colors">
-                        <Play size={10} fill="currentColor" />
-                      </button>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={diceRollSound}
-                      onChange={e => setDiceRollSound(e.target.value)}
-                      placeholder="URL do som de dados..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
-                      Som de Sucesso
-                      <button onClick={() => playAudio(successSound)} className="text-arcane hover:text-white transition-colors">
-                        <Play size={10} fill="currentColor" />
-                      </button>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={successSound}
-                      onChange={e => setSuccessSound(e.target.value)}
-                      placeholder="URL do som de sucesso..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
-                      Som de Falha
-                      <button onClick={() => playAudio(failureSound)} className="text-arcane hover:text-white transition-colors">
-                        <Play size={10} fill="currentColor" />
-                      </button>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={failureSound}
-                      onChange={e => setFailureSound(e.target.value)}
-                      placeholder="URL do som de falha..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
-                      Som de Crítico
-                      <button onClick={() => playAudio(criticalSound)} className="text-arcane hover:text-white transition-colors">
-                        <Play size={10} fill="currentColor" />
-                      </button>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={criticalSound}
-                      onChange={e => setCriticalSound(e.target.value)}
-                      placeholder="URL do som de crítico..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2 group flex items-center gap-2">
-                      Som de Desastre
-                      <button onClick={() => playAudio(fumbleSound)} className="text-arcane hover:text-white transition-colors">
-                        <Play size={10} fill="currentColor" />
-                      </button>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={fumbleSound}
-                      onChange={e => setFumbleSound(e.target.value)}
-                      placeholder="URL do som de desastre..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors font-mono text-xs"
-                    />
-                  </div>
-                </div>
+                <SoundEffectManager
+                  currentSettings={{
+                    diceRollSound,
+                    successSound,
+                    failureSound,
+                    criticalSound,
+                    fumbleSound
+                  }}
+                  sessionName={sessionName}
+                  sessionId={sessionId}
+                  isGlobalMode={activeTab === 'baseSettings'}
+                  onSaveSession={handleSaveSounds}
+                  onSaveGlobal={handleSaveGlobalSounds}
+                  onUpdateSound={(key, val) => {
+                    if (key === 'diceRollSound') setDiceRollSound(val);
+                    else if (key === 'successSound') setSuccessSound(val);
+                    else if (key === 'failureSound') setFailureSound(val);
+                    else if (key === 'criticalSound') setCriticalSound(val);
+                    else if (key === 'fumbleSound') setFumbleSound(val);
+                  }}
+                />
               </div>
 
               <div className="pt-8 border-t border-white/10 space-y-6">
@@ -4927,16 +5088,21 @@ export default function GMDashboard() {
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2 mb-4">
-                        <div className={cn(
-                          "flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold",
-                          trait.type === 'advantage' ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
-                        )}>
-                          {trait.modifier > 0 ? '+' : ''}{trait.modifier} {
-                            attributes.find(a => a.id === trait.modifierType)?.label || 
-                            talents.find(t => t.id === trait.modifierType)?.name || 
-                            trait.modifierType
-                          }
-                        </div>
+                        {(() => {
+                          const effMod = Number(trait.modifier) || 0;
+                          return (
+                            <div className={cn(
+                              "flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[10px] font-bold",
+                              effMod > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : effMod < 0 ? "bg-ember/10 text-ember border-ember/20" : "bg-white/5 text-parchment/60 border-white/10"
+                            )}>
+                              {effMod > 0 ? '+' : ''}{effMod} {
+                                attributes.find(a => a.id === trait.modifierType)?.label || 
+                                talents.find(t => t.id === trait.modifierType)?.name || 
+                                trait.modifierType
+                              }
+                            </div>
+                          );
+                        })()}
                       </div>
                       <p className="text-sm text-parchment/60 mb-4 line-clamp-2">{trait.effect}</p>
                       <p className="text-xs text-parchment/40 line-clamp-3 italic">"{trait.description}"</p>
@@ -4963,7 +5129,7 @@ export default function GMDashboard() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-y-auto max-h-[90vh]"
+              className="relative w-full max-w-2xl glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl overflow-y-auto max-h-[90vh]"
             >
               <button 
                 onClick={() => setEditingSuggestion(null)}
@@ -5181,7 +5347,7 @@ export default function GMDashboard() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl"
+              className="relative w-full max-w-md glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl"
             >
               <button 
                 onClick={() => setIsGeneratingNPC(false)}
@@ -5338,7 +5504,7 @@ export default function GMDashboard() {
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="glass w-full max-w-lg p-8 rounded-[3rem] border border-white/10 relative"
+                className="glass-modal bg-obsidian/85 backdrop-blur-xl w-full max-w-lg p-8 rounded-[3rem] border border-white/25 relative"
               >
                 <button 
                   onClick={() => setManagingCharacter(null)}
@@ -5503,7 +5669,7 @@ export default function GMDashboard() {
             <motion.div 
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="glass p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
+              className="glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] w-full max-w-md border border-red-500/20 space-y-6 text-center"
             >
               <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Trash2 size={40} className="text-red-500" />
@@ -5641,6 +5807,48 @@ export default function GMDashboard() {
           senderOverride={{ name: "Mestre", photo: auth.currentUser?.photoURL || "" }}
         />
       )}
+
+      {/* Campaign Quick Notes (Persistent across all campaign screens/tabs) */}
+      {sessionId && (
+        <QuickNotes 
+          targetType="campaign" 
+          targetId={sessionId} 
+          targetName={session?.name || 'Campanha'} 
+          isGM={true}
+          isOpen={isGmQuickNotesOpen}
+          onOpenChange={setIsGmQuickNotesOpen}
+          showFloatingButton={true}
+        />
+      )}
+
+      {/* Session Cover Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isSessionImagePickerOpen}
+        onClose={() => setIsSessionImagePickerOpen(false)}
+        onConfirm={(url) => {
+          setSessionImage(url);
+          setIsSessionImagePickerOpen(false);
+        }}
+        title="Capa da Campanha"
+        subtitle="Insira uma URL ou faça upload da imagem de capa"
+        confirmText="Definir Capa"
+        initialUrl={sessionImage}
+      />
+
+      {/* Catalog Item Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isCatalogImagePickerOpen}
+        onClose={() => setIsCatalogImagePickerOpen(false)}
+        onConfirm={(url) => {
+          setCatalogItemForm(prev => ({ ...prev, image: url }));
+          setIsCatalogImagePickerOpen(false);
+        }}
+        title="Imagem do Item do Catálogo"
+        subtitle="Insira uma URL ou faça upload da imagem do item"
+        confirmText="Definir Imagem"
+        initialUrl={catalogItemForm.image}
+        maxDimension={600}
+      />
     </div>
   );
 }

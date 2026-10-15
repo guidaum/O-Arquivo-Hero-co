@@ -274,6 +274,8 @@
         "senderPhoto": { "type": "string" },
         "text": { "type": "string" },
         "image": { "type": "string" },
+        "type": { "type": "string" },
+        "rollData": { "type": "object" },
         "shouldNotify": { "type": "boolean", "description": "Whether this message should trigger a notification" },
         "mentionedUserIds": { 
           "type": "array", 
@@ -304,6 +306,94 @@
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["name", "category"]
+    },
+    "MapPin": {
+      "title": "MapPin",
+      "description": "Coordinate-based pins on world map for play sessions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "mapId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "sessionName": { "type": "string" },
+        "category": { "type": "string" },
+        "customIcon": { "type": "string" },
+        "dangerLevel": { "type": "string" },
+        "status": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "isSecret": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "x", "y", "createdBy"]
+    },
+    "DungeonToken": {
+      "title": "DungeonToken",
+      "description": "Tactical token placed on a dungeon battlemap by players or the GM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dungeonId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "characterId": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "gridX": { "type": "number" },
+        "gridY": { "type": "number" },
+        "color": { "type": "string" },
+        "type": { "type": "string" },
+        "hp": { "type": "number" },
+        "maxHp": { "type": "number" },
+        "size": { "type": "number" },
+        "elevation": { "type": "number" },
+        "conditions": { "type": "array", "items": { "type": "string" } },
+        "isVisible": { "type": "boolean" },
+        "lastMovedAt": { "type": "string", "format": "date-time" },
+        "lastMovedBy": { "type": "string" }
+      },
+      "required": ["dungeonId", "name", "x", "y"]
+    },
+    "DungeonMap": {
+      "title": "DungeonMap",
+      "description": "Dungeon battlemap configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "gridSize": { "type": "number" },
+        "gridColumns": { "type": "number" },
+        "gridRows": { "type": "number" },
+        "fogOfWar": { "type": "boolean" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["name", "imageUrl"]
+    },
+    "DungeonFog": {
+      "title": "DungeonFog",
+      "description": "Persistent Fog of War data for dungeon battlemaps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dungeonId": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "revealedCells": { "type": "array", "items": { "type": "number" } },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["dungeonId", "enabled"]
     }
   },
   "firestore": {
@@ -354,6 +444,22 @@
     "/itemCatalog/{itemId}": {
       "schema": "CatalogItem",
       "description": "Global catalog of items created by players"
+    },
+    "/mapPins/{pinId}": {
+      "schema": "MapPin",
+      "description": "Coordinate-based pins on world map for play sessions"
+    },
+    "/dungeonTokens/{tokenId}": {
+      "schema": "DungeonToken",
+      "description": "Tokens positioned on dungeon battlemaps synced in real time"
+    },
+    "/dungeonMaps/{mapId}": {
+      "schema": "DungeonMap",
+      "description": "Dungeon battlemaps"
+    },
+    "/dungeonFog/{fogId}": {
+      "schema": "DungeonFog",
+      "description": "Persistent Fog of War state for dungeon battlemaps"
     }
   }
 }

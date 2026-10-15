@@ -27,11 +27,13 @@ import {
   Search,
   Target,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn, rollDiceFormula } from '../lib/utils';
 import { auth, db, doc, getDoc, setDoc, updateDoc, collection, addDoc, getDocs, onSnapshot } from '../firebase';
 import { handleFirestoreError, OperationType } from '../firebase';
+import { ImagePickerModal } from './ImagePickerModal';
 
 export default function Inventory({ hideHeader = false }: { hideHeader?: boolean }) {
   const [searchParams] = useSearchParams();
@@ -82,6 +84,8 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
     image: '',
     relatedWeapons: [] as string[]
   });
+
+  const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false);
 
   const [quickRoll, setQuickRoll] = React.useState<{ result: number, total: number, name: string } | null>(null);
 
@@ -1002,7 +1006,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="relative w-full max-w-md glass p-8 rounded-[2.5rem] space-y-8"
+              className="relative w-full max-w-md glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] space-y-8 border border-white/25"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -1071,7 +1075,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg glass rounded-[2.5rem] overflow-hidden border border-white/10"
+              className="relative w-full max-w-lg glass-modal bg-obsidian/85 backdrop-blur-xl rounded-[2.5rem] overflow-hidden border border-white/25"
             >
               <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/5">
                 <div className="flex items-center gap-4">
@@ -1115,14 +1119,34 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">URL da Imagem</label>
-                      <input
-                        type="text"
-                        value={newItem.image}
-                        onChange={e => setNewItem({ ...newItem, image: e.target.value })}
-                        placeholder="https://..."
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-arcane/50 font-mono"
-                      />
+                      <div className="flex items-center justify-between px-2">
+                        <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">URL da Imagem</label>
+                        <button
+                          type="button"
+                          onClick={() => setIsImagePickerOpen(true)}
+                          className="text-[10px] font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <ImageIcon size={12} />
+                          Escolher Imagem
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newItem.image}
+                          onChange={e => setNewItem({ ...newItem, image: e.target.value })}
+                          placeholder="https://..."
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-arcane/50 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setIsImagePickerOpen(true)}
+                          className="px-3 py-2 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                        >
+                          <ImageIcon size={12} />
+                          Galeria
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1300,7 +1324,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="glass w-full max-w-4xl max-h-[85vh] rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden flex flex-col relative z-10"
+              className="glass-modal bg-obsidian/85 backdrop-blur-xl w-full max-w-4xl max-h-[85vh] rounded-[2.5rem] border border-white/25 shadow-2xl overflow-hidden flex flex-col relative z-10"
             >
               {/* Shop Header */}
               <div className="p-8 pb-4 flex items-center justify-between">
@@ -1472,7 +1496,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="glass max-w-2xl w-full rounded-[3rem] border border-white/10 shadow-3xl relative z-10 overflow-hidden flex flex-col"
+              className="glass-modal bg-obsidian/85 backdrop-blur-xl max-w-2xl w-full rounded-[3rem] border border-white/25 shadow-3xl relative z-10 overflow-hidden flex flex-col"
             >
               <div className="relative h-64 sm:h-80 w-full overflow-hidden">
                 <img 
@@ -1611,7 +1635,7 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="glass max-w-md w-full rounded-[2.5rem] border border-gold/30 shadow-2xl relative z-10 overflow-hidden"
+              className="glass-modal bg-obsidian/85 backdrop-blur-xl max-w-md w-full rounded-[2.5rem] border border-gold/30 shadow-2xl relative z-10 overflow-hidden"
             >
               <div className="p-8 text-center">
                 <div className="w-20 h-20 bg-gold/10 rounded-3xl mx-auto flex items-center justify-center text-gold mb-6 border border-gold/20">
@@ -1705,6 +1729,21 @@ export default function Inventory({ hideHeader = false }: { hideHeader?: boolean
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Item Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImagePickerOpen}
+        onClose={() => setIsImagePickerOpen(false)}
+        onConfirm={(url) => {
+          setNewItem(prev => ({ ...prev, image: url }));
+          setIsImagePickerOpen(false);
+        }}
+        title="Imagem do Item"
+        subtitle="Insira uma URL ou faça upload da imagem do item"
+        confirmText="Definir Imagem"
+        initialUrl={newItem.image}
+        maxDimension={600}
+      />
     </div>
   );
 }

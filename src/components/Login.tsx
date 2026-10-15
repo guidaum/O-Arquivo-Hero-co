@@ -38,6 +38,7 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
+      localStorage.setItem('preferredViewMode', role);
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
@@ -47,19 +48,21 @@ export default function Login() {
       if (!userDoc.exists()) {
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
+          email: user.email || '',
+          displayName: user.displayName || user.email?.split('@')[0] || 'Aventureiro',
+          photoURL: user.photoURL || '',
           role: isAdminEmail ? 'admin' : role,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          lastActive: new Date().toISOString()
         });
       } else {
-        // If it is the admin email, force the role to 'admin'
-        if (isAdminEmail) {
-          await setDoc(doc(db, 'users', user.uid), { role: 'admin' }, { merge: true });
-        } else {
-          await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
-        }
+        // If it is the admin email, force the role to 'admin', else assign the selected role
+        const existingData = userDoc.data();
+        const finalRole = existingData.role === 'admin' || isAdminEmail ? 'admin' : role;
+        await setDoc(doc(db, 'users', user.uid), { 
+          role: finalRole,
+          lastActive: new Date().toISOString()
+        }, { merge: true });
       }
     } catch (err) {
       console.error('Login error:', err);
@@ -74,6 +77,7 @@ export default function Login() {
     setLoading(true);
     setError(null);
     try {
+      localStorage.setItem('preferredViewMode', role);
       let user;
       if (isRegistering) {
         const result = await createUserWithEmailAndPassword(auth, email, password);
@@ -81,15 +85,22 @@ export default function Login() {
         
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
-          email: user.email,
-          displayName: email.split('@')[0],
+          email: user.email || email,
+          displayName: email.split('@')[0] || 'Aventureiro',
+          photoURL: '',
           role: role,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          lastActive: new Date().toISOString()
         });
       } else {
         const result = await signInWithEmailAndPassword(auth, email, password);
         user = result.user;
-        await setDoc(doc(db, 'users', user.uid), { role }, { merge: true });
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        const finalRole = userDoc.exists() && userDoc.data().role === 'admin' ? 'admin' : role;
+        await setDoc(doc(db, 'users', user.uid), { 
+          role: finalRole,
+          lastActive: new Date().toISOString()
+        }, { merge: true });
       }
     } catch (err: any) {
       console.error('Email auth error:', err);

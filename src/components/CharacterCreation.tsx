@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
+  User,
   UserPlus, 
   ChevronRight, 
   ChevronLeft, 
@@ -29,10 +30,13 @@ import {
   History,
   Edit2,
   Backpack,
-  Pencil
+  Pencil,
+  Image as ImageIcon,
+  Camera
 } from 'lucide-react';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
+import { ImagePickerModal } from './ImagePickerModal';
 
 // Helper to get icon component from name
 const getIcon = (name: string) => {
@@ -75,12 +79,12 @@ export default function CharacterCreation() {
   const [sessionIndex, setSessionIndex] = React.useState(0);
   const sessionListRef = React.useRef<HTMLDivElement>(null);
   const sessionInputRef = React.useRef<HTMLInputElement>(null);
-  const steps = ['Origens', 'Atributos', 'Vantagens/Defeitos', 'Perícias', 'Dificuldades', 'Poderes', 'Equipamento', 'Revisão'];
+  const steps = ['Vantagens/Defeitos', 'Atributos', 'Origens', 'Perícias', 'Dificuldades', 'Poderes', 'Equipamento', 'Revisão'];
 
   const [basics, setBasics] = React.useState({
     name: '',
-    class: 'Paladino',
-    image: 'https://picsum.photos/seed/paladin/400/600',
+    class: '',
+    image: '',
     color: 'arcane',
     icon: 'Shield',
     sessionId: '',
@@ -88,10 +92,12 @@ export default function CharacterCreation() {
   });
 
   const [touched, setTouched] = React.useState<Record<string, boolean>>({});
+  const [isImageModalOpen, setIsImageModalOpen] = React.useState(false);
 
   const [availableSkills, setAvailableSkills] = React.useState<any[]>([]);
   const [availablePowers, setAvailablePowers] = React.useState<any[]>([]);
   const [availableTraits, setAvailableTraits] = React.useState<any[]>([]);
+  const [availableTalents, setAvailableTalents] = React.useState<any[]>([]);
   const [skillPoints, setSkillPoints] = React.useState(0);
   const [powerPoints, setPowerPoints] = React.useState(0);
   const [traitPoints, setTraitPoints] = React.useState(0);
@@ -123,6 +129,7 @@ export default function CharacterCreation() {
   const [skills, setSkills] = React.useState<any[]>([]);
   const [powers, setPowers] = React.useState<any[]>([]);
   const [selectedTraits, setSelectedTraits] = React.useState<any[]>([]);
+  const [detailTrait, setDetailTrait] = React.useState<any | null>(null);
 
   const [showSkillSuggestion, setShowSkillSuggestion] = React.useState(false);
   const [showPowerSuggestion, setShowPowerSuggestion] = React.useState(false);
@@ -370,6 +377,9 @@ export default function CharacterCreation() {
         const traitsSnap = await getDocs(collection(db, 'traits'));
         setAvailableTraits(traitsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
+        const talentsSnap = await getDocs(collection(db, 'talents'));
+        setAvailableTalents(talentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
         const catalogSnap = await getDocs(collection(db, 'itemCatalog'));
         setItemCatalog(catalogSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) {
@@ -455,6 +465,18 @@ export default function CharacterCreation() {
     attributes.forEach(attr => {
       baseStats[attr.id.toUpperCase()] = values[attr.id] || 0;
     });
+
+    // Apply trait modifiers maintaining the configured sign and disregarding same-type modifier/effect
+    selectedTraits.forEach(trait => {
+      const { attrIds } = getTraitTargets(trait, attributes, []);
+      const effMod = getTraitEffectiveModifier(trait);
+      attrIds.forEach(attrId => {
+        const upper = attrId.toUpperCase();
+        if (baseStats[upper] !== undefined) {
+          baseStats[upper] = (baseStats[upper] || 0) + effMod;
+        }
+      });
+    });
     
     const skillCategoryCounts: Record<string, number> = {};
     const skillCategories = Object.keys(globalSettings?.skillTypeVars || { 'Luta': '1', 'Mística': '1' });
@@ -476,7 +498,7 @@ export default function CharacterCreation() {
       POWERS: powers.length,
       ...skillCategoryCounts,
     }, globalSettings?.calculationVars);
-  }, [values, skills, powers, globalSettings?.calculationVars, attributes]);
+  }, [values, skills, powers, globalSettings?.calculationVars, attributes, selectedTraits]);
 
   const [maxPoints, setMaxPoints] = React.useState(120);
   const [maxSingleAttr, setMaxSingleAttr] = React.useState(100);
@@ -523,6 +545,36 @@ export default function CharacterCreation() {
     const advantages = selectedTraits.filter(t => t.type === 'advantage').reduce((acc, t) => acc + Math.abs(t.modifier || 0), 0);
     return disadvantages - advantages;
   }, [selectedTraits]);
+
+  const contributingTraitsByAttr = React.useMemo(() => {
+    const map: Record<string, any[]> = {};
+    selectedTraits.forEach(trait => {
+      const { attrIds } = getTraitTargets(trait, attributes, availableTalents);
+      const effMod = getTraitEffectiveModifier(trait);
+      attrIds.forEach(attrId => {
+        const lower = attrId.toLowerCase();
+        if (!map[lower]) map[lower] = [];
+        map[lower].push({
+          ...trait,
+          effectiveMod: effMod
+        });
+      });
+    });
+    return map;
+  }, [selectedTraits, attributes, availableTalents]);
+
+  const traitStatsMods = React.useMemo(() => {
+    const mods: Record<string, number> = {};
+    selectedTraits.forEach(trait => {
+      const { attrIds } = getTraitTargets(trait, attributes, availableTalents);
+      const effMod = getTraitEffectiveModifier(trait);
+      attrIds.forEach(attrId => {
+        const lower = attrId.toLowerCase();
+        mods[lower] = (mods[lower] || 0) + effMod;
+      });
+    });
+    return mods;
+  }, [selectedTraits, attributes, availableTalents]);
 
   React.useEffect(() => {
     setSkillPoints(initialSkillPoints - totalSkillPointsSpent);
@@ -816,12 +868,12 @@ export default function CharacterCreation() {
         id: characterId,
         ownerId: auth.currentUser.uid,
         name: basics.name || 'Sem Nome',
-        class: basics.class,
+        class: basics.class || 'Aventureiro',
         money: basics.money,
         level: 1,
         xp: 0,
         xpMax: 1000,
-        image: basics.image,
+        image: basics.image || 'https://picsum.photos/seed/adventurer/400/600',
         color: basics.color,
         icon: basics.icon,
         sessionId: basics.sessionId,
@@ -893,14 +945,19 @@ export default function CharacterCreation() {
         {steps.map((s, idx) => (
           <React.Fragment key={s}>
             <div className="flex flex-col items-center gap-2 relative">
-              <div className={cn(
-                "w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500",
-                step > idx + 1 ? "bg-arcane border-arcane text-obsidian" :
-                step === idx + 1 ? "border-arcane text-arcane shadow-[0_0_15px_rgba(71,214,255,0.3)]" :
-                "border-white/10 text-parchment/20"
-              )}>
-                {step > idx + 1 ? <Sparkles size={14} sm:size={18} /> : <span className="text-xs sm:text-sm font-mono">{idx + 1}</span>}
-              </div>
+              <button
+                type="button"
+                onClick={() => setStep(idx + 1)}
+                className={cn(
+                  "w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 cursor-pointer hover:scale-105",
+                  step > idx + 1 ? "bg-arcane border-arcane text-obsidian" :
+                  step === idx + 1 ? "border-arcane text-arcane shadow-[0_0_15px_rgba(71,214,255,0.3)]" :
+                  "border-white/10 text-parchment/20 hover:border-white/30"
+                )}
+                title={`Ir para ${s}`}
+              >
+                {step > idx + 1 ? <Sparkles size={14} className="sm:w-[18px] sm:h-[18px]" /> : <span className="text-xs sm:text-sm font-mono">{idx + 1}</span>}
+              </button>
               <span className={cn(
                 "text-[8px] sm:text-[10px] font-mono uppercase tracking-widest absolute -bottom-6 whitespace-nowrap hidden sm:block",
                 step === idx + 1 ? "text-arcane" : "text-parchment/20"
@@ -930,341 +987,10 @@ export default function CharacterCreation() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <header>
-                  <h2 className="text-4xl font-serif mb-2">Origens da Lenda</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 01: Nome e Vocação</p>
-                </header>
-
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome do Personagem</label>
-                      <input 
-                        type="text" 
-                        value={basics.name}
-                        onChange={e => setBasics({...basics, name: e.target.value})}
-                        onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
-                        placeholder="Ex: Aethelgard, o Destemido"
-                        className={cn(
-                          "w-full bg-white/5 border rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none transition-colors",
-                          touched.name && !basics.name ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
-                        )}
-                      />
-                      {touched.name && !basics.name && (
-                        <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome é obrigatório</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Sua Vocação (Nome)</label>
-                      <input 
-                        type="text" 
-                        value={basics.class}
-                        onChange={e => setBasics({...basics, class: e.target.value})}
-                        placeholder="Ex: Paladino, Caçador de Sombras..."
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none focus:border-arcane/50 transition-colors"
-                      />
-                    </div>
-
-                    <div className="space-y-2 relative">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Vincular a uma Campanha (Obrigatório)</label>
-                      <div className="relative">
-                        <Search className={cn(
-                          "absolute left-4 top-1/2 -translate-y-1/2 transition-colors",
-                          showSessionList ? "text-arcane" : "text-parchment/20"
-                        )} size={18} />
-                        <input 
-                          ref={sessionInputRef}
-                          type="text" 
-                          value={sessionSearch}
-                          onChange={e => {
-                            setSessionSearch(e.target.value);
-                            setShowSessionList(true);
-                            setSessionIndex(0);
-                            if (basics.sessionId) setBasics({...basics, sessionId: ''});
-                          }}
-                          onFocus={() => setShowSessionList(true)}
-                          onKeyDown={(e) => {
-                            if (showSessionList && filteredSessions.length > 0) {
-                              if (e.key === 'ArrowDown') {
-                                e.preventDefault();
-                                setSessionIndex(prev => (prev + 1) % filteredSessions.length);
-                              } else if (e.key === 'ArrowUp') {
-                                e.preventDefault();
-                                setSessionIndex(prev => (prev - 1 + filteredSessions.length) % filteredSessions.length);
-                              } else if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const session = filteredSessions[sessionIndex];
-                                if (session) {
-                                  setBasics({...basics, sessionId: session.id});
-                                  setSessionSearch(session.displayText);
-                                  setShowSessionList(false);
-                                }
-                              } else if (e.key === 'Escape') {
-                                setShowSessionList(false);
-                              }
-                            }
-                          }}
-                          placeholder="Busque por código ou nome da campanha..."
-                          className={cn(
-                            "w-full bg-white/5 border rounded-2xl pl-12 pr-6 py-4 text-xl font-serif focus:outline-none transition-colors",
-                            touched.sessionId && !basics.sessionId ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
-                          )}
-                        />
-                        {touched.sessionId && !basics.sessionId && (
-                          <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">Selecione uma campanha</p>
-                        )}
-                        
-                        <AnimatePresence>
-                          {showSessionList && (
-                            <motion.div 
-                              ref={sessionListRef}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0, y: 5 }}
-                              className="absolute z-50 w-full mt-2 glass rounded-2xl border border-white/10 overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
-                            >
-                              {filteredSessions.length > 0 ? (
-                                filteredSessions.map((session, i) => (
-                                  <button
-                                    key={session.id}
-                                    onMouseEnter={() => setSessionIndex(i)}
-                                    onClick={() => {
-                                      setBasics({...basics, sessionId: session.id});
-                                      setSessionSearch(session.displayText);
-                                      setShowSessionList(false);
-                                    }}
-                                    className={cn(
-                                      "w-full px-6 py-4 text-left transition-colors border-b border-white/5 last:border-none flex items-center justify-between group",
-                                      sessionIndex === i ? "bg-white/10" : "hover:bg-white/5"
-                                    )}
-                                  >
-                                    <div className="flex flex-col">
-                                      <p className={cn(
-                                        "font-serif text-lg transition-colors",
-                                        sessionIndex === i ? "text-arcane" : "text-parchment"
-                                      )}>{session.displayText}</p>
-                                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Mestre: {session.gmName}</span>
-                                    </div>
-                                    {sessionIndex === i && (
-                                      <div className="flex items-center gap-2 text-[10px] font-mono text-arcane/60 animate-pulse uppercase">
-                                        <ChevronRight size={12} />
-                                        <span>Enter</span>
-                                      </div>
-                                    )}
-                                  </button>
-                                ))
-                              ) : (
-                                <div className="px-6 py-8 text-center space-y-2">
-                                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mx-auto text-parchment/20">
-                                    <Search size={20} />
-                                  </div>
-                                  <p className="text-parchment/40 font-mono text-[10px] uppercase tracking-widest">Nenhuma campanha encontrada</p>
-                                  <p className="text-[9px] text-parchment/20 italic">Tente buscar por um código diferente ou nome do mestre.</p>
-                                </div>
-                              )}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      {basics.sessionId && !showSessionList && (
-                        <div className="flex items-center gap-2 px-2">
-                          <Check size={14} className="text-arcane" />
-                          <span className="text-[10px] text-arcane font-mono uppercase tracking-widest">Campanha Selecionada</span>
-                        </div>
-                      )}
-                      {sessions.length === 0 ? (
-                        <p className="text-[10px] text-ember font-mono px-2">Nenhuma campanha disponível no sistema.</p>
-                      ) : (
-                        <p className="text-[10px] text-parchment/40 font-mono px-2">Busque pelo código ou nome para selecionar a campanha.</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Ou insira uma URL de imagem personalizada</label>
-                      <input 
-                        type="text" 
-                        value={basics.image}
-                        onChange={e => setBasics({...basics, image: e.target.value})}
-                        placeholder="https://exemplo.com/imagem.png"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-sm font-mono focus:outline-none focus:border-arcane/50 transition-colors"
-                      />
-                    </div>
-
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Escolha o Ícone da Vocação</label>
-                      <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-3">
-                        {availableIcons.map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => setBasics({ ...basics, icon: item.id })}
-                            className={cn(
-                              "w-12 h-12 rounded-xl flex items-center justify-center transition-all border",
-                              basics.icon === item.id ? "border-arcane bg-arcane/10 shadow-[0_0_15px_rgba(71,214,255,0.2)]" : "border-white/10 hover:border-white/20"
-                            )}
-                          >
-                            <item.icon size={20} className={basics.icon === item.id ? "text-arcane" : "text-parchment/40"} />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Ou escolha um arquétipo pronto</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {classes.map((cls) => (
-                          <button
-                            key={cls.name}
-                            onClick={() => setBasics({
-                              ...basics, 
-                              class: cls.name, 
-                              color: cls.color,
-                              image: cls.image,
-                              icon: cls.name === 'Paladino' ? 'Shield' : 
-                                    cls.name === 'Guerreiro' ? 'Sword' :
-                                    cls.name === 'Mago' ? 'Flame' :
-                                    cls.name === 'Ranger' ? 'Eye' : 'Zap'
-                            })}
-                            className={cn(
-                              "glass p-6 rounded-3xl flex items-center gap-4 transition-all border",
-                              basics.class === cls.name ? "border-arcane bg-arcane/10 shadow-[0_0_20px_rgba(71,214,255,0.1)]" : "border-white/10 hover:border-white/20"
-                            )}
-                          >
-                            <div className={cn(
-                              "w-12 h-12 rounded-2xl flex items-center justify-center",
-                              cls.color === 'arcane' ? "bg-arcane/20 text-arcane" : 
-                              cls.color === 'ember' ? "bg-ember/20 text-ember" : "bg-gold/20 text-gold"
-                            )}>
-                              <cls.icon size={24} />
-                            </div>
-                            <div className="text-left">
-                              <h4 className="font-serif text-lg">{cls.name}</h4>
-                              <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-wider">Vocação</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-6">
-                    <button 
-                      onClick={() => {
-                        if (!basics.name || !basics.sessionId) {
-                          setTouched({ name: true, sessionId: true });
-                          return;
-                        }
-                        setStep(2);
-                      }}
-                      className={cn(
-                        "px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform",
-                        (!basics.name || !basics.sessionId) && "opacity-50"
-                      )}
-                    >
-                      <span>Continuar para Atributos</span>
-                      <ChevronRight size={18} />
-                    </button>
-                  </div>
-              </motion.div>
-            )}
-
-            {step === 2 && (
-              <motion.div
-                key="step2"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
-                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                  <div>
-                    <h2 className="text-4xl font-serif mb-2">Defina seus Atributos</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 02: A Essência do Herói</p>
-                  </div>
-                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Restantes</p>
-                      <p className={cn(
-                        "text-2xl font-serif",
-                        (maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)) === 0 ? "text-gold" : "text-arcane"
-                      )}>
-                        {maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)} / {maxPoints}
-                      </p>
-                    </div>
-                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
-                      <Dice6 size={24} />
-                    </div>
-                  </div>
-                </header>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {attributes.map((attr, idx) => (
-                    <motion.div
-                      key={attr.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="glass p-6 rounded-3xl group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={cn("p-3 rounded-2xl bg-white/5", attr.color)}>
-                            {React.createElement(getIcon(attr.icon), { size: 24 })}
-                          </div>
-                          <div>
-                            <h4 className="font-serif text-xl">{attr.label}</h4>
-                            <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">Modificador: {getModifier(values[attr.id])}</p>
-                          </div>
-                        </div>
-                        <div className="text-3xl font-serif text-glow-arcane">
-                          {values[attr.id]}
-                          <span className="text-xs text-parchment/20 ml-1">/ {maxSingleAttr}</span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-parchment/40 mb-6 leading-relaxed">{attr.description}</p>
-
-                      <div className="flex items-center gap-4">
-                        <button 
-                          onClick={() => handleValueChange(attr.id, -1)}
-                          className="flex-1 py-3 glass rounded-xl hover:bg-ember/10 hover:text-ember transition-all text-xl font-serif"
-                        >
-                          -
-                        </button>
-                        <button 
-                          onClick={() => handleValueChange(attr.id, 1)}
-                          className="flex-1 py-3 glass rounded-xl hover:bg-arcane/10 hover:text-arcane transition-all text-xl font-serif"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-
-                <div className="flex justify-end pt-6">
-                  <button 
-                    onClick={() => setStep(3)}
-                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
-                  >
-                    <span>Continuar para Vantagens/Defeitos</span>
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
                 <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
                     <h2 className="text-4xl font-serif mb-2">Vantagens & Defeitos</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: Traços de Personalidade e Destino</p>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 01: Traços de Personalidade e Destino</p>
                   </div>
                   <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
                     <div className="text-right">
@@ -1287,7 +1013,7 @@ export default function CharacterCreation() {
                   <div className="flex-1 relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
                     <input 
-                      type="text"
+                      type="text" 
                       placeholder="Buscar vantagem ou defeito..."
                       value={traitSearch}
                       onChange={e => setTraitSearch(e.target.value)}
@@ -1321,47 +1047,71 @@ export default function CharacterCreation() {
                     const isSelected = selectedTraits.some(t => t.id === trait.id);
                     const isAdvantage = trait.type === 'advantage';
                     return (
-                      <button
+                      <div
                         key={trait.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => toggleTrait(trait)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleTrait(trait);
+                          }
+                        }}
                         className={cn(
-                          "glass p-6 rounded-3xl text-left transition-all border group relative",
+                          "glass p-6 rounded-3xl text-left transition-all border group relative cursor-pointer select-none",
                           isSelected 
-                            ? (isAdvantage ? "border-arcane bg-arcane/10" : "border-ember bg-ember/10") 
-                            : "border-white/10 hover:border-white/20"
+                            ? (isAdvantage ? "border-arcane bg-arcane/10 shadow-lg shadow-arcane/5" : "border-ember bg-ember/10 shadow-lg shadow-ember/5") 
+                            : "border-white/10 hover:border-white/25 hover:bg-white/[0.04]"
                         )}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-serif text-xl group-hover:text-arcane transition-colors">{trait.name}</h4>
-                          <div className={cn(
-                            "px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest",
-                            isAdvantage ? "bg-arcane text-obsidian" : "bg-ember text-obsidian"
-                          )}>
-                            {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier} pts
+                        <div className="flex justify-between items-start mb-2 gap-2">
+                          <h4 className="font-serif text-xl group-hover:text-arcane transition-colors pr-2 leading-tight">{trait.name}</h4>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className={cn(
+                              "px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest font-bold",
+                              isAdvantage ? "bg-arcane text-obsidian" : "bg-ember text-obsidian"
+                            )}>
+                              {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier} pts
+                            </div>
+                            {/* Info icon in the top right corner */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailTrait(trait);
+                              }}
+                              className="p-1 rounded-full hover:bg-white/15 text-parchment/40 hover:text-arcane transition-all cursor-pointer"
+                              title="Ver detalhes do traço"
+                            >
+                              <Info size={16} />
+                            </button>
                           </div>
                         </div>
-                        <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{trait.description}</p>
-                        <div className="flex items-center gap-4 text-[10px] font-mono text-parchment/60 uppercase tracking-wider">
-                          <span className="flex items-center gap-1">
-                            <Activity size={12} /> 
-                            {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
-                          </span>
-                          {trait.modifierType && (
+                        <p className="text-xs text-parchment/50 mb-4 line-clamp-2 leading-relaxed">{trait.description}</p>
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                          <div className="flex items-center gap-4 text-[10px] font-mono text-parchment/60 uppercase tracking-wider">
                             <span className="flex items-center gap-1">
-                              <Target size={12} /> 
-                              {trait.modifierType.toUpperCase()}
+                              <Activity size={12} className={isAdvantage ? "text-arcane" : "text-ember"} /> 
+                              {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
                             </span>
+                            {trait.modifierType && (
+                              <span className="flex items-center gap-1 font-sans capitalize font-medium text-parchment/80">
+                                <Target size={12} className={isAdvantage ? "text-arcane" : "text-ember"} /> 
+                                {getTraitTargetDisplayName(trait.modifierType, attributes, availableTalents)}
+                              </span>
+                            )}
+                          </div>
+                          {isSelected && (
+                            <div className={cn(
+                              "flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider font-bold",
+                              isAdvantage ? "text-arcane" : "text-ember"
+                            )}>
+                              <Check size={14} /> Selecionado
+                            </div>
                           )}
                         </div>
-                        {isSelected && (
-                          <div className={cn(
-                            "absolute top-2 right-2",
-                            isAdvantage ? "text-arcane" : "text-ember"
-                          )}>
-                            <Check size={16} />
-                          </div>
-                        )}
-                      </button>
+                      </div>
                     );
                   })}
                   {filteredTraits.length === 0 && (
@@ -1376,8 +1126,500 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(4)}
+                    onClick={() => setStep(2)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                  >
+                    <span>Continuar para Atributos</span>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div
+                key="step2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-4xl font-serif mb-2">Defina seus Atributos</h2>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 02: A Essência do Herói</p>
+                  </div>
+                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Restantes</p>
+                      <p className={cn(
+                        "text-2xl font-serif",
+                        (maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)) === 0 ? "text-gold" : "text-arcane"
+                      )}>
+                        {maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)} / {maxPoints}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
+                      <Dice6 size={24} />
+                    </div>
+                  </div>
+                </header>
+
+                {/* Banner de Modificadores Adquiridos com Vantagens e Defeitos */}
+                {selectedTraits.length > 0 ? (
+                  <div className="glass p-5 rounded-3xl border border-arcane/20 bg-arcane/5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={18} className="text-arcane" />
+                        <h4 className="font-serif text-base text-parchment/90">Modificadores de Traços Adquiridos</h4>
+                      </div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-parchment/50">
+                        {selectedTraits.length} {selectedTraits.length === 1 ? 'traço selecionado' : 'traços selecionados'} no Passo 01
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {attributes.map(attr => {
+                        const mod = traitStatsMods[attr.id.toLowerCase()] || 0;
+                        if (!mod) return null;
+                        const isPositive = mod > 0;
+                        return (
+                          <div 
+                            key={attr.id}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border shadow-sm",
+                              isPositive 
+                                ? "bg-arcane/15 border-arcane/40 text-arcane" 
+                                : "bg-ember/15 border-ember/40 text-ember"
+                            )}
+                          >
+                            <span>{attr.label}:</span>
+                            <span className="text-sm font-serif">{isPositive ? `+${mod}` : mod}</span>
+                          </div>
+                        );
+                      })}
+                      {Object.keys(traitStatsMods).length === 0 && (
+                        <p className="text-xs font-mono text-parchment/40 italic">
+                          Os traços selecionados não possuem bônus numéricos diretos em atributos.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="glass p-4 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-between text-xs text-parchment/40 font-mono">
+                    <span>Nenhum traço selecionado ainda no Passo 01.</span>
+                    <button 
+                      type="button" 
+                      onClick={() => setStep(1)} 
+                      className="text-arcane hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>Ir ao Passo 01 (Vantagens/Defeitos)</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {attributes.map((attr, idx) => {
+                    const traitMod = traitStatsMods[attr.id.toLowerCase()] || 0;
+                    const contributingTraits = contributingTraitsByAttr[attr.id.toLowerCase()] || [];
+                    const effectiveValue = (values[attr.id] || 0) + traitMod;
+
+                    return (
+                      <motion.div
+                        key={attr.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className={cn(
+                          "glass p-6 rounded-3xl group hover:bg-white/10 transition-all border",
+                          traitMod > 0 ? "border-arcane/30 bg-arcane/[0.02]" :
+                          traitMod < 0 ? "border-ember/30 bg-ember/[0.02]" :
+                          "border-white/10 hover:border-arcane/30"
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("p-3 rounded-2xl bg-white/5", attr.color)}>
+                              {React.createElement(getIcon(attr.icon), { size: 24 })}
+                            </div>
+                            <div>
+                              <h4 className="font-serif text-xl">{attr.label}</h4>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">
+                                  Base: {values[attr.id] || 0}
+                                </span>
+                                {traitMod !== 0 && (
+                                  <span className={cn(
+                                    "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider",
+                                    traitMod > 0 ? "bg-arcane/20 text-arcane border border-arcane/30" : "bg-ember/20 text-ember border border-ember/30"
+                                  )}>
+                                    {traitMod > 0 ? `+${traitMod}` : traitMod} Traço
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-3xl font-serif text-glow-arcane leading-none">
+                              {effectiveValue}
+                              <span className="text-xs text-parchment/20 ml-1">/ {maxSingleAttr}</span>
+                            </div>
+                            <p className="text-[9px] text-parchment/40 font-mono uppercase tracking-wider mt-1">
+                              {traitMod !== 0 ? `Total Efetivo` : `Mod: ${getModifier(values[attr.id] || 0)}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-parchment/40 mb-4 leading-relaxed">{attr.description}</p>
+
+                        {/* Lista de traços que afetam este atributo */}
+                        {contributingTraits.length > 0 && (
+                          <div className="mb-4 p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1.5">
+                            <p className="text-[9px] font-mono uppercase tracking-widest text-parchment/40 flex items-center gap-1">
+                              <Sparkles size={11} className="text-arcane" />
+                              Modificador de Vantagens/Defeitos:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {contributingTraits.map((t: any) => (
+                                <span
+                                  key={t.id}
+                                  className={cn(
+                                    "text-[10px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold",
+                                    t.type === 'advantage' 
+                                      ? "bg-arcane/15 text-arcane border border-arcane/25" 
+                                      : "bg-ember/15 text-ember border border-ember/25"
+                                  )}
+                                  title={t.description || t.effect}
+                                >
+                                  {t.name}: {t.effectiveMod > 0 ? `+${t.effectiveMod}` : t.effectiveMod}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => handleValueChange(attr.id, -1)}
+                            className="flex-1 py-3 glass rounded-xl hover:bg-ember/10 hover:text-ember transition-all text-xl font-serif"
+                          >
+                            -
+                          </button>
+                          <button 
+                            onClick={() => handleValueChange(attr.id, 1)}
+                            className="flex-1 py-3 glass rounded-xl hover:bg-arcane/10 hover:text-arcane transition-all text-xl font-serif"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-end pt-6">
+                  <button 
+                    onClick={() => setStep(3)}
+                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                  >
+                    <span>Continuar para Origens</span>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <header>
+                  <h2 className="text-4xl font-serif mb-2">Origens da Lenda</h2>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: Nome, Vocação e Campanha</p>
+                </header>
+
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome do Personagem</label>
+                    <input 
+                      type="text" 
+                      value={basics.name || ''}
+                      onChange={e => setBasics({...basics, name: e.target.value})}
+                      onBlur={() => setTouched(prev => ({ ...prev, name: true }))}
+                      placeholder="Ex: Aethelgard, o Destemido"
+                      className={cn(
+                        "w-full bg-white/5 border rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none transition-colors",
+                        touched.name && !basics.name ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                      )}
+                    />
+                    {touched.name && !basics.name && (
+                      <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">O nome é obrigatório</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Sua Vocação (Nome)</label>
+                    <input 
+                      type="text" 
+                      value={basics.class || ''}
+                      onChange={e => setBasics({...basics, class: e.target.value})}
+                      placeholder="Ex: Paladino, Caçador de Sombras..."
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-xl font-serif focus:outline-none focus:border-arcane/50 transition-colors"
+                    />
+                  </div>
+
+                  <div className="space-y-2 relative">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Vincular a uma Campanha (Obrigatório)</label>
+                    <div className="relative">
+                      <Search className={cn(
+                        "absolute left-4 top-1/2 -translate-y-1/2 transition-colors",
+                        showSessionList ? "text-arcane" : "text-parchment/20"
+                      )} size={18} />
+                      <input 
+                        ref={sessionInputRef}
+                        type="text" 
+                        value={sessionSearch || ''}
+                        onChange={e => {
+                          setSessionSearch(e.target.value);
+                          setShowSessionList(true);
+                          setSessionIndex(0);
+                          if (basics.sessionId) setBasics({...basics, sessionId: ''});
+                        }}
+                        onFocus={() => setShowSessionList(true)}
+                        onKeyDown={(e) => {
+                          if (showSessionList && filteredSessions.length > 0) {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              setSessionIndex(prev => (prev + 1) % filteredSessions.length);
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setSessionIndex(prev => (prev - 1 + filteredSessions.length) % filteredSessions.length);
+                            } else if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const session = filteredSessions[sessionIndex];
+                              if (session) {
+                                setBasics({...basics, sessionId: session.id});
+                                setSessionSearch(session.displayText);
+                                setShowSessionList(false);
+                              }
+                            } else if (e.key === 'Escape') {
+                              setShowSessionList(false);
+                            }
+                          }
+                        }}
+                        placeholder="Busque por código ou nome da campanha..."
+                        className={cn(
+                          "w-full bg-white/5 border rounded-2xl pl-12 pr-6 py-4 text-xl font-serif focus:outline-none transition-colors",
+                          touched.sessionId && !basics.sessionId ? "border-ember/50 bg-ember/5" : "border-white/10 focus:border-arcane/50"
+                        )}
+                      />
+                      {touched.sessionId && !basics.sessionId && (
+                        <p className="text-[10px] text-ember font-mono uppercase tracking-widest px-2 mt-1">Selecione uma campanha</p>
+                      )}
+                      
+                      <AnimatePresence>
+                        {showSessionList && (
+                          <motion.div 
+                            ref={sessionListRef}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 5 }}
+                            className="absolute z-50 w-full mt-2 glass-popup bg-obsidian/85 backdrop-blur-xl rounded-2xl border border-white/25 overflow-hidden shadow-2xl max-h-60 overflow-y-auto no-scrollbar"
+                          >
+                            {filteredSessions.length > 0 ? (
+                              filteredSessions.map((session, i) => (
+                                <button
+                                  key={session.id}
+                                  onMouseEnter={() => setSessionIndex(i)}
+                                  onClick={() => {
+                                    setBasics({...basics, sessionId: session.id});
+                                    setSessionSearch(session.displayText);
+                                    setShowSessionList(false);
+                                  }}
+                                  className={cn(
+                                    "w-full px-6 py-4 text-left transition-colors border-b border-white/5 last:border-none flex items-center justify-between group",
+                                    sessionIndex === i ? "bg-white/10" : "hover:bg-white/5"
+                                  )}
+                                >
+                                  <div className="flex flex-col">
+                                    <p className={cn(
+                                      "font-serif text-lg transition-colors",
+                                      sessionIndex === i ? "text-arcane" : "text-parchment"
+                                    )}>{session.displayText}</p>
+                                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Mestre: {session.gmName}</span>
+                                  </div>
+                                  {sessionIndex === i && (
+                                    <div className="flex items-center gap-2 text-[10px] font-mono text-arcane/60 animate-pulse uppercase">
+                                      <ChevronRight size={12} />
+                                      <span>Enter</span>
+                                    </div>
+                                  )}
+                                </button>
+                              ))
+                            ) : (
+                              <div className="px-6 py-8 text-center space-y-2">
+                                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mx-auto text-parchment/20">
+                                  <Search size={20} />
+                                </div>
+                                <p className="text-parchment/40 font-mono text-[10px] uppercase tracking-widest">Nenhuma campanha encontrada</p>
+                                <p className="text-[9px] text-parchment/20 italic">Tente buscar por um código diferente ou nome do mestre.</p>
+                              </div>
+                            )}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    {basics.sessionId && !showSessionList && (
+                      <div className="flex items-center gap-2 px-2">
+                        <Check size={14} className="text-arcane" />
+                        <span className="text-[10px] text-arcane font-mono uppercase tracking-widest">Campanha Selecionada</span>
+                      </div>
+                    )}
+                    {sessions.length === 0 ? (
+                      <p className="text-[10px] text-ember font-mono px-2">Nenhuma campanha disponível no sistema.</p>
+                    ) : (
+                      <p className="text-[10px] text-parchment/40 font-mono px-2">Busque pelo código ou nome para selecionar a campanha.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Imagem do Personagem (Avatar / Retrato)</label>
+                      <button
+                        type="button"
+                        onClick={() => setIsImageModalOpen(true)}
+                        className="text-xs font-mono text-arcane hover:underline flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ImageIcon size={14} />
+                        Escolher Imagem
+                      </button>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl glass border border-white/10">
+                      <div 
+                        onClick={() => setIsImageModalOpen(true)}
+                        className="relative group cursor-pointer shrink-0"
+                        title="Clique para alterar a imagem"
+                      >
+                        <div className="w-20 h-24 rounded-2xl overflow-hidden border-2 border-arcane/50 bg-white/5 relative group-hover:scale-105 transition-transform">
+                          {basics.image ? (
+                            <img 
+                              src={basics.image} 
+                              alt="Retrato do Personagem" 
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-parchment/30">
+                              <ImageIcon size={24} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex flex-col items-center justify-center text-white">
+                          <Camera size={18} />
+                          <span className="text-[9px] font-mono mt-0.5">Alterar</span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 w-full space-y-2">
+                        <p className="text-xs text-parchment/70 font-serif">
+                          Insira uma URL direta ou faça upload da imagem do seu herói:
+                        </p>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={basics.image || ''}
+                            onChange={e => setBasics({...basics, image: e.target.value})}
+                            placeholder="https://exemplo.com/imagem.png"
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs font-mono focus:outline-none focus:border-arcane/50 transition-colors"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setIsImageModalOpen(true)}
+                            className="px-4 py-2.5 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                          >
+                            <ImageIcon size={14} />
+                            Galeria / Upload
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Escolha o Ícone da Vocação</label>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-3">
+                      {availableIcons.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setBasics({ ...basics, icon: item.id })}
+                          className={cn(
+                            "w-12 h-12 rounded-xl flex items-center justify-center transition-all border",
+                            basics.icon === item.id ? "border-arcane bg-arcane/10 shadow-[0_0_15px_rgba(71,214,255,0.2)]" : "border-white/10 hover:border-white/20"
+                          )}
+                        >
+                          <item.icon size={20} className={basics.icon === item.id ? "text-arcane" : "text-parchment/40"} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Ou escolha um arquétipo pronto</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {classes.map((cls) => (
+                        <button
+                          key={cls.name}
+                          onClick={() => setBasics({
+                            ...basics, 
+                            class: cls.name, 
+                            color: cls.color,
+                            image: cls.image,
+                            icon: cls.name === 'Paladino' ? 'Shield' : 
+                                  cls.name === 'Guerreiro' ? 'Sword' :
+                                  cls.name === 'Mago' ? 'Flame' :
+                                  cls.name === 'Ranger' ? 'Eye' : 'Zap'
+                          })}
+                          className={cn(
+                            "glass p-6 rounded-3xl flex items-center gap-4 transition-all border",
+                            basics.class === cls.name ? "border-arcane bg-arcane/10 shadow-[0_0_20px_rgba(71,214,255,0.1)]" : "border-white/10 hover:border-white/20"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center",
+                            cls.color === 'arcane' ? "bg-arcane/20 text-arcane" : 
+                            cls.color === 'ember' ? "bg-ember/20 text-ember" : "bg-gold/20 text-gold"
+                          )}>
+                            <cls.icon size={24} />
+                          </div>
+                          <div className="text-left">
+                            <h4 className="font-serif text-lg">{cls.name}</h4>
+                            <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-wider">Vocação</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-6">
+                  <button 
+                    onClick={() => {
+                      if (!basics.name || !basics.sessionId) {
+                        setTouched({ name: true, sessionId: true });
+                        return;
+                      }
+                      setStep(4);
+                    }}
+                    className={cn(
+                      "px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform",
+                      (!basics.name || !basics.sessionId) && "opacity-50"
+                    )}
                   >
                     <span>Continuar para Perícias</span>
                     <ChevronRight size={18} />
@@ -1942,7 +2184,7 @@ export default function CharacterCreation() {
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Nome</label>
                       <input 
                         type="text" 
-                        value={newEquip.name}
+                        value={newEquip.name || ''}
                         onChange={e => setNewEquip({...newEquip, name: e.target.value})}
                         placeholder="Ex: Espada Longa"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
@@ -1952,7 +2194,7 @@ export default function CharacterCreation() {
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Dano</label>
                       <input 
                         type="text" 
-                        value={newEquip.damage}
+                        value={newEquip.damage || ''}
                         onChange={e => setNewEquip({...newEquip, damage: e.target.value})}
                         placeholder="Ex: 1d8+FOR"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
@@ -1962,7 +2204,7 @@ export default function CharacterCreation() {
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Quantidade</label>
                       <input 
                         type="number" 
-                        value={newEquip.quantity}
+                        value={newEquip.quantity ?? 1}
                         onChange={e => setNewEquip({...newEquip, quantity: parseInt(e.target.value) || 1})}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                       />
@@ -1971,7 +2213,7 @@ export default function CharacterCreation() {
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Munição</label>
                       <input 
                         type="text" 
-                        value={newEquip.ammo}
+                        value={newEquip.ammo || ''}
                         onChange={e => setNewEquip({...newEquip, ammo: e.target.value})}
                         placeholder="Ex: 20 flechas ou -"
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
@@ -1981,7 +2223,7 @@ export default function CharacterCreation() {
                       <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-2">Defesa</label>
                       <input 
                         type="number" 
-                        value={newEquip.defense}
+                        value={newEquip.defense ?? 0}
                         onChange={e => setNewEquip({...newEquip, defense: parseInt(e.target.value) || 0})}
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-arcane/50 transition-colors"
                       />
@@ -2109,22 +2351,35 @@ export default function CharacterCreation() {
 
                 <div className="glass p-8 rounded-[2.5rem] border border-white/10 space-y-8">
                   <div className="flex items-center gap-6">
-                    <div className="w-24 h-24 rounded-3xl overflow-hidden border border-white/10">
-                      <img src={basics.image} alt={basics.name} className="w-full h-full object-cover" />
+                    <div className="w-24 h-24 rounded-3xl overflow-hidden border border-white/10 bg-white/5 flex items-center justify-center">
+                      {basics.image ? (
+                        <img src={basics.image} alt={basics.name || 'Personagem'} className="w-full h-full object-cover" />
+                      ) : (
+                        <User size={36} className="text-parchment/30" />
+                      )}
                     </div>
                     <div>
                       <h3 className="text-3xl font-serif">{basics.name || 'Sem Nome'}</h3>
-                      <p className="text-arcane font-mono text-sm uppercase tracking-widest">{basics.class} Nível 1</p>
+                      <p className="text-arcane font-mono text-sm uppercase tracking-widest">{basics.class || 'Sem Vocação'} Nível 1</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {attributes.map(attr => (
-                      <div key={attr.id} className="glass p-4 rounded-2xl text-center">
-                        <p className="text-[10px] font-mono text-parchment/40 uppercase">{attr.label}</p>
-                        <p className="text-xl font-serif">{values[attr.id]}</p>
-                      </div>
-                    ))}
+                    {attributes.map(attr => {
+                      const traitMod = traitStatsMods[attr.id.toLowerCase()] || 0;
+                      const effVal = (values[attr.id] || 0) + traitMod;
+                      return (
+                        <div key={attr.id} className="glass p-4 rounded-2xl text-center">
+                          <p className="text-[10px] font-mono text-parchment/40 uppercase">{attr.label}</p>
+                          <p className="text-xl font-serif text-glow-arcane">{effVal}</p>
+                          {traitMod !== 0 && (
+                            <p className="text-[9px] font-mono text-parchment/40">
+                              (Base {values[attr.id] || 0} {traitMod > 0 ? `+${traitMod}` : traitMod})
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2220,16 +2475,26 @@ export default function CharacterCreation() {
         <div className="space-y-8 lg:sticky lg:top-24 h-fit order-first lg:order-last">
           <section className="glass p-6 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] space-y-6">
             <div className="text-center space-y-2">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-arcane/20 to-ember/20 border-2 border-white/10 mx-auto overflow-hidden p-1">
-                <img 
-                  src="https://picsum.photos/seed/creation/200/200" 
-                  alt="Prévia do Personagem" 
-                  className="w-full h-full object-cover rounded-full opacity-80"
-                  referrerPolicy="no-referrer"
-                />
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-arcane/20 to-ember/20 border-2 border-white/10 mx-auto overflow-hidden p-1 flex items-center justify-center">
+                {basics.image ? (
+                  <img 
+                    src={basics.image} 
+                    alt="Prévia do Personagem" 
+                    className="w-full h-full object-cover rounded-full opacity-80"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-white/5 flex items-center justify-center text-parchment/30">
+                    <User size={36} className="text-parchment/30" />
+                  </div>
+                )}
               </div>
-              <h3 className="text-xl sm:text-2xl font-serif">{basics.name || 'Aethelgard'}</h3>
-              <p className="text-[10px] sm:text-xs font-mono text-arcane uppercase tracking-widest">{basics.class} Humano</p>
+              <h3 className="text-xl sm:text-2xl font-serif min-h-[1.75rem]">
+                {step >= 3 ? (basics.name || 'Sem Nome') : ''}
+              </h3>
+              <p className="text-[10px] sm:text-xs font-mono text-arcane uppercase tracking-widest min-h-[1rem]">
+                {step >= 3 ? (basics.class || 'Sem Vocação') : ''}
+              </p>
             </div>
 
             <div className="space-y-4 pt-4 border-t border-white/5">
@@ -2250,15 +2515,21 @@ export default function CharacterCreation() {
             <div className="space-y-3">
               {step < steps.length && (
                 <button 
-                  onClick={() => setStep(prev => Math.min(steps.length, prev + 1))}
-                  disabled={step === 1 && (!basics.sessionId || !basics.name)}
+                  onClick={() => {
+                    if (step === 3 && (!basics.sessionId || !basics.name)) {
+                      setTouched({ name: true, sessionId: true });
+                      return;
+                    }
+                    setStep(prev => Math.min(steps.length, prev + 1));
+                  }}
+                  disabled={step === 3 && (!basics.sessionId || !basics.name)}
                   className={cn(
                     "w-full py-4 bg-arcane text-obsidian rounded-2xl flex items-center justify-center gap-2 font-bold hover:scale-105 transition-transform shadow-lg shadow-arcane/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   )}
                 >
                   <span>
                     {step === 1 ? 'Continuar para Atributos' : 
-                     step === 2 ? 'Continuar para Vantagens/Defeitos' : 
+                     step === 2 ? 'Continuar para Origens' : 
                      step === 3 ? 'Continuar para Perícias' : 
                      step === 4 ? 'Continuar para Dificuldades' : 
                      step === 5 ? 'Continuar para Poderes' : 
@@ -2305,7 +2576,7 @@ export default function CharacterCreation() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-4xl glass p-8 rounded-[2.5rem] border border-white/10 space-y-6 overflow-y-auto max-h-[90vh] no-scrollbar"
+              className="relative w-full max-w-4xl glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 space-y-6 overflow-y-auto max-h-[90vh] no-scrollbar"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -2408,7 +2679,7 @@ export default function CharacterCreation() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 space-y-6 overflow-y-auto max-h-[90vh]"
+              className="relative w-full max-w-2xl glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 space-y-6 overflow-y-auto max-h-[90vh]"
             >
               <header>
                 <h3 className="text-3xl font-serif">Sugerir {showSkillSuggestion ? 'Perícia' : showPowerSuggestion ? 'Poder' : 'Vantagem/Defeito'}</h3>
@@ -2708,6 +2979,162 @@ export default function CharacterCreation() {
               )}
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Character Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        onConfirm={(url) => {
+          setBasics(prev => ({ ...prev, image: url }));
+          setIsImageModalOpen(false);
+        }}
+        title="Retrato do Personagem"
+        subtitle="Insira uma URL, faça upload ou tire uma foto da câmera"
+        confirmText="Definir Imagem"
+        initialUrl={basics.image}
+      />
+
+      {/* Trait Detail Modal */}
+      <AnimatePresence>
+        {detailTrait && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDetailTrait(null)}
+              className="absolute inset-0 bg-obsidian/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg glass-modal bg-obsidian/95 backdrop-blur-xl border border-white/20 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl z-10"
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "p-3 rounded-2xl border",
+                    detailTrait.type === 'advantage' 
+                      ? "bg-arcane/15 text-arcane border-arcane/30" 
+                      : "bg-ember/15 text-ember border-ember/30"
+                  )}>
+                    <Star size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-serif text-parchment">{detailTrait.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={cn(
+                        "text-[9px] font-mono uppercase tracking-widest px-2.5 py-0.5 rounded-full border font-bold",
+                        detailTrait.type === 'advantage' 
+                          ? "bg-arcane/20 text-arcane border-arcane/30" 
+                          : "bg-ember/20 text-ember border-ember/30"
+                      )}>
+                        {detailTrait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
+                      </span>
+                      <span className="text-xs font-mono text-parchment/40">
+                        {detailTrait.modifier > 0 ? `+${detailTrait.modifier}` : detailTrait.modifier} pontos
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailTrait(null)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40 hover:text-parchment cursor-pointer"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                    <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1">Modifica / Alvo</span>
+                    <span className="text-parchment font-bold text-sm">
+                      {getTraitTargetDisplayName(detailTrait.modifierType, attributes, availableTalents)}
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                    <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1">Valor do Modificador</span>
+                    <span className={cn(
+                      "font-serif font-bold text-base",
+                      detailTrait.modifier > 0 ? "text-arcane" : detailTrait.modifier < 0 ? "text-ember" : "text-parchment"
+                    )}>
+                      {detailTrait.modifier > 0 ? `+${detailTrait.modifier}` : detailTrait.modifier} pts
+                    </span>
+                  </div>
+                </div>
+
+                {detailTrait.description && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest block">
+                      Descrição
+                    </label>
+                    <div className="p-4 rounded-2xl glass border border-white/10 text-sm text-parchment/80 leading-relaxed font-sans">
+                      {detailTrait.description}
+                    </div>
+                  </div>
+                )}
+
+                {detailTrait.effect && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest block">
+                      Efeito
+                    </label>
+                    <div className="p-3.5 rounded-2xl bg-arcane/5 border border-arcane/20 text-xs text-parchment/80 font-mono">
+                      {detailTrait.effect}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-white/10 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDetailTrait(null)}
+                  className="px-5 py-2.5 glass rounded-xl text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  Fechar
+                </button>
+
+                {(() => {
+                  const isSelected = selectedTraits.some(t => t.id === detailTrait.id);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleTrait(detailTrait);
+                        setDetailTrait(null);
+                      }}
+                      className={cn(
+                        "px-6 py-2.5 rounded-xl text-xs font-mono uppercase tracking-wider font-bold transition-all shadow-lg cursor-pointer flex items-center gap-2",
+                        isSelected
+                          ? "bg-ember/20 text-ember border border-ember/40 hover:bg-ember/30"
+                          : detailTrait.type === 'advantage'
+                          ? "bg-arcane text-obsidian shadow-arcane/20 hover:scale-105"
+                          : "bg-ember text-obsidian shadow-ember/20 hover:scale-105"
+                      )}
+                    >
+                      {isSelected ? (
+                        <>
+                          <Trash2 size={14} />
+                          <span>Remover do Personagem</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} />
+                          <span>Selecionar Traço</span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

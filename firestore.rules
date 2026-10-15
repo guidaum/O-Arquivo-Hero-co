@@ -158,8 +158,8 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'user') == 'admin') ||
-        // Fallback for bootstrap/emergency admin access - ensure email is verified
-        (request.auth.token.email == "guilherme.higino@gmail.com" && request.auth.token.email_verified == true)
+        // Fallback for bootstrap/emergency admin access
+        (request.auth.token.email == "guilherme.higino@gmail.com")
       );
     }
 
@@ -176,11 +176,11 @@ service cloud.firestore {
       return (data.uid is string && data.uid == request.auth.uid) &&
              (data.email is string && data.email.size() < 256) &&
              (data.role in ['admin', 'user', 'gm']) &&
-             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 128)) &&
-             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 2048)) &&
-             (!('bio' in data) || (data.bio is string && data.bio.size() < 1024)) &&
-             (!('location' in data) || (data.location is string && data.location.size() < 256)) &&
-             (!('phoneNumber' in data) || (data.phoneNumber is string && data.phoneNumber.size() < 32)) &&
+             (!('displayName' in data) || data.displayName == null || (data.displayName is string && data.displayName.size() < 128)) &&
+             (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() < 2048)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() < 1024)) &&
+             (!('location' in data) || data.location == null || (data.location is string && data.location.size() < 256)) &&
+             (!('phoneNumber' in data) || data.phoneNumber == null || (data.phoneNumber is string && data.phoneNumber.size() < 32)) &&
              (!('isVerified' in data) || data.isVerified is bool) &&
              (!('updatedAt' in data) || (data.updatedAt is string || data.updatedAt is timestamp)) &&
              (!('createdAt' in data) || (data.createdAt is string || data.createdAt is timestamp)) &&
@@ -228,6 +228,9 @@ service cloud.firestore {
              (!('shopEnabled' in data) || data.shopEnabled is bool) &&
              (!('shopItemIds' in data) || data.shopItemIds is list) &&
              (!('gmNotes' in data) || data.gmNotes is string) &&
+             (!('mapSettings' in data) || data.mapSettings is map) &&
+             (!('activeWorldMapId' in data) || data.activeWorldMapId is string) &&
+             (!('activeDungeonMapId' in data) || data.activeDungeonMapId is string) &&
              (!('image' in data) || data.image is string) &&
              (!('createdAt' in data) || data.createdAt is string);
     }
@@ -281,8 +284,11 @@ service cloud.firestore {
              data.sessionId is string &&
              data.senderId == request.auth.uid &&
              data.senderName is string && data.senderName.size() < 100 &&
-             (!('text' in data) || (data.text is string && data.text.size() < 2000)) &&
-             (!('image' in data) || (data.image is string && data.image.size() < 2048)) &&
+             (!('senderPhoto' in data) || data.senderPhoto == null || (data.senderPhoto is string && data.senderPhoto.size() < 2048)) &&
+             (!('text' in data) || data.text == null || (data.text is string && data.text.size() < 2000)) &&
+             (!('image' in data) || data.image == null || (data.image is string && data.image.size() < 2048)) &&
+             (!('type' in data) || (data.type is string && data.type.size() < 50)) &&
+             (!('rollData' in data) || data.rollData is map) &&
              (!('shouldNotify' in data) || data.shouldNotify is bool) &&
              (!('mentionedUserIds' in data) || data.mentionedUserIds is list) &&
              data.createdAt is string;
@@ -321,19 +327,21 @@ service cloud.firestore {
         // Regular users can only create their profile with 'user' or 'gm' role
         request.resource.data.role in ['user', 'gm'] || isAdmin()
       );
-      allow update: if isOwner(userId) && (
+      allow update: if (isOwner(userId) && (
         // Allow heartbeat (only lastActive changed)
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActive']) ||
-        // Allow profile update
+        // Allow profile update or role switch between user and gm
         (isValidUser(request.resource.data) && (
           isAdmin() || (
-            // Regular user update restrictions: cannot change their own role or verification status
-            request.resource.data.role == resource.data.role &&
+            // Regular user update restrictions: can toggle between 'user' and 'gm', but cannot self-assign 'admin'
+            request.resource.data.role in ['user', 'gm'] &&
+            (resource.data.get('role', 'user') == 'admin' ? request.resource.data.role == 'admin' : true) &&
             request.resource.data.get('isVerified', false) == resource.data.get('isVerified', false) &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'location', 'phoneNumber', 'updatedAt', 'lastActive'])
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'displayName', 'photoURL', 'bio', 'location', 'phoneNumber', 'updatedAt', 'lastActive'])
           )
         ))
-      );
+      )) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /characters/{characterId} {
@@ -423,18 +431,61 @@ service cloud.firestore {
     }
 
     match /chatMessages/{messageId} {
-      allow get: if isAuthenticated();
-      allow list: if isAuthenticated() && (
-        (resource.data.get('sessionId', null) != null && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId))) ||
-        (resource.data.get('mentionedUserIds', []).hasAny([request.auth.uid]))
-      );
-      allow create: if isAuthenticated() && isValidChatMessage(request.resource.data) && (isGM() || isPlayerInSession(request.resource.data.sessionId) || isGMOfSession(request.resource.data.sessionId));
-      allow update, delete: if isGM() || isGMOfSession(resource.data.sessionId);
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidChatMessage(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isGM() || isAdmin() || isGMOfSession(resource.data.sessionId));
+      allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isGM() || isAdmin() || isGMOfSession(resource.data.sessionId));
     }
 
     match /itemCatalog/{itemId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isGM();
+    }
+
+    match /mapPins/{pinId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.createdBy == request.auth.uid || isGM() || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.createdBy == request.auth.uid || isGM() || isAdmin());
+    }
+
+    match /dungeonTokens/{tokenId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /dungeonMaps/{mapId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.resource.data.createdBy == request.auth.uid || isGM() || isAdmin());
+      allow update, delete: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid || 
+        (resource.data.sessionId != null && isGMOfSession(resource.data.sessionId)) ||
+        isAdmin()
+      );
+    }
+
+    match /worldMaps/{mapId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.resource.data.createdBy == request.auth.uid || isGM() || isAdmin());
+      allow update, delete: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid || 
+        (resource.data.sessionId != null && isGMOfSession(resource.data.sessionId)) ||
+        isAdmin()
+      );
+    }
+
+    match /campaignMaps/{mapId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /dungeonPings/{pingId} {
+      allow read, create, delete: if isAuthenticated();
+    }
+
+    match /dungeonFog/{fogId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
     }
 
     // Default deny

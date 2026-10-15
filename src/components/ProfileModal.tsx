@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, User, Camera, Mail, Phone, MapPin, Shield, CheckCircle2, AlertCircle, Save, Loader2 } from 'lucide-react';
+import { X, User, Camera, Mail, Phone, MapPin, Shield, Sword, CheckCircle2, AlertCircle, Save, Loader2, Image as ImageIcon } from 'lucide-react';
 import { auth, db, doc, getDoc, updateDoc } from '../firebase';
 import { cn } from '../lib/utils';
+import { ImagePickerModal } from './ImagePickerModal';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [userData, setUserData] = React.useState<any>(null);
+  const [selectedRole, setSelectedRole] = React.useState<'user' | 'gm'>('user');
   const [formData, setFormData] = React.useState({
     displayName: '',
     photoURL: '',
@@ -21,6 +23,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     phoneNumber: ''
   });
   const [message, setMessage] = React.useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = React.useState(false);
 
   const fetchUserData = async () => {
     if (!auth.currentUser) return;
@@ -30,6 +33,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
       if (userDoc.exists()) {
         const data = userDoc.data();
         setUserData(data);
+        setSelectedRole(data.role === 'gm' ? 'gm' : 'user');
         setFormData({
           displayName: data.displayName || '',
           photoURL: data.photoURL || '',
@@ -60,15 +64,21 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     setMessage(null);
 
     try {
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+      const updatePayload: any = {
         ...formData,
         updatedAt: new Date().toISOString()
-      });
+      };
+
+      if (userData?.role !== 'admin') {
+        updatePayload.role = selectedRole;
+        localStorage.setItem('preferredViewMode', selectedRole);
+        window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: selectedRole }));
+      }
+
+      await updateDoc(doc(db, 'users', auth.currentUser.uid), updatePayload);
       
-      setUserData((prev: any) => ({ ...prev, ...formData }));
+      setUserData((prev: any) => ({ ...prev, ...formData, role: userData?.role === 'admin' ? 'admin' : selectedRole }));
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
-      
-      // Update local storage/context if needed, but Firestore is the source of truth
     } catch (error) {
       console.error('Error updating profile:', error);
       setMessage({ type: 'error', text: 'Erro ao atualizar perfil. Tente novamente.' });
@@ -97,7 +107,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="relative w-full max-w-2xl glass border border-white/10 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+          className="relative w-full max-w-2xl glass-modal bg-obsidian/85 backdrop-blur-xl border border-white/25 rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         >
           {/* Header */}
           <div className="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
@@ -151,6 +161,47 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                   </div>
                 </div>
 
+                {/* Role / Access Selector */}
+                <div className="p-4 rounded-2xl border border-white/10 glass space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-sm">Modo de Acesso</p>
+                      <p className="text-xs text-parchment/60">Escolha seu papel principal no Arquivo Heroico</p>
+                    </div>
+                    {userData?.role === 'admin' ? (
+                      <span className="px-2.5 py-1 bg-gold/20 text-gold border border-gold/40 rounded-lg text-[10px] font-mono uppercase font-bold">
+                        Administrador
+                      </span>
+                    ) : null}
+                  </div>
+                  {userData?.role !== 'admin' && (
+                    <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRole('user')}
+                        className={cn(
+                          "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2",
+                          selectedRole === 'user' ? "bg-ember text-obsidian shadow-md shadow-ember/20" : "text-parchment/40 hover:text-parchment"
+                        )}
+                      >
+                        <Sword size={14} />
+                        Jogador
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRole('gm')}
+                        className={cn(
+                          "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2",
+                          selectedRole === 'gm' ? "bg-arcane text-obsidian shadow-md shadow-arcane/20" : "text-parchment/40 hover:text-parchment"
+                        )}
+                      >
+                        <Shield size={14} />
+                        Mestre
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {message && (
                   <motion.div 
                     initial={{ opacity: 0, y: -10 }}
@@ -165,9 +216,13 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 )}
 
                 {/* Avatar Section */}
-                <div className="flex flex-col sm:flex-row items-center gap-6">
-                  <div className="relative group">
-                    <div className="w-24 h-24 rounded-full border-2 border-arcane overflow-hidden bg-white/5 relative">
+                <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-2xl glass border border-white/10">
+                  <div 
+                    onClick={() => setIsImageModalOpen(true)}
+                    className="relative group cursor-pointer shrink-0"
+                    title="Clique para alterar a foto de perfil"
+                  >
+                    <div className="w-24 h-24 rounded-full border-2 border-arcane overflow-hidden bg-white/5 relative shadow-lg group-hover:scale-105 transition-transform">
                       <img 
                         src={formData.photoURL || "https://picsum.photos/seed/empty/100/100"} 
                         alt="Avatar Preview" 
@@ -175,19 +230,41 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center">
-                      <Camera size={20} className="text-white" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex flex-col items-center justify-center text-white">
+                      <Camera size={20} />
+                      <span className="text-[9px] font-mono mt-1">Alterar</span>
                     </div>
                   </div>
+
                   <div className="flex-1 w-full space-y-2">
-                    <label className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest px-2">URL do Avatar</label>
-                    <input 
-                      type="url"
-                      value={formData.photoURL}
-                      onChange={e => setFormData({...formData, photoURL: e.target.value})}
-                      placeholder="https://exemplo.com/avatar.jpg"
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-arcane/50 transition-colors"
-                    />
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest px-1">Foto de Perfil / Avatar</label>
+                      <button
+                        type="button"
+                        onClick={() => setIsImageModalOpen(true)}
+                        className="text-xs font-mono text-arcane hover:underline flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ImageIcon size={14} />
+                        Escolher Imagem
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="url"
+                        value={formData.photoURL}
+                        onChange={e => setFormData({...formData, photoURL: e.target.value})}
+                        placeholder="https://exemplo.com/avatar.jpg"
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-arcane/50 transition-colors font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsImageModalOpen(true)}
+                        className="px-4 py-2.5 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded-xl text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                      >
+                        <Camera size={14} />
+                        Alterar
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -279,6 +356,21 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           </div>
         </motion.div>
       </div>
+
+      {/* Profile Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        onConfirm={(url) => {
+          setFormData(prev => ({ ...prev, photoURL: url }));
+          setIsImageModalOpen(false);
+        }}
+        title="Foto de Perfil"
+        subtitle="Insira uma URL ou faça upload da sua foto"
+        confirmText="Salvar Foto"
+        initialUrl={formData.photoURL}
+        maxDimension={512}
+      />
     </AnimatePresence>
   );
 }

@@ -14,8 +14,10 @@ import {
   Mail,
   Calendar,
   AlertCircle,
+  AlertTriangle,
   Database,
-  Check
+  Check,
+  X
 } from 'lucide-react';
 import { db, collection, getDocs, doc, deleteDoc, updateDoc, query, orderBy } from '../firebase';
 import { cn } from '../lib/utils';
@@ -36,9 +38,18 @@ export default function AdminDashboard() {
   const [filterRole, setFilterRole] = React.useState<string>('all');
   const [status, setStatus] = React.useState<{ type: 'success' | 'error', message: string } | null>(null);
 
+  // In-UI Confirmation state for deleting items (avoids iframe-blocked window.confirm)
+  const [itemToDelete, setItemToDelete] = React.useState<{
+    id: string;
+    coll: string;
+    name: string;
+    typeLabel: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+
   React.useEffect(() => {
     if (status) {
-      const timer = setTimeout(() => setStatus(null), 3000);
+      const timer = setTimeout(() => setStatus(null), 3500);
       return () => clearTimeout(timer);
     }
   }, [status]);
@@ -65,9 +76,21 @@ export default function AdminDashboard() {
         });
       } else {
         const collectionName = activeTab === 'users' ? 'users' : activeTab === 'characters' ? 'characters' : 'gameSessions';
-        const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'));
-        const snap = await getDocs(q);
-        setData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        try {
+          const q = query(collection(db, collectionName), orderBy('createdAt', 'desc'));
+          const snap = await getDocs(q);
+          setData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (queryErr) {
+          console.warn('Fallback fetching without orderBy for', collectionName, queryErr);
+          const snap = await getDocs(collection(db, collectionName));
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          list.sort((a: any, b: any) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeB - timeA;
+          });
+          setData(list);
+        }
       }
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -80,17 +103,52 @@ export default function AdminDashboard() {
     fetchData();
   }, [activeTab]);
 
-  const handleDelete = async (id: string, coll: string) => {
-    // Standard confirm is okay for now for destructive actions but let's avoid it if possible
-    // Given the request to avoid browser alerts, I'll use a local state or just let it be if it's considered safe enough, 
-    // but the task is to optimize. I'll stick to a simple confirm for now but add polished feedback.
-    if (!window.confirm('Tem certeza que deseja excluir esse item permanentemente?')) return;
+  const requestDelete = (item: any, coll: string) => {
+    const name = item.name || item.displayName || item.title || item.email || item.code || `ID ${item.id.slice(0, 8)}`;
+    const typeLabel = coll === 'users' ? 'Usuário' : coll === 'characters' ? 'Personagem' : 'Sessão de Campanha';
+    setItemToDelete({
+      id: item.id,
+      coll,
+      name,
+      typeLabel
+    });
+  };
+
+  const handleDelete = (itemOrId: any, coll: string) => {
+    let item = typeof itemOrId === 'object' && itemOrId !== null ? itemOrId : data.find(d => d.id === itemOrId);
+    if (!item) {
+      item = { id: String(itemOrId), name: `ID: ${String(itemOrId).slice(0, 8)}` };
+    }
+    requestDelete(item, coll);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, coll, id));
-      setData(prev => prev.filter(item => item.id !== id));
-      setStatus({ type: 'success', message: 'Item excluído com sucesso.' });
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Erro ao excluir item.' });
+      await deleteDoc(doc(db, itemToDelete.coll, itemToDelete.id));
+      setData(prev => prev.filter(item => item.id !== itemToDelete.id));
+      if (stats) {
+        setStats(prev => {
+          if (!prev) return null;
+          if (itemToDelete.coll === 'users') return { ...prev, totalUsers: Math.max(0, prev.totalUsers - 1) };
+          if (itemToDelete.coll === 'characters') return { ...prev, totalCharacters: Math.max(0, prev.totalCharacters - 1) };
+          if (itemToDelete.coll === 'gameSessions') return { ...prev, totalSessions: Math.max(0, prev.totalSessions - 1) };
+          return prev;
+        });
+      }
+      setStatus({ type: 'success', message: `${itemToDelete.typeLabel} "${itemToDelete.name}" foi excluído(a) com sucesso!` });
+      setItemToDelete(null);
+    } catch (error: any) {
+      console.error('Error deleting document:', error);
+      setStatus({ 
+        type: 'error', 
+        message: error?.code === 'permission-denied' 
+          ? 'Permissão negada. Apenas administradores podem excluir este registro.' 
+          : 'Erro ao excluir item do banco de dados.' 
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -304,6 +362,80 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {itemToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-obsidian border border-red-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+            >
+              {/* Top ambient glow */}
+              <div className="absolute -top-12 -right-12 w-32 h-32 bg-red-600/20 rounded-full blur-2xl pointer-events-none" />
+
+              <div className="flex items-start gap-4 mb-6">
+                <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 shrink-0">
+                  <AlertTriangle size={28} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-serif font-bold text-white mb-1">
+                    Confirmar Exclusão
+                  </h3>
+                  <p className="text-xs text-parchment/60 font-mono">
+                    Ação irreversível de administrador
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2 mb-6">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-parchment/40 font-mono uppercase tracking-wider">Tipo:</span>
+                  <span className="font-bold text-amber-400">{itemToDelete.typeLabel}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-parchment/40 font-mono uppercase tracking-wider">Identificador:</span>
+                  <span className="font-mono text-parchment truncate max-w-[220px]">{itemToDelete.name}</span>
+                </div>
+                <p className="text-xs text-red-300/80 pt-2 border-t border-white/5 leading-relaxed">
+                  Tem certeza que deseja excluir este registro permanentemente do banco de dados? Todos os dados associados serão perdidos.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setItemToDelete(null)}
+                  disabled={isDeleting}
+                  className="px-5 py-2.5 rounded-xl border border-white/10 text-sm font-medium text-parchment/70 hover:text-white hover:bg-white/5 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-sm transition-all shadow-lg shadow-red-600/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Excluindo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} />
+                      <span>Sim, Excluir</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

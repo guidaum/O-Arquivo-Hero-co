@@ -13,6 +13,9 @@ import CharacterCreation from './components/CharacterCreation';
 import CharacterSheet from './components/CharacterSheet';
 import GMDashboard from './components/GMDashboard';
 import AdminDashboard from './components/AdminDashboard';
+import WorldMap from './components/WorldMap';
+import DungeonMap from './components/DungeonMap';
+import MapManager from './components/MapManager';
 import Login from './components/Login';
 import { auth, onAuthStateChanged, User } from './firebase';
 import { ThemeProvider } from './components/ThemeProvider';
@@ -51,6 +54,9 @@ export default function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="create" element={<CharacterCreation />} />
             <Route path="sheet" element={<CharacterSheet />} />
+            <Route path="map-manager" element={<MapManager />} />
+            <Route path="map" element={<WorldMap />} />
+            <Route path="dungeon" element={<DungeonMap />} />
             <Route path="gm/session/:sessionId" element={<GMDashboard />} />
             <Route path="admin" element={<AdminDashboard />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -34,12 +34,23 @@ import {
   Check,
   Info,
   UserPlus,
-  Search
+  Search,
+  Image as ImageIcon,
+  Camera,
+  Feather,
+  Map as MapIcon
 } from 'lucide-react';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName } from '../lib/utils';
 import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, addDoc } from '../firebase';
+import { SoundConfig, DEFAULT_SOUNDS, playSoundEffect, playRollOutcomeSound } from '../lib/soundEngine';
 import Inventory from './Inventory';
 import SessionChat from './SessionChat';
+import QuickNotes from './QuickNotes';
+import { ImagePickerModal } from './ImagePickerModal';
+import { TraitOriginModal } from './TraitOriginModal';
+import { TraitDetailModal } from './TraitDetailModal';
+import HealthTrackerWidget from './HealthTrackerWidget';
+import CampaignMapsCharacterTab from './CampaignMapsCharacterTab';
 
 const iconMap: Record<string, any> = {
   Shield, Sword, Zap, Flame, Eye, Brain, Heart, Activity, Scroll, Dice6, Sparkles
@@ -80,6 +91,8 @@ export default function CharacterSheet() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const characterId = searchParams.get('id');
+  const fromSessionParam = searchParams.get('fromSession');
+  const [isQuickNotesOpen, setIsQuickNotesOpen] = React.useState(false);
   
   const [character, setCharacter] = React.useState<any>(null);
   const [session, setSession] = React.useState<any>(null);
@@ -97,6 +110,7 @@ export default function CharacterSheet() {
   const [availableTraits, setAvailableTraits] = React.useState<any[]>([]);
   const [characterTraits, setCharacterTraits] = React.useState<string[]>([]);
   const [currentPV, setCurrentPV] = React.useState(0);
+  const [tempPV, setTempPV] = React.useState(0);
   const [currentATP, setCurrentATP] = React.useState(0);
   const [protecao, setProtecao] = React.useState(0);
   const [sanidade, setSanidade] = React.useState(7);
@@ -107,10 +121,15 @@ export default function CharacterSheet() {
   const [canEditStats, setCanEditStats] = React.useState(false);
   const [talentMods, setTalentMods] = React.useState<Record<string, number>>({});
   const [talents, setTalents] = React.useState<any[]>([]);
-  const [activeCategory, setActiveCategory] = React.useState('geral');
+  const [activeCategory, setActiveCategory] = React.useState(() => searchParams.get('tab') === 'maps' ? 'maps' : 'geral');
   const [activeSection, setActiveSection] = React.useState('all');
   const [saveStatus, setSaveStatus] = React.useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [isInventoryOpen, setIsInventoryOpen] = React.useState(false);
+  const [isImagePickerOpen, setIsImagePickerOpen] = React.useState(false);
+  const [imagePickerInitialTab, setImagePickerInitialTab] = React.useState<'url' | 'upload' | 'camera'>('url');
+  const [selectedTraitAttr, setSelectedTraitAttr] = React.useState<any | null>(null);
+  const [isTraitOriginModalOpen, setIsTraitOriginModalOpen] = React.useState(false);
+  const [detailTrait, setDetailTrait] = React.useState<any | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = React.useState(false);
   const [quickRoll, setQuickRoll] = React.useState<{ 
@@ -127,10 +146,44 @@ export default function CharacterSheet() {
   const rollTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const rollingAudioRef = React.useRef<HTMLAudioElement | null>(null);
   const [activeRollAttr, setActiveRollAttr] = React.useState<string | null>(null);
+  const [viewMode, setViewMode] = React.useState<'user' | 'gm'>(() => {
+    return (localStorage.getItem('preferredViewMode') as 'user' | 'gm') || 'user';
+  });
 
-  const isGM = userRole === 'gm';
+  // Sync viewMode changes across components (Player Mode vs GM Mode)
+  React.useEffect(() => {
+    const handleViewModeChange = (e: any) => {
+      const newMode = e.detail || localStorage.getItem('preferredViewMode');
+      if (newMode && (newMode === 'user' || newMode === 'gm')) {
+        setViewMode(newMode);
+      }
+    };
+    window.addEventListener('viewModeChanged', handleViewModeChange);
+    window.addEventListener('storage', handleViewModeChange);
+    return () => {
+      window.removeEventListener('viewModeChanged', handleViewModeChange);
+      window.removeEventListener('storage', handleViewModeChange);
+    };
+  }, []);
+
+  // When viewMode is 'user', the user is playing in player mode, so they see strictly player menus and views
+  const isPlayerMode = viewMode === 'user';
+  const isGM = !isPlayerMode && (userRole === 'gm' || userRole === 'admin');
   const isOwner = character?.ownerId === auth.currentUser?.uid;
   const canPlayerEdit = isGM || (isOwner && canEditStats);
+
+  const activeSessionId = session?.id || character?.sessionId || fromSessionParam;
+  const isGMOfCampaign = !isPlayerMode && Boolean(
+    (session && session.gmId === auth.currentUser?.uid) ||
+    userRole === 'gm' ||
+    userRole === 'admin'
+  );
+
+  // If the viewer is the GM of the campaign, their quick notes return notes for that campaign!
+  // If the viewer is a player, their quick notes return notes for the selected character.
+  const notesTargetType = (isGMOfCampaign && activeSessionId) ? 'campaign' : 'character';
+  const notesTargetId = (isGMOfCampaign && activeSessionId) ? activeSessionId : (characterId || character?.id || 'isolated');
+  const notesTargetName = (isGMOfCampaign && activeSessionId) ? (session?.name || 'Campanha') : (character?.name || 'Personagem');
 
   const [newEquip, setNewEquip] = React.useState({
     name: '',
@@ -197,9 +250,11 @@ export default function CharacterSheet() {
           updateDoc(doc(db, 'characters', characterId), { baseStats: data.stats });
         }
         
-        // Fetch session if linked
-        if (data.sessionId) {
-          getDoc(doc(db, 'gameSessions', data.sessionId)).then(sessionSnap => {
+        // Fetch session if linked or passed via fromSession
+        const effectiveSessionId = data.sessionId || fromSessionParam;
+        if (effectiveSessionId) {
+          localStorage.setItem('last_active_session_id', effectiveSessionId);
+          getDoc(doc(db, 'gameSessions', effectiveSessionId)).then(sessionSnap => {
             if (sessionSnap.exists()) {
               const sessionData = { id: sessionSnap.id, ...sessionSnap.data() } as any;
               setSession(sessionData);
@@ -275,6 +330,7 @@ export default function CharacterSheet() {
         const maxATP = evaluateFormula(atpFormula, statsForFormula);
         
         setCurrentPV(data.currentPV ?? maxPV);
+        setTempPV(data.tempPV ?? data.temporaryHP ?? 0);
         setCurrentATP(data.currentATP ?? maxATP);
         setProtecao(data.protecao ?? 0);
         setSanidade(Math.min(7, data.sanidade ?? 7));
@@ -381,6 +437,7 @@ export default function CharacterSheet() {
         skills: characterSkills,
         powers: characterPowers,
         currentPV,
+        tempPV,
         currentATP,
         protecao,
         sanidade,
@@ -561,7 +618,7 @@ export default function CharacterSheet() {
     downloadAnchorNode.remove();
   };
 
-  const handleEditImage = async () => {
+  const handleEditImage = () => {
     if (!character || !characterId) return;
     
     // Permission check
@@ -574,42 +631,112 @@ export default function CharacterSheet() {
       return;
     }
 
-    const newImage = prompt('Insira a URL da nova imagem do personagem:', character.image || '');
-    if (newImage !== null && newImage !== character.image) {
-      try {
-        await updateDoc(doc(db, 'characters', characterId), { image: newImage });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
-      }
+    setIsImagePickerOpen(true);
+  };
+
+  const handleConfirmImage = async (newImage: string) => {
+    if (!characterId) return;
+    try {
+      setCharacter(prev => prev ? { ...prev, image: newImage } : prev);
+      await updateDoc(doc(db, 'characters', characterId), { image: newImage });
+      setSaveStatus({ type: 'success', message: 'Imagem do personagem atualizada com sucesso!' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
     }
   };
 
   const resolvedTraits = availableTraits
     .filter(t => characterTraits.includes(t.id));
 
-  const traitStatsMods = React.useMemo(() => {
-    const mods: Record<string, number> = {};
-    const attrIds = (globalSettings?.attributes || DEFAULT_ATTRIBUTES).map(a => a.id);
+  const contributingTraitsByAttr = React.useMemo(() => {
+    const map: Record<string, any[]> = {};
+    const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+
     resolvedTraits.forEach(trait => {
-      const type = trait.modifierType?.toLowerCase();
-      if (attrIds.includes(type)) {
-        mods[type] = (mods[type] || 0) + trait.modifier;
+      const { attrIds } = getTraitTargets(trait, baseAttrs, talents);
+      const effMod = getTraitEffectiveModifier(trait);
+      attrIds.forEach(attrId => {
+        const lower = attrId.toLowerCase();
+        if (!map[lower]) map[lower] = [];
+        map[lower].push({
+          ...trait,
+          effectiveMod: effMod
+        });
+      });
+    });
+    return map;
+  }, [resolvedTraits, globalSettings, talents]);
+
+  const contributingTraitsByTalent = React.useMemo(() => {
+    const map: Record<string, any[]> = {};
+    const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+
+    talents.forEach(talent => {
+      const talentIdLower = talent.id.toLowerCase();
+      const talentNameLower = (talent.name || '').toLowerCase();
+      const compLower = (talent.composition || []).map((c: string) => c.toLowerCase());
+      const addedTraitIds = new Set<string>();
+      const talentTraits: any[] = [];
+
+      resolvedTraits.forEach(trait => {
+        const { attrIds, talentIds } = getTraitTargets(trait, baseAttrs, talents);
+        const effMod = getTraitEffectiveModifier(trait);
+
+        // Check if directly targets the talent
+        const directlyTargets = talentIds.some(tId => {
+          const tLower = tId.toLowerCase();
+          return tLower === talentIdLower || tLower === talentNameLower;
+        });
+
+        // Check if targets an attribute in the talent's composition
+        const targetsComposition = attrIds.some(aId => compLower.includes(aId.toLowerCase()));
+
+        if ((directlyTargets || targetsComposition) && !addedTraitIds.has(trait.id)) {
+          addedTraitIds.add(trait.id);
+          talentTraits.push({
+            ...trait,
+            effectiveMod: effMod
+          });
+        }
+      });
+
+      map[talentIdLower] = talentTraits;
+      if (talent.name) {
+        map[talentNameLower] = talentTraits;
       }
     });
+
+    return map;
+  }, [resolvedTraits, globalSettings, talents]);
+
+  const traitStatsMods = React.useMemo(() => {
+    const mods: Record<string, number> = {};
+    const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
+
+    resolvedTraits.forEach(trait => {
+      const { attrIds } = getTraitTargets(trait, baseAttrs, talents);
+      const effMod = getTraitEffectiveModifier(trait);
+      attrIds.forEach(attrId => {
+        const idLower = attrId.toLowerCase();
+        mods[idLower] = (mods[idLower] || 0) + effMod;
+
+        // Alias original casing without adding a duplicate
+        const baseAttr = baseAttrs.find(a => a.id.toLowerCase() === idLower);
+        if (baseAttr && baseAttr.id !== idLower) {
+          mods[baseAttr.id] = mods[idLower];
+        }
+      });
+    });
     return mods;
-  }, [resolvedTraits, globalSettings]);
+  }, [resolvedTraits, globalSettings, talents]);
 
   const traitTalentMods = React.useMemo(() => {
     const mods: Record<string, number> = {};
-    const attrIds = (globalSettings?.attributes || DEFAULT_ATTRIBUTES).map(a => a.id);
-    resolvedTraits.forEach(trait => {
-      const type = trait.modifierType?.toLowerCase();
-      if (!attrIds.includes(type)) {
-        mods[trait.modifierType] = (mods[trait.modifierType] || 0) + trait.modifier;
-      }
+    Object.entries(contributingTraitsByTalent).forEach(([key, traitsList]) => {
+      mods[key] = (traitsList as any[]).reduce((sum, t) => sum + (Number(t.effectiveMod) || 0), 0);
     });
     return mods;
-  }, [resolvedTraits, globalSettings]);
+  }, [contributingTraitsByTalent]);
 
   const itemStatsMods = React.useMemo(() => {
     const mods: Record<string, number> = {};
@@ -631,10 +758,19 @@ export default function CharacterSheet() {
       ...attr,
       value: stats[attr.id] || 0,
       mod: statsMods[attr.id] || 0,
-      traitMod: traitStatsMods[attr.id] || 0,
-      itemMod: itemStatsMods[attr.id] || 0
+      traitMod: traitStatsMods[attr.id.toLowerCase()] ?? traitStatsMods[attr.id] ?? 0,
+      itemMod: itemStatsMods[attr.id] ?? itemStatsMods[attr.id.toLowerCase()] ?? 0
     }));
   }, [globalSettings, stats, statsMods, traitStatsMods, itemStatsMods]);
+
+  const contributingTraitsForSelectedAttr = React.useMemo(() => {
+    if (!selectedTraitAttr) return [];
+    const targetId = (selectedTraitAttr.id || '').toLowerCase();
+    if (selectedTraitAttr.isTalent) {
+      return contributingTraitsByTalent[targetId] || [];
+    }
+    return contributingTraitsByAttr[targetId] || [];
+  }, [selectedTraitAttr, contributingTraitsByAttr, contributingTraitsByTalent]);
 
   if (loading) {
     return (
@@ -666,15 +802,16 @@ export default function CharacterSheet() {
       rollingAudioRef.current = null;
     }
     
-    const s = session || globalSettings || {};
-    const dSound = s.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3';
-    const sSound = s.successSound || 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3';
-    const fSound = s.failureSound || 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3';
-    const cSound = s.criticalSound || 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3';
-    const fbSound = s.fumbleSound || 'https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3';
+    const soundCfg: SoundConfig = {
+      diceRollSound: session?.diceRollSound || globalSettings?.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
+      successSound: session?.successSound || globalSettings?.successSound || DEFAULT_SOUNDS.successSound,
+      failureSound: session?.failureSound || globalSettings?.failureSound || DEFAULT_SOUNDS.failureSound,
+      criticalSound: session?.criticalSound || globalSettings?.criticalSound || DEFAULT_SOUNDS.criticalSound,
+      fumbleSound: session?.fumbleSound || globalSettings?.fumbleSound || DEFAULT_SOUNDS.fumbleSound
+    };
 
     // Play rolling sound (shortened)
-    rollingAudioRef.current = playAudio(dSound, 0.4);
+    rollingAudioRef.current = playSoundEffect('diceRoll', soundCfg.diceRollSound, 0.4);
 
     let target = attrValue;
     let diffLabel = 'Normal';
@@ -699,12 +836,6 @@ export default function CharacterSheet() {
     const isFumble = roll === diceSides;
     const success = roll <= target;
     
-    // Pre-initialize success/fail sounds to overcome potential browser restrictions
-    const criticalAudio = new Audio(cSound);
-    const fumbleAudio = new Audio(fbSound);
-    const successAudio = new Audio(sSound);
-    const failureAudio = new Audio(fSound);
-    
     setQuickRoll({ 
       result: 0, 
       success: false, 
@@ -718,7 +849,9 @@ export default function CharacterSheet() {
     setTimeout(() => {
       // Stop rolling sound
       if (rollingAudioRef.current) {
-        rollingAudioRef.current.pause();
+        try {
+          rollingAudioRef.current.pause();
+        } catch {}
         rollingAudioRef.current = null;
       }
 
@@ -735,17 +868,13 @@ export default function CharacterSheet() {
       });
 
       if (isCritical) {
-        criticalAudio.volume = 0.6;
-        criticalAudio.play().catch(() => {});
+        playRollOutcomeSound('critical', soundCfg, 0.6);
       } else if (isFumble) {
-        fumbleAudio.volume = 0.6;
-        fumbleAudio.play().catch(() => {});
+        playRollOutcomeSound('fumble', soundCfg, 0.6);
       } else if (success) {
-        successAudio.volume = 0.5;
-        successAudio.play().catch(() => {});
+        playRollOutcomeSound('success', soundCfg, 0.5);
       } else {
-        failureAudio.volume = 0.5;
-        failureAudio.play().catch(() => {});
+        playRollOutcomeSound('failure', soundCfg, 0.5);
       }
 
       sendRollToChat(`${attrLabel} [${diffLabel}]`, {
@@ -761,8 +890,16 @@ export default function CharacterSheet() {
   const equippedItems = inventory.filter(i => i.equipped);
 
   const getAttr = (id: string) => {
-    const attr = attributes.find(a => a.id === id);
-    return (attr?.value || 0) + (attr?.mod || 0) + (traitStatsMods[id] || 0) + (itemStatsMods[id] || 0);
+    const lowerId = id.toLowerCase();
+    const attr = attributes.find(a => a.id.toLowerCase() === lowerId);
+    if (attr) {
+      return (attr.value || 0) + (attr.mod || 0) + (attr.traitMod || 0) + (attr.itemMod || 0);
+    }
+    const val = stats[id] ?? stats[lowerId] ?? 0;
+    const mod = statsMods[id] ?? statsMods[lowerId] ?? 0;
+    const trMod = traitStatsMods[id] ?? traitStatsMods[lowerId] ?? 0;
+    const itMod = itemStatsMods[id] ?? itemStatsMods[lowerId] ?? 0;
+    return val + mod + trMod + itMod;
   };
   
   const FOR = getAttr('for');
@@ -880,11 +1017,11 @@ export default function CharacterSheet() {
     }
     
     const s = session || globalSettings || {};
-    const dSound = s.diceRollSound || 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3';
-    const sSound = s.successSound || 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3';
+    const dSound = s.diceRollSound || DEFAULT_SOUNDS.diceRollSound;
+    const sSound = s.successSound || DEFAULT_SOUNDS.successSound;
 
     // Play rolling sound
-    rollingAudioRef.current = playAudio(dSound, 0.4);
+    rollingAudioRef.current = playSoundEffect('diceRoll', dSound, 0.4);
 
     if (!formula) return;
 
@@ -960,9 +1097,6 @@ export default function CharacterSheet() {
 
     const result = rollDiceFormula(formula, statsForFormula);
     
-    // Pre-initialize sound
-    const damageAudio = new Audio(sSound);
-    
     setQuickRoll({ 
       result: 0, 
       attr: label,
@@ -973,7 +1107,9 @@ export default function CharacterSheet() {
     setTimeout(() => {
       // Stop rolling sound
       if (rollingAudioRef.current) {
-        rollingAudioRef.current.pause();
+        try {
+          rollingAudioRef.current.pause();
+        } catch {}
         rollingAudioRef.current = null;
       }
 
@@ -984,8 +1120,7 @@ export default function CharacterSheet() {
         rolling: false
       });
 
-      damageAudio.volume = 0.5;
-      damageAudio.play().catch(() => {});
+      playSoundEffect('success', sSound, 0.5);
 
       sendRollToChat(label, result);
       rollTimeoutRef.current = setTimeout(() => setQuickRoll(null), 5000);
@@ -1011,15 +1146,38 @@ export default function CharacterSheet() {
     return result;
   };
 
+  const getTraitTalentMod = (talent: any): number => {
+    if (!talent) return 0;
+    return traitTalentMods[talent.id] ?? 
+           traitTalentMods[talent.id.toLowerCase()] ?? 
+           traitTalentMods[talent.name] ?? 
+           traitTalentMods[talent.name.toLowerCase()] ?? 
+           0;
+  };
+
+  const getTalentBaseValue = (talent: any) => {
+    if (!talent?.composition) return 0;
+    return talent.composition.reduce((acc: number, attrId: string) => {
+      const lowerId = attrId.toLowerCase();
+      const attr = attributes.find(a => a.id.toLowerCase() === lowerId);
+      if (attr) {
+        return acc + (attr.value || 0) + (attr.mod || 0) + (attr.itemMod || 0);
+      }
+      return acc + (stats[attrId] || stats[lowerId] || 0) + (statsMods[attrId] || statsMods[lowerId] || 0);
+    }, 0);
+  };
+
   const calculateTalentValue = (talent: any) => {
-    const baseValue = talent.composition.reduce((acc: number, attrId: string) => acc + getAttr(attrId), 0);
-    const traitMod = traitTalentMods[talent.id] || traitTalentMods[talent.name] || 0;
-    return baseValue + traitMod;
+    const baseValue = getTalentBaseValue(talent);
+    const traitMod = getTraitTalentMod(talent);
+    const manualMod = talentMods[talent.id] || 0;
+    return baseValue + manualMod + traitMod;
   };
 
   const categories = [
     { id: 'geral', label: 'Ficha Geral', icon: Scroll },
     { id: 'inventory', label: 'Inventário', icon: Backpack },
+    { id: 'maps', label: 'Mapas da Campanha', icon: MapIcon },
   ];
 
   const sections = [
@@ -1032,6 +1190,7 @@ export default function CharacterSheet() {
     { id: 'talents', label: 'Talentos', icon: Sparkles, category: 'geral' },
     { id: 'inventory', label: 'Inventário', icon: Backpack, category: 'inventory' },
     { id: 'manage_inventory', label: 'Gerenciar Itens', icon: Edit3, category: 'inventory' },
+    { id: 'campaign_maps', label: 'Mapas da Campanha', icon: MapIcon, category: 'maps' },
   ];
 
   const activeSections = sections.filter(s => s.category === activeCategory);
@@ -1235,19 +1394,38 @@ export default function CharacterSheet() {
         {/* Character Header */}
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 lg:gap-8">
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8 text-center sm:text-left">
-          <div 
-            className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden border-2 border-white/10 p-1 group cursor-pointer shrink-0"
-            onClick={handleEditImage}
-          >
-            <img 
-              src={character.image} 
-              alt={character.name} 
-              className="w-full h-full object-cover rounded-[1.5rem] opacity-80 group-hover:scale-110 transition-transform duration-700"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-arcane/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Edit3 size={24} className="text-white" />
+          <div className="relative shrink-0">
+            <div 
+              className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden border-2 border-white/10 p-1 group cursor-pointer"
+              onClick={() => {
+                setImagePickerInitialTab('url');
+                setIsImagePickerOpen(true);
+              }}
+              title="Alterar retrato do personagem"
+            >
+              <img 
+                src={character.image} 
+                alt={character.name} 
+                className="w-full h-full object-cover rounded-[1.5rem] opacity-80 group-hover:scale-110 transition-transform duration-700"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-arcane/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Edit3 size={24} className="text-white" />
+              </div>
             </div>
+            {/* Quick Camera Capture Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setImagePickerInitialTab('camera');
+                setIsImagePickerOpen(true);
+              }}
+              className="absolute -bottom-1 -right-1 p-2 rounded-2xl bg-obsidian border border-arcane/40 text-arcane hover:bg-arcane hover:text-obsidian hover:scale-110 active:scale-95 transition-all shadow-xl z-20 cursor-pointer"
+              title="Tirar foto com a câmera do dispositivo"
+            >
+              <Camera size={15} />
+            </button>
           </div>
           <div className="flex flex-col items-center sm:items-start w-full">
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-2 w-full">
@@ -1259,7 +1437,7 @@ export default function CharacterSheet() {
                 const Icon = iconMap[character.icon] || Shield;
                 return <Icon size={14} />;
               })()}
-              <span>{character.class} • Juramento de Devoção</span>
+              <span>{character.class}</span>
             </div>
             
             {/* Session Info */}
@@ -1297,9 +1475,33 @@ export default function CharacterSheet() {
                 <Shield size={16} className="text-gold" />
                 <span className="text-base sm:text-lg font-serif">{totalProtecao} <span className="text-[10px] text-parchment/40 font-mono">PROT</span></span>
               </div>
-              <div className="flex items-center gap-2">
-                <Heart size={16} className="text-ember" />
-                <span className="text-base sm:text-lg font-serif">{currentPV} / {maxPV} <span className="text-[10px] text-parchment/40 font-mono">PV</span></span>
+              <div 
+                onClick={() => {
+                  setActiveCategory('geral');
+                  setActiveSection('combat');
+                  setTimeout(() => {
+                    const el = document.getElementById('health-tracker-widget-container');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }, 50);
+                }}
+                className="flex items-center gap-2 cursor-pointer hover:scale-105 transition-transform"
+                title="Clique para abrir o Rastreador de Vida (PV) e Combate"
+              >
+                <Heart size={16} className={cn(
+                  currentPV <= 0 
+                    ? "text-red-500 animate-pulse fill-red-500" 
+                    : currentPV <= maxPV * 0.25 
+                      ? "text-rose-500 animate-bounce fill-rose-500" 
+                      : "text-ember"
+                )} />
+                <span className={cn(
+                  "text-base sm:text-lg font-serif font-bold",
+                  currentPV <= maxPV * 0.25 ? "text-rose-400" : ""
+                )}>
+                  {currentPV} / {maxPV}
+                  {tempPV > 0 && <span className="text-cyan-400 text-xs font-mono ml-1 font-semibold">(+{tempPV} Temp)</span>}
+                  <span className="text-[10px] text-parchment/40 font-mono ml-1">PV</span>
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <Zap size={16} className="text-gold" />
@@ -1318,6 +1520,14 @@ export default function CharacterSheet() {
         </div>
 
         <div className="flex items-center justify-center sm:justify-end gap-3 mt-4 lg:mt-0">
+          <button 
+            type="button"
+            onClick={() => setIsQuickNotesOpen(true)}
+            className="p-3 glass rounded-2xl hover:bg-white/10 transition-colors text-parchment/60 hover:text-gold cursor-pointer"
+            title={isGMOfCampaign && activeSessionId ? `Anotações Rápidas da Campanha (${notesTargetName})` : `Anotações Rápidas de ${notesTargetName}`}
+          >
+            <Feather size={20} />
+          </button>
           <button 
             onClick={() => navigate(`/journal?characterId=${characterId}`)}
             className="p-3 glass rounded-2xl hover:bg-white/10 transition-colors text-parchment/60 hover:text-arcane"
@@ -1383,7 +1593,7 @@ export default function CharacterSheet() {
                   {canPlayerEdit ? (
                     <input 
                       type="text"
-                      value={character.name}
+                      value={character.name || ''}
                       onChange={(e) => {
                         const newName = e.target.value;
                         setCharacter({ ...character, name: newName });
@@ -1400,7 +1610,7 @@ export default function CharacterSheet() {
                   {canPlayerEdit ? (
                     <input 
                       type="text"
-                      value={character.class}
+                      value={character.class || ''}
                       onChange={(e) => {
                         const newClass = e.target.value;
                         setCharacter({ ...character, class: newClass });
@@ -1414,19 +1624,41 @@ export default function CharacterSheet() {
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">URL da Imagem</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">URL da Imagem</label>
+                  {canPlayerEdit && (
+                    <button
+                      type="button"
+                      onClick={handleEditImage}
+                      className="text-[10px] font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <ImageIcon size={12} />
+                      Galeria / Upload
+                    </button>
+                  )}
+                </div>
                 {canPlayerEdit ? (
-                  <input 
-                    type="text"
-                    value={character.image || ''}
-                    onChange={(e) => {
-                      const newImage = e.target.value;
-                      setCharacter({ ...character, image: newImage });
-                      handleSave({ image: newImage });
-                    }}
-                    placeholder="https://..."
-                    className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-[10px] font-mono text-parchment focus:outline-none focus:border-arcane/50"
-                  />
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      value={character.image || ''}
+                      onChange={(e) => {
+                        const newImage = e.target.value;
+                        setCharacter({ ...character, image: newImage });
+                        handleSave({ image: newImage });
+                      }}
+                      placeholder="https://..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-[10px] font-mono text-parchment focus:outline-none focus:border-arcane/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleEditImage}
+                      className="px-2.5 py-1 bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 rounded text-[10px] font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <ImageIcon size={12} />
+                      Alterar
+                    </button>
+                  </div>
                 ) : (
                   <p className="text-[10px] font-mono text-parchment/40 truncate">{character.image || 'Nenhuma imagem'}</p>
                 )}
@@ -1518,7 +1750,7 @@ export default function CharacterSheet() {
                           <div className="flex items-center gap-1">
                             <input 
                               type="number"
-                              value={attr.value}
+                              value={attr.value ?? 0}
                               onChange={(e) => {
                                 const newValue = parseInt(e.target.value) || 0;
                                 const oldValue = stats[attr.id] || 0;
@@ -1571,7 +1803,7 @@ export default function CharacterSheet() {
                       {canPlayerEdit ? (
                         <input 
                           type="number"
-                          value={attr.mod}
+                          value={attr.mod ?? 0}
                           onChange={(e) => {
                             const newMods = { ...statsMods, [attr.id]: parseInt(e.target.value) || 0 };
                             setStatsMods(newMods);
@@ -1585,13 +1817,57 @@ export default function CharacterSheet() {
                       <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">MOD.</p>
                     </div>
                     <div className="text-right">
-                      <p className={cn(
-                        "text-lg sm:text-xl font-serif leading-none",
-                        attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
-                      )}>
-                         {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
-                      </p>
-                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">TRAÇO</p>
+                      {(() => {
+                        const contributingTraits = contributingTraitsByAttr[attr.id.toLowerCase()] || [];
+                        const hasTraitDetails = contributingTraits.length > 0;
+
+                        if (!hasTraitDetails) {
+                          return (
+                            <div 
+                              className="text-right flex flex-col items-end select-none cursor-default"
+                              title="Nenhum detalhe de traço disponível"
+                            >
+                              <p className={cn(
+                                "text-lg sm:text-xl font-serif leading-none",
+                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
+                              )}>
+                                {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod || 0}
+                              </p>
+                              <p className="text-[8px] sm:text-[10px] text-parchment/30 font-mono uppercase tracking-wider">TRAÇO</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTraitAttr(attr);
+                              setIsTraitOriginModalOpen(true);
+                            }}
+                            className={cn(
+                              "group/trait cursor-pointer rounded-xl p-1 -m-1 transition-all hover:bg-white/10 active:scale-95 text-right flex flex-col items-end",
+                              attr.traitMod !== 0 && "hover:border hover:border-white/20"
+                            )}
+                            title="Clique para ver a origem do valor de traço"
+                          >
+                            <div className="flex items-center gap-1">
+                              <p className={cn(
+                                "text-lg sm:text-xl font-serif leading-none group-hover/trait:underline underline-offset-2 transition-colors",
+                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
+                              )}>
+                                {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
+                              </p>
+                              <Info size={10} className={cn(
+                                "opacity-0 group-hover/trait:opacity-100 transition-opacity",
+                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/40"
+                              )} />
+                            </div>
+                            <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider group-hover/trait:text-parchment/70 transition-colors">TRAÇO</p>
+                          </button>
+                        );
+                      })()}
                     </div>
                     <div className="text-right">
                       <p className={cn(
@@ -1905,21 +2181,20 @@ export default function CharacterSheet() {
         )}>
           {/* Status Sliders */}
           <section className={cn("flex flex-col gap-1 mb-4", !isAll && activeSection !== 'combat' && "hidden")}>
-            <div className="glass p-6 rounded-[2.5rem] space-y-4 mb-[10px]">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <Heart size={18} className="text-ember" />
-                  <span className="font-serif text-lg">PV</span>
-                </div>
-                <span className="font-mono text-sm">{currentPV} / {maxPV}</span>
-              </div>
-              <input 
-                type="range" 
-                min="0" 
-                max={maxPV} 
-                value={currentPV} 
-                onChange={(e) => setCurrentPV(parseInt(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-ember"
+            <div id="health-tracker-widget-container" className="mb-[10px]">
+              <HealthTrackerWidget
+                currentPV={currentPV}
+                maxPV={maxPV}
+                tempPV={tempPV}
+                onUpdatePV={(val) => {
+                  setCurrentPV(val);
+                  handleSave({ currentPV: val });
+                }}
+                onUpdateTempPV={(val) => {
+                  setTempPV(val);
+                  handleSave({ tempPV: val });
+                }}
+                disabled={false}
               />
             </div>
 
@@ -1935,7 +2210,7 @@ export default function CharacterSheet() {
                 type="range" 
                 min="0" 
                 max={maxATP} 
-                value={currentATP} 
+                value={currentATP ?? 0} 
                 onChange={(e) => setCurrentATP(parseInt(e.target.value))}
                 className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-arcane"
               />
@@ -1962,7 +2237,7 @@ export default function CharacterSheet() {
                   type="range" 
                   min="0" 
                   max={armorBonus} 
-                  value={protecao} 
+                  value={protecao ?? 0} 
                   onChange={(e) => setProtecao(parseInt(e.target.value))}
                   disabled={armorBonus === 0}
                   className={cn(
@@ -2004,7 +2279,7 @@ export default function CharacterSheet() {
                 type="range" 
                 min="0" 
                 max="7" 
-                value={sanidade} 
+                value={sanidade ?? 7} 
                 onChange={(e) => setSanidade(parseInt(e.target.value))}
                 className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-ember"
               />
@@ -2022,7 +2297,7 @@ export default function CharacterSheet() {
                 type="range" 
                 min="0" 
                 max="7" 
-                value={despertar} 
+                value={despertar ?? 0} 
                 onChange={(e) => setDespertar(parseInt(e.target.value))}
                 className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-arcane"
               />
@@ -2196,43 +2471,75 @@ export default function CharacterSheet() {
               </h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {resolvedTraits.map((trait, idx) => (
-                <motion.div
-                  key={trait.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.2 + idx * 0.1 }}
-                  className={cn(
-                    "glass p-5 rounded-3xl border transition-all group",
-                    trait.type === 'advantage' ? "border-arcane/20 hover:border-arcane/50" : "border-ember/20 hover:border-ember/50"
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h5 className={cn(
-                        "font-serif text-lg",
-                        trait.type === 'advantage' ? "text-arcane" : "text-ember"
-                      )}>
-                        {trait.name}
-                      </h5>
-                      <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
-                        {trait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
+              {resolvedTraits.map((trait, idx) => {
+                const effMod = getTraitEffectiveModifier(trait);
+                const isDisadvantage = trait.type === 'disadvantage';
+                const targetName = getTraitTargetDisplayName(trait.modifierType, globalSettings?.attributes || DEFAULT_ATTRIBUTES, talents);
+                return (
+                  <motion.div
+                    key={trait.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.2 + idx * 0.1 }}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setDetailTrait(trait)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setDetailTrait(trait);
+                      }
+                    }}
+                    className={cn(
+                      "glass p-5 rounded-3xl border transition-all group cursor-pointer relative",
+                      !isDisadvantage 
+                        ? "border-arcane/20 hover:border-arcane/50 hover:bg-arcane/[0.04]" 
+                        : "border-ember/20 hover:border-ember/50 hover:bg-ember/[0.04]"
+                    )}
+                  >
+                    <div className="flex justify-between items-start mb-2 gap-2">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <h5 className={cn(
+                          "font-serif text-lg group-hover:text-glow-arcane transition-colors truncate",
+                          !isDisadvantage ? "text-arcane" : "text-ember"
+                        )}>
+                          {trait.name}
+                        </h5>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                          {isDisadvantage ? 'Defeito' : 'Vantagem'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className={cn(
+                          "px-3 py-1 rounded-lg font-serif text-xl border",
+                          effMod > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : effMod < 0 ? "bg-ember/10 text-ember border-ember/20" : "bg-white/5 text-parchment/60 border-white/10"
+                        )}>
+                          {effMod > 0 ? `+${effMod}` : effMod}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailTrait(trait);
+                          }}
+                          className="p-1.5 rounded-full hover:bg-white/15 text-parchment/40 hover:text-arcane transition-all cursor-pointer"
+                          title="Ver detalhes do traço"
+                        >
+                          <Info size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-parchment/60 mb-2 line-clamp-2 leading-relaxed">{trait.description}</p>
+                    <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] font-mono text-parchment/60">
+                      <span className="truncate pr-2 max-w-[55%]">Efeito: {trait.effect}</span>
+                      <span className="shrink-0 flex items-center gap-1 font-sans font-medium text-parchment/80">
+                        <Target size={11} className={!isDisadvantage ? "text-arcane" : "text-ember"} />
+                        {targetName}
                       </span>
                     </div>
-                    <div className={cn(
-                      "px-3 py-1 rounded-lg font-serif text-xl border",
-                      trait.modifier > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
-                    )}>
-                      {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier}
-                    </div>
-                  </div>
-                  <p className="text-xs text-parchment/60 mb-2">{trait.description}</p>
-                  <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Efeito: {trait.effect}</span>
-                    <span className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Modifica: {trait.modifierType?.toUpperCase()}</span>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
               {resolvedTraits.length === 0 && (
                 <div className="col-span-full text-center py-10 glass rounded-3xl border border-dashed border-white/10">
                   <p className="text-sm text-parchment/20 italic">Nenhuma vantagem ou defeito selecionado</p>
@@ -2412,9 +2719,9 @@ export default function CharacterSheet() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {talents.map((talent, idx) => {
-                  const baseValue = talent.composition.reduce((acc: number, attrId: string) => acc + getAttr(attrId), 0);
-                  const traitMod = traitTalentMods[talent.id] || traitTalentMods[talent.name] || 0;
-                  const modValue = (talentMods[talent.id] || 0) + traitMod;
+                  const baseValue = getTalentBaseValue(talent);
+                  const traitMod = getTraitTalentMod(talent);
+                  const manualMod = talentMods[talent.id] || 0;
                   const totalValue = calculateTalentValue(talent);
                   
                   return (
@@ -2428,14 +2735,14 @@ export default function CharacterSheet() {
                       <div className="flex justify-between items-start mb-2 relative z-10">
                         <div className="flex-1 min-w-0">
                           <h5 className="font-serif text-base sm:text-lg text-glow-gold truncate">{talent.name}</h5>
-                          <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest whitespace-nowrap">B: {baseValue}</span>
                             {canPlayerEdit ? (
                               <div className="flex items-center gap-1">
                                 <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest">M:</span>
                                 <input 
                                   type="number"
-                                  value={modValue}
+                                  value={manualMod ?? 0}
                                   onChange={(e) => {
                                     const newMods = { ...talentMods, [talent.id]: parseInt(e.target.value) || 0 };
                                     setTalentMods(newMods);
@@ -2445,8 +2752,52 @@ export default function CharacterSheet() {
                                 />
                               </div>
                             ) : (
-                              <span className="text-[9px] font-mono text-ember uppercase tracking-widest">M: {modValue >= 0 ? `+${modValue}` : modValue}</span>
+                              <span className="text-[9px] font-mono text-ember uppercase tracking-widest">M: {manualMod >= 0 ? `+${manualMod}` : manualMod}</span>
                             )}
+                            {(() => {
+                              const contributingTalentTraits = contributingTraitsByTalent[talent.id.toLowerCase()] || [];
+                              const hasTalentTraitDetails = contributingTalentTraits.length > 0;
+
+                              if (!hasTalentTraitDetails) {
+                                return (
+                                  <span className="text-[9px] font-mono text-parchment/20 uppercase tracking-widest px-1 py-0.5 select-none cursor-default">
+                                    T: {traitMod > 0 ? `+${traitMod}` : traitMod || 0}
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTraitAttr({
+                                      id: talent.id,
+                                      label: talent.name,
+                                      icon: 'Sparkles',
+                                      color: 'text-gold',
+                                      value: baseValue,
+                                      mod: manualMod,
+                                      traitMod,
+                                      itemMod: 0,
+                                      isTalent: true,
+                                      composition: talent.composition
+                                    });
+                                    setIsTraitOriginModalOpen(true);
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all cursor-pointer hover:scale-105",
+                                    traitMod > 0 ? "bg-arcane/15 text-arcane border border-arcane/30" :
+                                    traitMod < 0 ? "bg-ember/15 text-ember border border-ember/30" :
+                                    "text-parchment/30 hover:text-parchment/60 hover:bg-white/5"
+                                  )}
+                                  title="Clique para ver a origem do modificador de traço do talento"
+                                >
+                                  <span>T: {traitMod > 0 ? `+${traitMod}` : traitMod}</span>
+                                  <Info size={8} className="opacity-60" />
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2655,6 +3006,16 @@ export default function CharacterSheet() {
           </section>
         </div>
           </>
+        ) : (activeCategory === 'maps' || activeSection === 'campaign_maps') ? (
+          <div className="lg:col-span-12">
+            <CampaignMapsCharacterTab 
+              character={character}
+              characterId={characterId || ''}
+              activeSessionId={activeSessionId}
+              session={session}
+              isGM={isGMOfCampaign}
+            />
+          </div>
         ) : activeSection === 'manage_inventory' ? (
           <div className="lg:col-span-12">
             <Inventory hideHeader={true} />
@@ -2759,7 +3120,7 @@ export default function CharacterSheet() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl max-h-[80vh] flex flex-col"
+              className="relative w-full max-w-2xl glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl max-h-[80vh] flex flex-col"
             >
               <button 
                 onClick={() => setIsAddingSkill(false)}
@@ -2781,7 +3142,7 @@ export default function CharacterSheet() {
                   <input 
                     type="text"
                     placeholder="Buscar perícia..."
-                    value={searchTerm}
+                    value={searchTerm || ''}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50"
                   />
@@ -2854,7 +3215,7 @@ export default function CharacterSheet() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-2xl glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl max-h-[80vh] flex flex-col"
+              className="relative w-full max-w-2xl glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl max-h-[80vh] flex flex-col"
             >
               <button 
                 onClick={() => setIsAddingPower(false)}
@@ -2876,7 +3237,7 @@ export default function CharacterSheet() {
                   <input 
                     type="text"
                     placeholder="Buscar poder..."
-                    value={searchTerm}
+                    value={searchTerm || ''}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-parchment focus:outline-none focus:border-arcane/50"
                   />
@@ -2946,7 +3307,7 @@ export default function CharacterSheet() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md glass p-8 rounded-[2.5rem] border border-white/10 shadow-2xl"
+              className="relative w-full max-w-md glass-modal bg-obsidian/85 backdrop-blur-xl p-8 rounded-[2.5rem] border border-white/25 shadow-2xl"
             >
               <button 
                 onClick={() => setIsJoiningSession(false)}
@@ -3082,6 +3443,51 @@ export default function CharacterSheet() {
           senderOverride={{ name: character.name, photo: character.image }}
         />
       )}
+
+      {/* Character Image Picker Modal */}
+      <ImagePickerModal
+        isOpen={isImagePickerOpen}
+        onClose={() => setIsImagePickerOpen(false)}
+        onConfirm={handleConfirmImage}
+        title="Retrato do Personagem"
+        subtitle="Insira uma URL, faça upload ou tire uma foto com a câmera"
+        confirmText="Salvar Imagem"
+        initialUrl={character.image}
+        initialTab={imagePickerInitialTab}
+      />
+
+      {/* Trait Origin Detail Modal */}
+      <TraitOriginModal
+        isOpen={isTraitOriginModalOpen}
+        onClose={() => {
+          setIsTraitOriginModalOpen(false);
+          setSelectedTraitAttr(null);
+        }}
+        attr={selectedTraitAttr}
+        contributingTraits={contributingTraitsForSelectedAttr}
+        attrTotal={selectedTraitAttr ? (selectedTraitAttr.isTalent ? calculateTalentValue(selectedTraitAttr) : getAttr(selectedTraitAttr.id)) : 0}
+      />
+
+      {/* Trait Detail Modal */}
+      <TraitDetailModal
+        isOpen={Boolean(detailTrait)}
+        onClose={() => setDetailTrait(null)}
+        trait={detailTrait}
+        attributes={globalSettings?.attributes || DEFAULT_ATTRIBUTES}
+        talents={talents}
+      />
+
+      {/* Quick Notes (Floating Button & Modal) */}
+      <QuickNotes
+        targetType={notesTargetType}
+        targetId={notesTargetId}
+        targetName={notesTargetName}
+        isGM={isGMOfCampaign}
+        isOpen={isQuickNotesOpen}
+        onOpenChange={setIsQuickNotesOpen}
+        showFloatingButton={true}
+        characterContext={character ? { id: characterId || character.id || '', name: character.name } : undefined}
+      />
     </div>
     </div>
   );

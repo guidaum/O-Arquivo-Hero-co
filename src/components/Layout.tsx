@@ -14,7 +14,11 @@ import {
   X,
   LogOut,
   User,
-  Shield
+  Shield,
+  Sword,
+  Map,
+  Skull,
+  Compass
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from '../firebase';
@@ -34,6 +38,41 @@ export default function Layout() {
   const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
   const [playedCount, setPlayedCount] = React.useState(0);
   const [masteredCount, setMasteredCount] = React.useState(0);
+  const [viewMode, setViewMode] = React.useState<'user' | 'gm'>(() => {
+    return (localStorage.getItem('preferredViewMode') as 'user' | 'gm') || 'user';
+  });
+
+  // Sync viewMode changes across components
+  React.useEffect(() => {
+    const handleViewModeChange = (e: any) => {
+      const newMode = e.detail || localStorage.getItem('preferredViewMode');
+      if (newMode && (newMode === 'user' || newMode === 'gm')) {
+        setViewMode(newMode);
+      }
+    };
+    window.addEventListener('viewModeChanged', handleViewModeChange);
+    window.addEventListener('storage', handleViewModeChange);
+    return () => {
+      window.removeEventListener('viewModeChanged', handleViewModeChange);
+      window.removeEventListener('storage', handleViewModeChange);
+    };
+  }, []);
+
+  const handleToggleViewMode = async (mode: 'user' | 'gm') => {
+    setViewMode(mode);
+    localStorage.setItem('preferredViewMode', mode);
+    window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: mode }));
+    if (user && userRole !== 'admin') {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          role: mode,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn('Error syncing role in Firestore:', err);
+      }
+    }
+  };
 
   // Presence Heartbeat
   React.useEffect(() => {
@@ -87,18 +126,14 @@ export default function Layout() {
   React.useEffect(() => {
     if (!user) return;
 
-    // Fetch user role
-    const fetchUserRole = async () => {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          setUserRole(userDoc.data().role || 'user');
-        }
-      } catch (error) {
-        console.error('Error fetching user role:', error);
+    // Fetch user role in real time
+    const unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (userDoc) => {
+      if (userDoc.exists()) {
+        setUserRole(userDoc.data().role || 'user');
       }
-    };
-    fetchUserRole();
+    }, (error) => {
+      console.error('Error fetching user role in Layout:', error);
+    });
 
     // Fetch mastered campaigns count
     const qMastered = query(collection(db, 'gameSessions'), where('gmId', '==', user.uid));
@@ -121,6 +156,7 @@ export default function Layout() {
     });
 
     return () => {
+      unsubscribeUser();
       unsubscribeMastered();
       unsubscribePlayed();
     };
@@ -134,15 +170,34 @@ export default function Layout() {
     }
   };
 
+  // Se o usuário tem permissão para mestrar:
+  const canBeGM = userRole === 'gm' || userRole === 'admin' || masteredCount > 0;
+
+  // Quando o modo jogador está habilitado, mesmo sendo mestre/admin, ele vê APENAS os menus de jogador!
+  const isGM = canBeGM && viewMode === 'gm';
+
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Minhas Lendas' },
     { to: '/journal', icon: BookOpen, label: 'Diário de Sessão' },
-    { to: '/inventory', icon: Backpack, label: 'Inventário' },
-    { to: '/create', icon: UserPlus, label: 'Criação de Personagem' },
-    { to: '/sheet', icon: ScrollText, label: 'Ficha Geral' },
   ];
 
-  if (userRole === 'admin') {
+  // O menu de mapas na barra lateral global SÓ aparece para o Mestre no Modo Mestre (Gerenciador de Mapas)
+  // Para o jogador (e quando o mestre habilita o modo jogador), ele vê APENAS os menus de jogador!
+  if (isGM) {
+    navItems.push(
+      { to: '/map-manager', icon: Map, label: 'Gerenciador de Mapas' },
+      { to: '/dungeon', icon: Skull, label: 'Dungeons & Tokens' },
+      { to: '/map', icon: Compass, label: 'Mapa do Mundo' }
+    );
+  }
+
+  navItems.push(
+    { to: '/inventory', icon: Backpack, label: 'Inventário' },
+    { to: '/create', icon: UserPlus, label: 'Criação de Personagem' },
+    { to: '/sheet', icon: ScrollText, label: 'Ficha Geral' }
+  );
+
+  if (userRole === 'admin' && viewMode === 'gm') {
     navItems.push({ to: '/admin', icon: Shield, label: 'Painel Admin' });
   }
 
@@ -181,6 +236,40 @@ export default function Layout() {
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4">
+          {/* Alternador Modo Mestre / Modo Jogador */}
+          {canBeGM && (
+            <div className="flex items-center bg-white/5 p-1 rounded-2xl border border-white/10 shadow-inner">
+              <button
+                type="button"
+                onClick={() => handleToggleViewMode('gm')}
+                className={cn(
+                  "px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                  viewMode === 'gm'
+                    ? "bg-arcane text-obsidian shadow-md shadow-arcane/20"
+                    : "text-parchment/40 hover:text-parchment"
+                )}
+                title="Ativar Modo Mestre (acesso ao Gerenciador de Mapas e ferramentas do Mestre)"
+              >
+                <Shield size={13} />
+                <span className="hidden sm:inline">Mestre</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleToggleViewMode('user')}
+                className={cn(
+                  "px-2.5 sm:px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                  viewMode === 'user'
+                    ? "bg-ember text-obsidian shadow-md shadow-ember/20"
+                    : "text-parchment/40 hover:text-parchment"
+                )}
+                title="Ativar Modo Jogador (exibe apenas menus de jogador)"
+              >
+                <Sword size={13} />
+                <span className="hidden sm:inline">Jogador</span>
+              </button>
+            </div>
+          )}
+
           <ThemeToggle className="p-2 sm:p-2.5" />
 
           <div className="hidden sm:block">
@@ -204,7 +293,7 @@ export default function Layout() {
                   initial={{ opacity: 0, scale: 0.95, y: 10 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                  className="absolute right-0 mt-2 w-64 glass border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[100]"
+                  className="absolute right-0 mt-2 w-64 glass-popup bg-obsidian/85 backdrop-blur-xl border border-white/25 rounded-2xl shadow-2xl overflow-hidden z-[100]"
                 >
                   <div className="p-4 border-b border-white/5 bg-white/5">
                     <p className="text-xs font-mono uppercase tracking-widest text-parchment/40">Preferências do Sistema</p>
@@ -264,7 +353,17 @@ export default function Layout() {
 
           <div className="flex items-center gap-3 pl-2 lg:pl-4 border-l border-white/10">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium">{user?.displayName || 'Arquivista'}</p>
+              <div className="flex items-center justify-end gap-1.5">
+                <p className="text-sm font-medium">{user?.displayName || 'Arquivista'}</p>
+                <span className={cn(
+                  "text-[9px] font-mono px-1.5 py-0.5 rounded border uppercase font-bold",
+                  userRole === 'admin' ? "bg-gold/20 text-gold border-gold/40" :
+                  userRole === 'gm' ? "bg-arcane/20 text-arcane border-arcane/40" :
+                  "bg-ember/20 text-ember border-ember/40"
+                )}>
+                  {userRole === 'admin' ? 'Admin' : userRole === 'gm' ? 'Mestre' : 'Jogador'}
+                </span>
+              </div>
               <p className="text-xs text-parchment/40 font-mono">Nível {userLevel}</p>
             </div>
             <div className="group relative">
