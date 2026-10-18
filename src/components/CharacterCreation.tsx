@@ -79,7 +79,7 @@ export default function CharacterCreation() {
   const [sessionIndex, setSessionIndex] = React.useState(0);
   const sessionListRef = React.useRef<HTMLDivElement>(null);
   const sessionInputRef = React.useRef<HTMLInputElement>(null);
-  const steps = ['Vantagens/Defeitos', 'Atributos', 'Origens', 'Perícias', 'Dificuldades', 'Poderes', 'Equipamento', 'Revisão'];
+  const steps = ['Vantagens/Defeitos', 'Origens', 'Atributos', 'Perícias', 'Poderes', 'Equipamento', 'Revisão'];
 
   const [basics, setBasics] = React.useState({
     name: '',
@@ -349,12 +349,12 @@ export default function CharacterCreation() {
           const data = settingsDoc.data();
           setBaseGlobalSettings(data);
           setGlobalSettings(data);
-          setMaxPoints(data.maxAttributePoints ?? 120);
-          setMaxSingleAttr(data.maxSingleAttributeValue ?? 100);
-          setInitialSkillPoints(data.initialSkillPoints ?? 0);
-          setInitialPowerPoints(data.initialPowerPoints ?? 0);
-          setSkillPoints(data.initialSkillPoints ?? 0);
-          setPowerPoints(data.initialPowerPoints ?? 0);
+          setMaxPoints(Number(data.maxAttributePoints ?? 28));
+          setMaxSingleAttr(Number(data.maxSingleAttributeValue ?? 10));
+          setInitialSkillPoints(Number(data.initialSkillPoints ?? 10));
+          setInitialPowerPoints(Number(data.initialPowerPoints ?? 5));
+          setSkillPoints(Number(data.initialSkillPoints ?? 10));
+          setPowerPoints(Number(data.initialPowerPoints ?? 5));
           if (data.initialMoney !== undefined) {
             setBasics(prev => ({ ...prev, money: data.initialMoney }));
           }
@@ -389,39 +389,52 @@ export default function CharacterCreation() {
     fetchLibrary();
   }, []);
 
+  const prevSessionIdRef = React.useRef<string | undefined>(undefined);
   React.useEffect(() => {
-    if (basics.sessionId) {
-      const session = sessions.find(s => s.id === basics.sessionId);
-      if (session) {
-        setGlobalSettings({ ...baseGlobalSettings, ...session });
-        setMaxPoints(session.maxAttributePoints ?? baseGlobalSettings?.maxAttributePoints ?? 120);
-        setMaxSingleAttr(session.maxSingleAttributeValue ?? baseGlobalSettings?.maxSingleAttributeValue ?? 100);
-        setInitialSkillPoints(session.initialSkillPoints ?? baseGlobalSettings?.initialSkillPoints ?? 0);
-        setInitialPowerPoints(session.initialPowerPoints ?? baseGlobalSettings?.initialPowerPoints ?? 0);
-        setBasics(prev => ({ ...prev, money: session.initialMoney ?? baseGlobalSettings?.initialMoney ?? 500 }));
-      }
-    } else {
-      setGlobalSettings(baseGlobalSettings);
-      if (baseGlobalSettings) {
-        setMaxPoints(baseGlobalSettings.maxAttributePoints ?? 120);
-        setMaxSingleAttr(baseGlobalSettings.maxSingleAttributeValue ?? 100);
-        setInitialSkillPoints(baseGlobalSettings.initialSkillPoints ?? 0);
-        setInitialPowerPoints(baseGlobalSettings.initialPowerPoints ?? 0);
-        setBasics(prev => ({ ...prev, money: baseGlobalSettings.initialMoney ?? 500 }));
-      }
+    const isFirstRun = prevSessionIdRef.current === undefined;
+    const sessionIdChanged = !isFirstRun && prevSessionIdRef.current !== basics.sessionId;
+    prevSessionIdRef.current = basics.sessionId;
+
+    const session = basics.sessionId ? sessions.find(s => s.id === basics.sessionId) : null;
+    const effectiveSettings = session ? { ...baseGlobalSettings, ...session } : baseGlobalSettings;
+    
+    if (effectiveSettings) {
+      setGlobalSettings(effectiveSettings);
+      const effectiveMaxAttr = Number(session?.maxAttributePoints ?? baseGlobalSettings?.maxAttributePoints ?? 28);
+      const effectiveMaxSingle = Number(session?.maxSingleAttributeValue ?? baseGlobalSettings?.maxSingleAttributeValue ?? 10);
+      const effectiveSkillPts = Number(session?.initialSkillPoints ?? baseGlobalSettings?.initialSkillPoints ?? 10);
+      const effectivePowerPts = Number(session?.initialPowerPoints ?? baseGlobalSettings?.initialPowerPoints ?? 5);
+      const effectiveMoney = Number(session?.initialMoney ?? baseGlobalSettings?.initialMoney ?? 500);
+
+      setMaxPoints(effectiveMaxAttr);
+      setMaxSingleAttr(effectiveMaxSingle);
+      setInitialSkillPoints(effectiveSkillPts);
+      setInitialPowerPoints(effectivePowerPts);
+      setBasics(prev => ({ ...prev, money: effectiveMoney }));
     }
-    const initialValues: Record<string, number> = {};
+
     const currentAttributes = basics.sessionId 
       ? (sessions.find(s => s.id === basics.sessionId)?.attributes || baseGlobalSettings?.attributes || DEFAULT_ATTRIBUTES)
       : (baseGlobalSettings?.attributes || DEFAULT_ATTRIBUTES);
     
-    currentAttributes.forEach((attr: any) => {
-      initialValues[attr.id] = 0;
-    });
-    setValues(initialValues);
-    setSkills([]);
-    setPowers([]);
-    setSelectedTraits([]);
+    if (sessionIdChanged) {
+      const initialValues: Record<string, number> = {};
+      currentAttributes.forEach((attr: any) => {
+        initialValues[attr.id] = 0;
+      });
+      setValues(initialValues);
+      setSkills([]);
+      setPowers([]);
+      // Traços (Vantagens/Defeitos) escolhidos no Passo 01 são preservados!
+    } else {
+      setValues(prev => {
+        const next = { ...prev };
+        currentAttributes.forEach((attr: any) => {
+          if (next[attr.id] === undefined) next[attr.id] = 0;
+        });
+        return next;
+      });
+    }
   }, [basics.sessionId, sessions, baseGlobalSettings]);
 
   const availableIcons = [
@@ -453,11 +466,17 @@ export default function CharacterCreation() {
   const [values, setValues] = React.useState<Record<string, number>>({});
 
   React.useEffect(() => {
-    const initialValues: Record<string, number> = {};
-    attributes.forEach(attr => {
-      initialValues[attr.id] = 0;
+    setValues(prev => {
+      const next = { ...prev };
+      let changed = false;
+      attributes.forEach(attr => {
+        if (next[attr.id] === undefined) {
+          next[attr.id] = 0;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
-    setValues(initialValues);
   }, [attributes]);
 
   const statsForFormula: Record<string, number> = React.useMemo(() => {
@@ -504,10 +523,13 @@ export default function CharacterCreation() {
   const [maxSingleAttr, setMaxSingleAttr] = React.useState(100);
 
   const calculateCost = React.useCallback((baseCost: number, level: number, type: string, isPower: boolean) => {
-    if (!globalSettings) return Math.max(1, baseCost * level);
+    if (!globalSettings) return Math.max(1, Math.ceil(baseCost * level));
 
+    const defaultPowerFormula = '(COST * LVL)';
     const formula = isPower 
-      ? (globalSettings.powerCostFormula || '(COST * LVL) / VAR') 
+      ? (globalSettings.powerCostFormula && globalSettings.powerCostFormula !== '(COST * LVL) / VAR' 
+          ? globalSettings.powerCostFormula 
+          : defaultPowerFormula) 
       : (globalSettings.skillCostFormula || '(COST * LVL) / VAR');
     const typeVars = isPower 
       ? (globalSettings.powerTypeVars || {}) 
@@ -525,15 +547,18 @@ export default function CharacterCreation() {
       evalFormula = evalFormula.replace(/\bLVL\b/g, level.toString());
       evalFormula = evalFormula.replace(/\bVAR\b/g, resolvedVar.toString());
       
-      return Math.max(1, Math.floor(new Function(`return ${evalFormula}`)()));
+      const rawVal = new Function(`return ${evalFormula}`)();
+      // O cálculo do custo se der um valor quebrado sempre deve arredondar para cima
+      return Math.max(1, Math.ceil(Number(rawVal)));
     } catch (e) {
       console.error('Error calculating cost:', e);
-      return Math.max(1, baseCost * level);
+      return Math.max(1, Math.ceil(baseCost * level));
     }
-  }, [globalSettings, values]);
+  }, [globalSettings, values, statsForFormula]);
 
   const totalSkillPointsSpent = React.useMemo(() => {
-    return skills.reduce((acc, s) => acc + calculateCost(s.purchaseCost || 1, s.level || 1, s.typeOverride || s.type, false), 0);
+    const skillsCost = skills.reduce((acc, s) => acc + calculateCost(s.purchaseCost || 1, s.level || 1, s.typeOverride || s.type, false), 0);
+    return skillsCost;
   }, [skills, calculateCost]);
 
   const totalPowerPointsSpent = React.useMemo(() => {
@@ -541,8 +566,16 @@ export default function CharacterCreation() {
   }, [powers, calculateCost]);
 
   const traitBalance = React.useMemo(() => {
-    const disadvantages = selectedTraits.filter(t => t.type === 'disadvantage').reduce((acc, t) => acc + Math.abs(t.modifier || 0), 0);
-    const advantages = selectedTraits.filter(t => t.type === 'advantage').reduce((acc, t) => acc + Math.abs(t.modifier || 0), 0);
+    const disadvantages = selectedTraits.filter(t => {
+      const type = String(t.type || '').toLowerCase();
+      return type === 'disadvantage' || type === 'defeito' || type === 'desvantagem';
+    }).reduce((acc, t) => acc + Math.abs(Number(t.modifier) || 0), 0);
+
+    const advantages = selectedTraits.filter(t => {
+      const type = String(t.type || '').toLowerCase();
+      return type === 'advantage' || type === 'vantagem';
+    }).reduce((acc, t) => acc + Math.abs(Number(t.modifier) || 0), 0);
+
     return disadvantages - advantages;
   }, [selectedTraits]);
 
@@ -554,10 +587,13 @@ export default function CharacterCreation() {
       attrIds.forEach(attrId => {
         const lower = attrId.toLowerCase();
         if (!map[lower]) map[lower] = [];
-        map[lower].push({
+        if (!map[attrId]) map[attrId] = [];
+        const item = {
           ...trait,
           effectiveMod: effMod
-        });
+        };
+        map[lower].push(item);
+        if (lower !== attrId) map[attrId].push(item);
       });
     });
     return map;
@@ -571,13 +607,16 @@ export default function CharacterCreation() {
       attrIds.forEach(attrId => {
         const lower = attrId.toLowerCase();
         mods[lower] = (mods[lower] || 0) + effMod;
+        if (attrId !== lower) {
+          mods[attrId] = mods[lower];
+        }
       });
     });
     return mods;
   }, [selectedTraits, attributes, availableTalents]);
 
   React.useEffect(() => {
-    setSkillPoints(initialSkillPoints - totalSkillPointsSpent);
+    setSkillPoints((initialSkillPoints || 0) - totalSkillPointsSpent);
   }, [totalSkillPointsSpent, initialSkillPoints]);
 
   React.useEffect(() => {
@@ -665,17 +704,9 @@ export default function CharacterCreation() {
   const toggleTrait = (trait: any) => {
     const isSelected = selectedTraits.some(t => t.id === trait.id);
     if (isSelected) {
-      setSelectedTraits(selectedTraits.filter(t => t.id !== trait.id));
+      setSelectedTraits(prev => prev.filter(t => t.id !== trait.id));
     } else {
-      if (trait.type === 'disadvantage') {
-        setSelectedTraits([...selectedTraits, trait]);
-      } else {
-        // Advantage cost check
-        const cost = Math.abs(trait.modifier || 0);
-        if (traitBalance >= cost) {
-          setSelectedTraits([...selectedTraits, trait]);
-        }
-      }
+      setSelectedTraits(prev => [...prev, trait]);
     }
   };
 
@@ -691,7 +722,7 @@ export default function CharacterCreation() {
     setPowers(prev => prev.map(p => {
       if (p.id === powerId) {
         const newLevel = Math.max(1, p.level + delta);
-        // Check if we have enough points for the new level
+        // Check if we have enough skill points for the new level
         const currentCost = calculateCost(p.purchaseCost || 1, p.level, p.typeOverride || p.type, true);
         const nextCost = calculateCost(p.purchaseCost || 1, newLevel, p.typeOverride || p.type, true);
         const costDiff = nextCost - currentCost;
@@ -864,6 +895,22 @@ export default function CharacterCreation() {
     setLoading(true);
     try {
       const characterId = crypto.randomUUID();
+
+      const cleanTraits = selectedTraits.map(t => ({
+        id: String(t.id || Math.random().toString(36).substring(2, 9)),
+        name: String(t.name || ''),
+        description: String(t.description || ''),
+        effect: String(t.effect || ''),
+        modifier: Number(t.modifier) || 0,
+        modifierType: String(t.modifierType || 'for'),
+        type: (String(t.type || '').toLowerCase() === 'disadvantage' || String(t.type || '').toLowerCase() === 'defeito' || String(t.type || '').toLowerCase() === 'desvantagem')
+          ? 'disadvantage'
+          : 'advantage'
+      }));
+
+      const advantagesList = cleanTraits.filter(t => t.type === 'advantage');
+      const disadvantagesList = cleanTraits.filter(t => t.type === 'disadvantage');
+
       const characterData = {
         id: characterId,
         ownerId: auth.currentUser.uid,
@@ -899,11 +946,14 @@ export default function CharacterCreation() {
           };
           return acc;
         }, {} as any),
-        traits: selectedTraits.map(t => t.id),
+        traits: cleanTraits.map(t => t.id),
+        traitObjects: cleanTraits,
+        advantages: advantagesList,
+        disadvantages: disadvantagesList,
         equipment,
         attributePoints: 0,
-        skillPoints: 0,
-        powerPoints: 0,
+        skillPoints: Math.max(0, skillPoints),
+        powerPoints: Math.max(0, powerPoints),
         createdAt: new Date().toISOString()
       };
 
@@ -947,7 +997,14 @@ export default function CharacterCreation() {
             <div className="flex flex-col items-center gap-2 relative">
               <button
                 type="button"
-                onClick={() => setStep(idx + 1)}
+                onClick={() => {
+                  if (idx + 1 > 2 && (!basics.sessionId || !basics.name)) {
+                    setTouched({ name: true, sessionId: true });
+                    setStep(2);
+                    return;
+                  }
+                  setStep(idx + 1);
+                }}
                 className={cn(
                   "w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 cursor-pointer hover:scale-105",
                   step > idx + 1 ? "bg-arcane border-arcane text-obsidian" :
@@ -1129,7 +1186,7 @@ export default function CharacterCreation() {
                     onClick={() => setStep(2)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
-                    <span>Continuar para Atributos</span>
+                    <span>Continuar para Origens</span>
                     <ChevronRight size={18} />
                   </button>
                 </div>
@@ -1144,204 +1201,9 @@ export default function CharacterCreation() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                  <div>
-                    <h2 className="text-4xl font-serif mb-2">Defina seus Atributos</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 02: A Essência do Herói</p>
-                  </div>
-                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Restantes</p>
-                      <p className={cn(
-                        "text-2xl font-serif",
-                        (maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)) === 0 ? "text-gold" : "text-arcane"
-                      )}>
-                        {maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)} / {maxPoints}
-                      </p>
-                    </div>
-                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
-                      <Dice6 size={24} />
-                    </div>
-                  </div>
-                </header>
-
-                {/* Banner de Modificadores Adquiridos com Vantagens e Defeitos */}
-                {selectedTraits.length > 0 ? (
-                  <div className="glass p-5 rounded-3xl border border-arcane/20 bg-arcane/5 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <Sparkles size={18} className="text-arcane" />
-                        <h4 className="font-serif text-base text-parchment/90">Modificadores de Traços Adquiridos</h4>
-                      </div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-parchment/50">
-                        {selectedTraits.length} {selectedTraits.length === 1 ? 'traço selecionado' : 'traços selecionados'} no Passo 01
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {attributes.map(attr => {
-                        const mod = traitStatsMods[attr.id.toLowerCase()] || 0;
-                        if (!mod) return null;
-                        const isPositive = mod > 0;
-                        return (
-                          <div 
-                            key={attr.id}
-                            className={cn(
-                              "px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border shadow-sm",
-                              isPositive 
-                                ? "bg-arcane/15 border-arcane/40 text-arcane" 
-                                : "bg-ember/15 border-ember/40 text-ember"
-                            )}
-                          >
-                            <span>{attr.label}:</span>
-                            <span className="text-sm font-serif">{isPositive ? `+${mod}` : mod}</span>
-                          </div>
-                        );
-                      })}
-                      {Object.keys(traitStatsMods).length === 0 && (
-                        <p className="text-xs font-mono text-parchment/40 italic">
-                          Os traços selecionados não possuem bônus numéricos diretos em atributos.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="glass p-4 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-between text-xs text-parchment/40 font-mono">
-                    <span>Nenhum traço selecionado ainda no Passo 01.</span>
-                    <button 
-                      type="button" 
-                      onClick={() => setStep(1)} 
-                      className="text-arcane hover:underline flex items-center gap-1 cursor-pointer font-bold"
-                    >
-                      <ChevronLeft size={14} />
-                      <span>Ir ao Passo 01 (Vantagens/Defeitos)</span>
-                    </button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {attributes.map((attr, idx) => {
-                    const traitMod = traitStatsMods[attr.id.toLowerCase()] || 0;
-                    const contributingTraits = contributingTraitsByAttr[attr.id.toLowerCase()] || [];
-                    const effectiveValue = (values[attr.id] || 0) + traitMod;
-
-                    return (
-                      <motion.div
-                        key={attr.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.1 }}
-                        className={cn(
-                          "glass p-6 rounded-3xl group hover:bg-white/10 transition-all border",
-                          traitMod > 0 ? "border-arcane/30 bg-arcane/[0.02]" :
-                          traitMod < 0 ? "border-ember/30 bg-ember/[0.02]" :
-                          "border-white/10 hover:border-arcane/30"
-                        )}
-                      >
-                        <div className="flex items-start justify-between mb-3 gap-2">
-                          <div className="flex items-center gap-3">
-                            <div className={cn("p-3 rounded-2xl bg-white/5", attr.color)}>
-                              {React.createElement(getIcon(attr.icon), { size: 24 })}
-                            </div>
-                            <div>
-                              <h4 className="font-serif text-xl">{attr.label}</h4>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-[10px] text-parchment/40 font-mono uppercase tracking-wider">
-                                  Base: {values[attr.id] || 0}
-                                </span>
-                                {traitMod !== 0 && (
-                                  <span className={cn(
-                                    "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider",
-                                    traitMod > 0 ? "bg-arcane/20 text-arcane border border-arcane/30" : "bg-ember/20 text-ember border border-ember/30"
-                                  )}>
-                                    {traitMod > 0 ? `+${traitMod}` : traitMod} Traço
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="text-right">
-                            <div className="text-3xl font-serif text-glow-arcane leading-none">
-                              {effectiveValue}
-                              <span className="text-xs text-parchment/20 ml-1">/ {maxSingleAttr}</span>
-                            </div>
-                            <p className="text-[9px] text-parchment/40 font-mono uppercase tracking-wider mt-1">
-                              {traitMod !== 0 ? `Total Efetivo` : `Mod: ${getModifier(values[attr.id] || 0)}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-parchment/40 mb-4 leading-relaxed">{attr.description}</p>
-
-                        {/* Lista de traços que afetam este atributo */}
-                        {contributingTraits.length > 0 && (
-                          <div className="mb-4 p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1.5">
-                            <p className="text-[9px] font-mono uppercase tracking-widest text-parchment/40 flex items-center gap-1">
-                              <Sparkles size={11} className="text-arcane" />
-                              Modificador de Vantagens/Defeitos:
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {contributingTraits.map((t: any) => (
-                                <span
-                                  key={t.id}
-                                  className={cn(
-                                    "text-[10px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold",
-                                    t.type === 'advantage' 
-                                      ? "bg-arcane/15 text-arcane border border-arcane/25" 
-                                      : "bg-ember/15 text-ember border border-ember/25"
-                                  )}
-                                  title={t.description || t.effect}
-                                >
-                                  {t.name}: {t.effectiveMod > 0 ? `+${t.effectiveMod}` : t.effectiveMod}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-4">
-                          <button 
-                            onClick={() => handleValueChange(attr.id, -1)}
-                            className="flex-1 py-3 glass rounded-xl hover:bg-ember/10 hover:text-ember transition-all text-xl font-serif"
-                          >
-                            -
-                          </button>
-                          <button 
-                            onClick={() => handleValueChange(attr.id, 1)}
-                            className="flex-1 py-3 glass rounded-xl hover:bg-arcane/10 hover:text-arcane transition-all text-xl font-serif"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-end pt-6">
-                  <button 
-                    onClick={() => setStep(3)}
-                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
-                  >
-                    <span>Continuar para Origens</span>
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Origens da Lenda</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: Nome, Vocação e Campanha</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 02: Nome, Vocação e Campanha</p>
                 </header>
 
                 <div className="space-y-6">
@@ -1607,19 +1469,230 @@ export default function CharacterCreation() {
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-6">
+                <div className="flex justify-between pt-6">
+                  <button 
+                    onClick={() => setStep(1)}
+                    className="px-6 py-4 glass text-parchment/70 hover:text-white rounded-2xl font-mono text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-white/5 transition-all"
+                  >
+                    <ChevronLeft size={16} />
+                    <span>Voltar para Vantagens/Defeitos</span>
+                  </button>
                   <button 
                     onClick={() => {
                       if (!basics.name || !basics.sessionId) {
                         setTouched({ name: true, sessionId: true });
                         return;
                       }
-                      setStep(4);
+                      setStep(3);
                     }}
                     className={cn(
                       "px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform",
                       (!basics.name || !basics.sessionId) && "opacity-50"
                     )}
+                  >
+                    <span>Continuar para Atributos</span>
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div
+                key="step3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-4xl font-serif mb-2">Defina seus Atributos</h2>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 03: A Essência do Herói</p>
+                  </div>
+                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos Restantes</p>
+                      <p className={cn(
+                        "text-2xl font-serif",
+                        (maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)) === 0 ? "text-gold" : "text-arcane"
+                      )}>
+                        {maxPoints - (Object.values(values) as number[]).reduce((a, b) => a + b, 0)} / {maxPoints}
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
+                      <Dice6 size={24} />
+                    </div>
+                  </div>
+                </header>
+
+                {/* Banner de Modificadores Adquiridos com Vantagens e Defeitos */}
+                {selectedTraits.length > 0 ? (
+                  <div className="glass p-5 rounded-3xl border border-arcane/20 bg-arcane/5 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles size={18} className="text-arcane" />
+                        <h4 className="font-serif text-base text-parchment/90">Modificadores de Traços Adquiridos</h4>
+                      </div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-parchment/50">
+                        {selectedTraits.length} {selectedTraits.length === 1 ? 'traço selecionado' : 'traços selecionados'} no Passo 01
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {attributes.map(attr => {
+                        const mod = traitStatsMods[attr.id.toLowerCase()] || 0;
+                        if (!mod) return null;
+                        const isPositive = mod > 0;
+                        return (
+                          <div 
+                            key={attr.id}
+                            className={cn(
+                              "px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 border shadow-sm",
+                              isPositive 
+                                ? "bg-arcane/15 border-arcane/40 text-arcane" 
+                                : "bg-ember/15 border-ember/40 text-ember"
+                            )}
+                          >
+                            <span>{attr.label}:</span>
+                            <span className="text-sm font-serif">{isPositive ? `+${mod}` : mod}</span>
+                          </div>
+                        );
+                      })}
+                      {Object.keys(traitStatsMods).length === 0 && (
+                        <p className="text-xs font-mono text-parchment/40 italic">
+                          Os traços selecionados não possuem bônus numéricos diretos em atributos.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="glass p-4 rounded-2xl border border-white/5 bg-white/[0.02] flex items-center justify-between text-xs text-parchment/40 font-mono">
+                    <span>Nenhum traço selecionado ainda no Passo 01.</span>
+                    <button 
+                      type="button" 
+                      onClick={() => setStep(1)} 
+                      className="text-arcane hover:underline flex items-center gap-1 cursor-pointer font-bold"
+                    >
+                      <ChevronLeft size={14} />
+                      <span>Ir ao Passo 01 (Vantagens/Defeitos)</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {attributes.map((attr, idx) => {
+                    const traitMod = traitStatsMods[attr.id.toLowerCase()] || 0;
+                    const contributingTraits = contributingTraitsByAttr[attr.id.toLowerCase()] || [];
+                    const effectiveValue = (values[attr.id] || 0) + traitMod;
+
+                    return (
+                      <motion.div
+                        key={attr.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className={cn(
+                          "glass p-6 rounded-3xl group hover:bg-white/10 transition-all border",
+                          traitMod > 0 ? "border-arcane/30 bg-arcane/[0.02]" :
+                          traitMod < 0 ? "border-ember/30 bg-ember/[0.02]" :
+                          "border-white/10 hover:border-arcane/30"
+                        )}
+                      >
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("p-3 rounded-2xl bg-white/5", attr.color)}>
+                              {React.createElement(getIcon(attr.icon), { size: 24 })}
+                            </div>
+                            <div>
+                              <h4 className="font-serif text-xl">{attr.label}</h4>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="text-[10px] text-parchment/60 font-mono uppercase tracking-wider bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                                  Base: {values[attr.id] || 0}
+                                </span>
+                                <span className={cn(
+                                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wider border",
+                                  traitMod > 0 ? "bg-arcane/20 text-arcane border-arcane/30 shadow-[0_0_10px_rgba(71,214,255,0.2)]" :
+                                  traitMod < 0 ? "bg-ember/20 text-ember border-ember/30 shadow-[0_0_10px_rgba(255,107,107,0.2)]" :
+                                  "bg-white/5 text-parchment/40 border-white/10"
+                                )}>
+                                  {traitMod > 0 ? `+${traitMod}` : traitMod} Traço
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <div className="text-3xl font-serif text-glow-arcane leading-none">
+                              {effectiveValue}
+                              <span className="text-xs text-parchment/20 ml-1">/ {maxSingleAttr}</span>
+                            </div>
+                            <p className="text-[9px] text-parchment/40 font-mono uppercase tracking-wider mt-1">
+                              {traitMod !== 0 
+                                ? `Total Efetivo (${values[attr.id] || 0} ${traitMod > 0 ? `+ ${traitMod}` : `- ${Math.abs(traitMod)}`})` 
+                                : `Mod: ${getModifier(values[attr.id] || 0)}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-parchment/40 mb-4 leading-relaxed">{attr.description}</p>
+
+                        {/* Lista de traços que afetam este atributo */}
+                        {contributingTraits.length > 0 && (
+                          <div className="mb-4 p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-1.5">
+                            <p className="text-[9px] font-mono uppercase tracking-widest text-parchment/40 flex items-center gap-1">
+                              <Sparkles size={11} className="text-arcane" />
+                              Modificador de Vantagens/Defeitos:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {contributingTraits.map((t: any) => (
+                                <span
+                                  key={t.id}
+                                  className={cn(
+                                    "text-[10px] px-2 py-0.5 rounded-lg font-mono flex items-center gap-1 font-semibold",
+                                    t.type === 'advantage' 
+                                      ? "bg-arcane/15 text-arcane border border-arcane/25" 
+                                      : "bg-ember/15 text-ember border border-ember/25"
+                                  )}
+                                  title={t.description || t.effect}
+                                >
+                                  {t.name}: {t.effectiveMod > 0 ? `+${t.effectiveMod}` : t.effectiveMod}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4">
+                          <button 
+                            onClick={() => handleValueChange(attr.id, -1)}
+                            className="flex-1 py-3 glass rounded-xl hover:bg-ember/10 hover:text-ember transition-all text-xl font-serif"
+                          >
+                            -
+                          </button>
+                          <button 
+                            onClick={() => handleValueChange(attr.id, 1)}
+                            className="flex-1 py-3 glass rounded-xl hover:bg-arcane/10 hover:text-arcane transition-all text-xl font-serif"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-between pt-6">
+                  <button 
+                    onClick={() => setStep(2)}
+                    className="px-6 py-4 glass text-parchment/70 hover:text-white rounded-2xl font-mono text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-white/5 transition-all"
+                  >
+                    <ChevronLeft size={16} />
+                    <span>Voltar para Origens</span>
+                  </button>
+                  <button 
+                    onClick={() => setStep(4)}
+                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Perícias</span>
                     <ChevronRight size={18} />
@@ -1812,7 +1885,7 @@ export default function CharacterCreation() {
                     onClick={() => setStep(5)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
-                    <span>Continuar para Dificuldades</span>
+                    <span>Continuar para Poderes</span>
                     <ChevronRight size={18} />
                   </button>
                 </div>
@@ -1827,155 +1900,23 @@ export default function CharacterCreation() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <header>
-                  <h2 className="text-4xl font-serif mb-2">Testes de Dificuldade</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Verifique suas chances de sucesso</p>
-                </header>
-
-                <div className="space-y-6">
-                  <h3 className="text-xl font-serif text-parchment/60 border-b border-white/10 pb-2">Atributos (d10)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {attributes.map((attr) => {
-                      const baseDifficulty = values[attr.id] + getModifier(values[attr.id]);
-                      return (
-                        <div key={attr.id} className="glass p-6 rounded-3xl border border-white/10 space-y-4">
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-3">
-                              <div className={cn("p-2 rounded-xl bg-white/5", attr.color)}>
-                                {React.createElement(getIcon(attr.icon), { size: 20 })}
-                              </div>
-                              <div>
-                                <h4 className="font-serif text-xl">{attr.label}</h4>
-                                <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Base: {baseDifficulty}</p>
-                              </div>
-                            </div>
-                            <div className="p-2 bg-white/5 rounded-xl text-parchment/40">
-                              <Dice6 size={20} />
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            {[
-                              { id: 'easy', label: 'Fácil', target: baseDifficulty + (globalSettings?.diffEasyMod ?? 2), color: 'hover:bg-green-500/20 hover:text-green-400' },
-                              { id: 'normal', label: 'Normal', target: baseDifficulty, color: 'hover:bg-arcane/20 hover:text-arcane' },
-                              { id: 'hard', label: 'Difícil', target: Math.floor(baseDifficulty / (globalSettings?.diffHardDiv ?? 2)), color: 'hover:bg-orange-500/20 hover:text-orange-400' },
-                              { id: 'extreme', label: 'Extremo', target: Math.floor(baseDifficulty / (globalSettings?.diffExtremeDiv ?? 5)), color: 'hover:bg-ember/20 hover:text-ember' },
-                            ].map((diff) => (
-                              <button
-                                key={diff.id}
-                                onClick={() => handleQuickRoll(attr.label, baseDifficulty, diff.id as any, 10)}
-                                className={cn(
-                                  "p-3 rounded-xl glass border border-white/5 flex flex-col items-center justify-center gap-1 transition-all",
-                                  diff.color
-                                )}
-                              >
-                                <span className="text-[10px] font-mono uppercase tracking-widest opacity-60">{diff.label}</span>
-                                <span className="text-lg font-serif">{diff.target}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <h3 className="text-xl font-serif text-parchment/60 border-b border-white/10 pb-2 mt-8">Perícias (d20)</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {skills.length === 0 ? (
-                      <div className="col-span-full py-10 text-center glass rounded-3xl border border-white/10">
-                        <Brain size={32} className="text-parchment/10 mx-auto mb-4" />
-                        <p className="text-parchment/40 font-serif italic text-sm">Você ainda não escolheu nenhuma perícia.</p>
-                      </div>
-                    ) : (
-                      skills.map((skill) => {
-                        const baseDifficulty = evaluateFormula(skill.difficultyFormula || '10', statsForFormula);
-                        return (
-                          <div key={skill.id} className="glass p-6 rounded-3xl border border-white/10 space-y-4">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h4 className="font-serif text-xl text-arcane">{skill.name}</h4>
-                                <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Base: {baseDifficulty}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {skill.damage && (
-                                  <button 
-                                    onClick={() => handleFormulaRoll(skill.name, skill.damage)}
-                                    className="p-2 bg-ember/10 text-ember border border-ember/20 rounded-xl hover:bg-ember/20 transition-all"
-                                    title="Rolar Dano"
-                                  >
-                                    <Sword size={16} />
-                                  </button>
-                                )}
-                                <div className="p-2 bg-white/5 rounded-xl text-parchment/40">
-                                  <Dice6 size={20} />
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              {[
-                                { id: 'easy', label: 'Fácil', target: baseDifficulty + (globalSettings?.diffEasyMod ?? 2), color: 'hover:bg-green-500/20 hover:text-green-400' },
-                                { id: 'normal', label: 'Normal', target: baseDifficulty, color: 'hover:bg-arcane/20 hover:text-arcane' },
-                                { id: 'hard', label: 'Difícil', target: Math.floor(baseDifficulty / (globalSettings?.diffHardDiv ?? 2)), color: 'hover:bg-orange-500/20 hover:text-orange-400' },
-                                { id: 'extreme', label: 'Extremo', target: Math.floor(baseDifficulty / (globalSettings?.diffExtremeDiv ?? 5)), color: 'hover:bg-ember/20 hover:text-ember' },
-                              ].map((diff) => (
-                                <button
-                                  key={diff.id}
-                                  onClick={() => handleQuickRoll(skill.name, baseDifficulty, diff.id as any)}
-                                  className={cn(
-                                    "p-3 rounded-xl glass border border-white/5 flex flex-col items-center justify-center gap-1 transition-all",
-                                    diff.color
-                                  )}
-                                >
-                                  <span className="text-[10px] font-mono uppercase tracking-widest opacity-60">{diff.label}</span>
-                                  <span className="text-lg font-serif">{diff.target}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-end pt-6">
-                  <button 
-                    onClick={() => setStep(6)}
-                    className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
-                  >
-                    <span>Continuar para Poderes</span>
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 6 && (
-              <motion.div
-                key="step6"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                className="space-y-8"
-              >
                 <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                   <div>
                     <h2 className="text-4xl font-serif mb-2">Escolha seus Poderes</h2>
-                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Dons e Habilidades Especiais</p>
+                    <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 05: Dons e Habilidades Especiais</p>
                   </div>
-                  <div className="glass px-6 py-3 rounded-2xl border border-ember/30 bg-ember/5 flex items-center gap-4">
+                  <div className="glass px-6 py-3 rounded-2xl border border-arcane/30 bg-arcane/5 flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de Poder</p>
+                      <p className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Pontos de poder Disponíveis</p>
                       <p className={cn(
                         "text-2xl font-serif",
-                        powerPoints === 0 ? "text-gold" : "text-ember"
+                        powerPoints === 0 ? "text-gold" : "text-arcane"
                       )}>
-                        {powerPoints} / {initialPowerPoints}
+                        {powerPoints} / {(initialPowerPoints || 0)}
                       </p>
                     </div>
-                    <div className="w-12 h-12 rounded-xl bg-ember/10 flex items-center justify-center text-ember">
-                      <Sparkles size={24} />
+                    <div className="w-12 h-12 rounded-xl bg-arcane/10 flex items-center justify-center text-arcane">
+                      <Brain size={24} />
                     </div>
                   </div>
                 </header>
@@ -1985,7 +1926,7 @@ export default function CharacterCreation() {
                   <div className="flex-1 relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-parchment/20" size={18} />
                     <input 
-                      type="text"
+                      type="text" 
                       placeholder="Buscar poder por nome ou efeito..."
                       value={powerSearch}
                       onChange={e => setPowerSearch(e.target.value)}
@@ -2042,7 +1983,7 @@ export default function CharacterCreation() {
                             {isSelected 
                               ? calculateCost(power.purchaseCost || 1, powers.find(p => p.id === power.id)?.level || 1, powers.find(p => p.id === power.id)?.typeOverride || power.type, true)
                               : calculateCost(power.purchaseCost || 1, 1, power.type, true)
-                            } pts
+                            } pts de perícia
                           </div>
                         </div>
                         <p className="text-xs text-parchment/40 mb-4 line-clamp-2">{power.description}</p>
@@ -2127,7 +2068,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(7)}
+                    onClick={() => setStep(6)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Equipamento</span>
@@ -2137,9 +2078,9 @@ export default function CharacterCreation() {
               </motion.div>
             )}
 
-            {step === 7 && (
+            {step === 6 && (
               <motion.div
-                key="step7"
+                key="step6"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -2149,7 +2090,7 @@ export default function CharacterCreation() {
                   <div className="flex justify-between items-end mb-2">
                     <div>
                       <h2 className="text-4xl font-serif">Equipamento & Inventário</h2>
-                      <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Preparação para a Jornada</p>
+                      <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 06: Arsenal e Suprimentos</p>
                     </div>
                     <div className="flex items-center gap-3 bg-gold/10 px-6 py-3 rounded-2xl border border-gold/30">
                       <div className="text-right">
@@ -2327,7 +2268,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(8)}
+                    onClick={() => setStep(7)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Revisar Personagem</span>
@@ -2336,9 +2277,9 @@ export default function CharacterCreation() {
                 </div>
               </motion.div>
             )}
-            {step === 8 && (
+            {step === 7 && (
               <motion.div
-                key="step8"
+                key="step7"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -2346,7 +2287,7 @@ export default function CharacterCreation() {
               >
                 <header>
                   <h2 className="text-4xl font-serif mb-2">Revisão Final</h2>
-                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 08: Selando o Destino</p>
+                  <p className="text-parchment/40 font-mono text-sm uppercase tracking-widest">Passo 07: Selando o Destino</p>
                 </header>
 
                 <div className="glass p-8 rounded-[2.5rem] border border-white/10 space-y-8">
@@ -2490,10 +2431,10 @@ export default function CharacterCreation() {
                 )}
               </div>
               <h3 className="text-xl sm:text-2xl font-serif min-h-[1.75rem]">
-                {step >= 3 ? (basics.name || 'Sem Nome') : ''}
+                {step >= 2 ? (basics.name || 'Sem Nome') : ''}
               </h3>
               <p className="text-[10px] sm:text-xs font-mono text-arcane uppercase tracking-widest min-h-[1rem]">
-                {step >= 3 ? (basics.class || 'Sem Vocação') : ''}
+                {step >= 2 ? (basics.class || 'Sem Vocação') : ''}
               </p>
             </div>
 
@@ -2516,25 +2457,24 @@ export default function CharacterCreation() {
               {step < steps.length && (
                 <button 
                   onClick={() => {
-                    if (step === 3 && (!basics.sessionId || !basics.name)) {
+                    if (step === 2 && (!basics.sessionId || !basics.name)) {
                       setTouched({ name: true, sessionId: true });
                       return;
                     }
                     setStep(prev => Math.min(steps.length, prev + 1));
                   }}
-                  disabled={step === 3 && (!basics.sessionId || !basics.name)}
+                  disabled={step === 2 && (!basics.sessionId || !basics.name)}
                   className={cn(
                     "w-full py-4 bg-arcane text-obsidian rounded-2xl flex items-center justify-center gap-2 font-bold hover:scale-105 transition-transform shadow-lg shadow-arcane/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                   )}
                 >
                   <span>
-                    {step === 1 ? 'Continuar para Atributos' : 
-                     step === 2 ? 'Continuar para Origens' : 
+                    {step === 1 ? 'Continuar para Origens' : 
+                     step === 2 ? 'Continuar para Atributos' : 
                      step === 3 ? 'Continuar para Perícias' : 
-                     step === 4 ? 'Continuar para Dificuldades' : 
-                     step === 5 ? 'Continuar para Poderes' : 
-                     step === 6 ? 'Continuar para Equipamento' : 
-                     step === 7 ? 'Revisar Personagem' : 
+                     step === 4 ? 'Continuar para Poderes' : 
+                     step === 5 ? 'Continuar para Equipamento' : 
+                     step === 6 ? 'Revisar Personagem' : 
                      'Próximo Passo'}
                   </span>
                   <ChevronRight size={18} />

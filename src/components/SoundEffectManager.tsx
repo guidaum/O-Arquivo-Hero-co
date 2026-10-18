@@ -92,8 +92,8 @@ const SOUND_CARDS: SoundCardConfig[] = [
   {
     key: 'criticalSound',
     type: 'critical',
-    title: 'Acerto Crítico (20 Natural)',
-    subtitle: 'Tocado em acertos críticos lendários, 20s naturais ou sucessos extremos.',
+    title: 'Acerto Crítico (1 Natural)',
+    subtitle: 'Tocado em acertos críticos lendários, 1s naturais ou sucessos extremos (Menor é Melhor).',
     badge: 'Crítico Épico',
     badgeColor: 'text-gold border-gold/40 bg-gold/15',
     icon: Sparkles,
@@ -103,8 +103,8 @@ const SOUND_CARDS: SoundCardConfig[] = [
   {
     key: 'fumbleSound',
     type: 'fumble',
-    title: 'Falha Crítica / Desastre (1 Natural)',
-    subtitle: 'Tocado em desastres catastróficos, 1s naturais ou falhas críticas.',
+    title: 'Falha Crítica / Desastre (20 Natural)',
+    subtitle: 'Tocado em desastres catastróficos, 20s naturais ou falhas críticas.',
     badge: 'Desastre',
     badgeColor: 'text-rose-400 border-rose-500/30 bg-rose-500/10',
     icon: Flame,

@@ -645,8 +645,63 @@ export default function CharacterSheet() {
     }
   };
 
-  const resolvedTraits = availableTraits
-    .filter(t => characterTraits.includes(t.id));
+  const resolvedTraits = React.useMemo(() => {
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    const charObjects: any[] = Array.isArray((character as any)?.traitObjects) 
+      ? (character as any).traitObjects 
+      : [];
+    
+    const advantages: any[] = Array.isArray((character as any)?.advantages) ? (character as any).advantages : [];
+    const disadvantages: any[] = Array.isArray((character as any)?.disadvantages) ? (character as any).disadvantages : [];
+    const allEmbeddedObjects = [...charObjects, ...advantages, ...disadvantages];
+
+    const traitMap = new Map<string, any>();
+    availableTraits.forEach(t => {
+      if (t && t.id) traitMap.set(t.id, t);
+      if (t && t.name) traitMap.set(t.name.toLowerCase(), t);
+    });
+
+    allEmbeddedObjects.forEach(t => {
+      if (t && t.id && !traitMap.has(t.id)) traitMap.set(t.id, t);
+      if (t && t.name && !traitMap.has(t.name.toLowerCase())) traitMap.set(t.name.toLowerCase(), t);
+    });
+
+    (characterTraits || []).forEach(item => {
+      if (!item) return;
+      if (typeof item === 'object' && (item as any).id) {
+        const objId = (item as any).id;
+        if (!seen.has(objId)) {
+          seen.add(objId);
+          const fromLib = traitMap.get(objId) || {};
+          list.push({ ...fromLib, ...item });
+        }
+      } else if (typeof item === 'string') {
+        const found = traitMap.get(item) || traitMap.get(item.toLowerCase());
+        const traitId = found?.id || item;
+        if (!seen.has(traitId)) {
+          seen.add(traitId);
+          if (found) {
+            list.push(found);
+          } else {
+            const embedded = allEmbeddedObjects.find(t => t.id === item || t.name === item);
+            if (embedded) list.push(embedded);
+          }
+        }
+      }
+    });
+
+    allEmbeddedObjects.forEach(t => {
+      if (t && t.id && !seen.has(t.id)) {
+        seen.add(t.id);
+        const fromLib = traitMap.get(t.id) || {};
+        list.push({ ...fromLib, ...t });
+      }
+    });
+
+    return list;
+  }, [availableTraits, characterTraits, character]);
 
   const contributingTraitsByAttr = React.useMemo(() => {
     const map: Record<string, any[]> = {};
@@ -689,13 +744,25 @@ export default function CharacterSheet() {
         });
 
         // Check if targets an attribute in the talent's composition
-        const targetsComposition = attrIds.some(aId => compLower.includes(aId.toLowerCase()));
+        const compAttrMatch = baseAttrs.find(a => 
+          compLower.includes(a.id.toLowerCase()) && 
+          attrIds.some(aId => aId.toLowerCase() === a.id.toLowerCase())
+        );
 
-        if ((directlyTargets || targetsComposition) && !addedTraitIds.has(trait.id)) {
+        if (directlyTargets && !addedTraitIds.has(trait.id)) {
           addedTraitIds.add(trait.id);
           talentTraits.push({
             ...trait,
-            effectiveMod: effMod
+            effectiveMod: effMod,
+            isDirect: true
+          });
+        } else if (compAttrMatch && !addedTraitIds.has(trait.id)) {
+          addedTraitIds.add(trait.id);
+          talentTraits.push({
+            ...trait,
+            effectiveMod: effMod,
+            isDirect: false,
+            sourceAttr: compAttrMatch.label || compAttrMatch.id.toUpperCase()
           });
         }
       });
@@ -733,7 +800,11 @@ export default function CharacterSheet() {
   const traitTalentMods = React.useMemo(() => {
     const mods: Record<string, number> = {};
     Object.entries(contributingTraitsByTalent).forEach(([key, traitsList]) => {
-      mods[key] = (traitsList as any[]).reduce((sum, t) => sum + (Number(t.effectiveMod) || 0), 0);
+      // Only direct talent traits apply as direct talent bonuses,
+      // because traits on constituent attributes are already reflected in the total attribute values!
+      mods[key] = (traitsList as any[])
+        .filter(t => t.isDirect !== false)
+        .reduce((sum, t) => sum + (Number(t.effectiveMod) || 0), 0);
     });
     return mods;
   }, [contributingTraitsByTalent]);
@@ -754,13 +825,29 @@ export default function CharacterSheet() {
   const attributes = React.useMemo(() => {
     const baseAttrs = globalSettings?.attributes || DEFAULT_ATTRIBUTES;
 
-    return baseAttrs.map(attr => ({
-      ...attr,
-      value: stats[attr.id] || 0,
-      mod: statsMods[attr.id] || 0,
-      traitMod: traitStatsMods[attr.id.toLowerCase()] ?? traitStatsMods[attr.id] ?? 0,
-      itemMod: itemStatsMods[attr.id] ?? itemStatsMods[attr.id.toLowerCase()] ?? 0
-    }));
+    return baseAttrs.map(attr => {
+      const val = stats[attr.id] || 0;
+      const mod = statsMods[attr.id] || 0;
+      const rawTraitMod = traitStatsMods[attr.id.toLowerCase()] ?? traitStatsMods[attr.id] ?? 0;
+      const itemMod = itemStatsMods[attr.id] ?? itemStatsMods[attr.id.toLowerCase()] ?? 0;
+
+      // Se o traço e o modificador vêm do mesmo defeito ou vantagem e afetam o mesmo atributo ou talento,
+      // o traço deve ser desconsiderado no cálculo do atributo:
+      const traitDisregarded = mod !== 0 && rawTraitMod !== 0;
+      const traitMod = traitDisregarded ? 0 : rawTraitMod;
+      const total = val + mod + traitMod + itemMod;
+
+      return {
+        ...attr,
+        value: val,
+        mod,
+        traitMod,
+        rawTraitMod,
+        traitDisregarded,
+        itemMod,
+        total
+      };
+    });
   }, [globalSettings, stats, statsMods, traitStatsMods, itemStatsMods]);
 
   const contributingTraitsForSelectedAttr = React.useMemo(() => {
@@ -893,11 +980,12 @@ export default function CharacterSheet() {
     const lowerId = id.toLowerCase();
     const attr = attributes.find(a => a.id.toLowerCase() === lowerId);
     if (attr) {
-      return (attr.value || 0) + (attr.mod || 0) + (attr.traitMod || 0) + (attr.itemMod || 0);
+      return attr.total;
     }
     const val = stats[id] ?? stats[lowerId] ?? 0;
     const mod = statsMods[id] ?? statsMods[lowerId] ?? 0;
-    const trMod = traitStatsMods[id] ?? traitStatsMods[lowerId] ?? 0;
+    const rawTrMod = traitStatsMods[id] ?? traitStatsMods[lowerId] ?? 0;
+    const trMod = (mod !== 0 && rawTrMod !== 0) ? 0 : rawTrMod;
     const itMod = itemStatsMods[id] ?? itemStatsMods[lowerId] ?? 0;
     return val + mod + trMod + itMod;
   };
@@ -1158,19 +1246,16 @@ export default function CharacterSheet() {
   const getTalentBaseValue = (talent: any) => {
     if (!talent?.composition) return 0;
     return talent.composition.reduce((acc: number, attrId: string) => {
-      const lowerId = attrId.toLowerCase();
-      const attr = attributes.find(a => a.id.toLowerCase() === lowerId);
-      if (attr) {
-        return acc + (attr.value || 0) + (attr.mod || 0) + (attr.itemMod || 0);
-      }
-      return acc + (stats[attrId] || stats[lowerId] || 0) + (statsMods[attrId] || statsMods[lowerId] || 0);
+      return acc + getAttr(attrId);
     }, 0);
   };
 
   const calculateTalentValue = (talent: any) => {
     const baseValue = getTalentBaseValue(talent);
-    const traitMod = getTraitTalentMod(talent);
     const manualMod = talentMods[talent.id] || 0;
+    const rawTraitMod = getTraitTalentMod(talent);
+    // Se o traço e o modificador vêm do mesmo defeito ou vantagem e afetam o mesmo talento, o traço é desconsiderado:
+    const traitMod = (manualMod !== 0 && rawTraitMod !== 0) ? 0 : rawTraitMod;
     return baseValue + manualMod + traitMod;
   };
 
@@ -1681,15 +1766,38 @@ export default function CharacterSheet() {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.05 }}
-                  className="glass p-3 sm:p-4 rounded-2xl flex items-center justify-between group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30"
+                  onClick={() => {
+                    setSelectedTraitAttr(attr);
+                    setIsTraitOriginModalOpen(true);
+                  }}
+                  className="glass p-3 sm:p-4 rounded-2xl flex items-center justify-between group hover:bg-white/10 transition-all border border-white/10 hover:border-arcane/30 cursor-pointer"
                 >
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className={cn("p-1.5 sm:p-2 rounded-xl bg-white/5", attr.color)}>
-                      {React.createElement(getIcon(attr.icon), { size: 18 })}
+                  <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                    <div className={cn("p-2 sm:p-2.5 rounded-xl bg-white/5 border border-white/10 group-hover:border-arcane/40 transition-colors shrink-0", attr.color)}>
+                      {React.createElement(getIcon(attr.icon), { size: 20 })}
                     </div>
-                    <span className="font-serif text-base sm:text-lg">{attr.label}</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-serif text-base sm:text-lg font-bold group-hover:text-arcane transition-colors truncate">{attr.label}</span>
+                        <span className="text-[10px] font-mono text-parchment/40 uppercase">({attr.id.toUpperCase()})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTraitAttr(attr);
+                          setIsTraitOriginModalOpen(true);
+                        }}
+                        className="text-[10px] font-mono text-arcane/70 hover:text-arcane flex items-center gap-1 hover:underline cursor-pointer transition-colors mt-0.5"
+                        title="Ver Composição Detalhada"
+                      >
+                        <Info size={11} />
+                        <span>Ver Composição</span>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <AnimatePresence mode="wait">
                       {activeRollAttr === attr.id ? (
                         <motion.div 
@@ -1697,7 +1805,7 @@ export default function CharacterSheet() {
                           initial={{ opacity: 0, scale: 0.8 }}
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.8 }}
-                          className="flex gap-2 items-center"
+                          className="flex gap-1.5 sm:gap-2 items-center"
                         >
                           {[
                             { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
@@ -1712,7 +1820,7 @@ export default function CharacterSheet() {
                                 handleQuickRoll(attr.label, getAttr(attr.id), d.id as any, 10);
                                 setActiveRollAttr(null);
                               }}
-                              className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-[10px] font-bold transition-colors", d.color)}
+                              className={cn("w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-[10px] font-bold transition-colors cursor-pointer", d.color)}
                               title={d.title}
                             >
                               {d.label}
@@ -1723,7 +1831,7 @@ export default function CharacterSheet() {
                               e.stopPropagation();
                               setActiveRollAttr(null);
                             }}
-                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-2 pl-2 border-l border-white/10"
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg glass text-parchment/20 hover:text-ember transition-colors ml-1 pl-1 border-l border-white/10 cursor-pointer"
                           >
                             <X size={12} />
                           </button>
@@ -1737,147 +1845,33 @@ export default function CharacterSheet() {
                             e.stopPropagation();
                             setActiveRollAttr(attr.id);
                           }}
-                          className="p-1.5 sm:p-2 hover:bg-arcane/20 rounded-lg text-parchment/40 hover:text-arcane transition-colors"
-                          title="Rolar com Dificuldade"
+                          className="p-2 hover:bg-arcane/20 rounded-xl text-parchment/40 hover:text-arcane transition-colors cursor-pointer"
+                          title="Rolar Teste com Dificuldade"
                         >
-                          <Dice6 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          <Dice6 className="w-4 h-4 sm:w-5 sm:h-5" />
                         </motion.button>
                       )}
                     </AnimatePresence>
-                    <div className="text-right">
-                      {canPlayerEdit ? (
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="flex items-center gap-1">
-                            <input 
-                              type="number"
-                              value={attr.value ?? 0}
-                              onChange={(e) => {
-                                const newValue = parseInt(e.target.value) || 0;
-                                const oldValue = stats[attr.id] || 0;
-                                const baseValue = character.baseStats?.[attr.id] ?? 0;
-                                
-                                // Prevent going below base for players
-                                if (!isGM && newValue < baseValue) {
-                                  return;
-                                }
 
-                                const diff = newValue - oldValue;
-                                const currentPoints = attributePoints;
-                                
-                                if (!isGM && diff > currentPoints) {
-                                  setSaveStatus({ type: 'error', message: 'Pontos de atributo insuficientes!' });
-                                  return;
-                                }
-                                
-                                const newStats = { ...stats, [attr.id]: newValue };
-                                setStats(newStats);
-                                
-                                // Calculate new points
-                                let newPoints = currentPoints;
-                                if (diff > 0) {
-                                  // Spending points
-                                  newPoints = Math.max(0, currentPoints - diff);
-                                } else if (diff < 0) {
-                                  // Refunding points
-                                  // Only refund points that were above base
-                                  const refundAmount = Math.min(Math.abs(diff), Math.max(0, oldValue - baseValue));
-                                  newPoints = currentPoints + refundAmount;
-                                }
-
-                                setAttributePoints(newPoints);
-                                handleSave({ 
-                                  stats: newStats,
-                                  attributePoints: newPoints
-                                });
-                              }}
-                              className="w-10 sm:w-12 bg-white/5 border border-white/10 rounded text-center text-lg sm:text-xl font-serif text-glow-arcane focus:outline-none focus:border-arcane/50"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-lg sm:text-xl font-serif text-glow-arcane leading-none">{attr.value}</p>
-                      )}
-                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">BASE</p>
-                    </div>
-                    <div className="text-right">
-                      {canPlayerEdit ? (
-                        <input 
-                          type="number"
-                          value={attr.mod ?? 0}
-                          onChange={(e) => {
-                            const newMods = { ...statsMods, [attr.id]: parseInt(e.target.value) || 0 };
-                            setStatsMods(newMods);
-                            handleSave({ statsMods: newMods });
-                          }}
-                          className="w-10 sm:w-12 bg-white/5 border border-white/10 rounded text-center text-lg sm:text-xl font-serif text-ember focus:outline-none focus:border-ember/50"
-                        />
-                      ) : (
-                        <p className="text-lg sm:text-xl font-serif text-ember leading-none">{attr.mod >= 0 ? `+${attr.mod}` : attr.mod}</p>
-                      )}
-                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">MOD.</p>
-                    </div>
-                    <div className="text-right">
-                      {(() => {
-                        const contributingTraits = contributingTraitsByAttr[attr.id.toLowerCase()] || [];
-                        const hasTraitDetails = contributingTraits.length > 0;
-
-                        if (!hasTraitDetails) {
-                          return (
-                            <div 
-                              className="text-right flex flex-col items-end select-none cursor-default"
-                              title="Nenhum detalhe de traço disponível"
-                            >
-                              <p className={cn(
-                                "text-lg sm:text-xl font-serif leading-none",
-                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
-                              )}>
-                                {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod || 0}
-                              </p>
-                              <p className="text-[8px] sm:text-[10px] text-parchment/30 font-mono uppercase tracking-wider">TRAÇO</p>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedTraitAttr(attr);
-                              setIsTraitOriginModalOpen(true);
-                            }}
-                            className={cn(
-                              "group/trait cursor-pointer rounded-xl p-1 -m-1 transition-all hover:bg-white/10 active:scale-95 text-right flex flex-col items-end",
-                              attr.traitMod !== 0 && "hover:border hover:border-white/20"
-                            )}
-                            title="Clique para ver a origem do valor de traço"
-                          >
-                            <div className="flex items-center gap-1">
-                              <p className={cn(
-                                "text-lg sm:text-xl font-serif leading-none group-hover/trait:underline underline-offset-2 transition-colors",
-                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/20"
-                              )}>
-                                {attr.traitMod > 0 ? `+${attr.traitMod}` : attr.traitMod}
-                              </p>
-                              <Info size={10} className={cn(
-                                "opacity-0 group-hover/trait:opacity-100 transition-opacity",
-                                attr.traitMod > 0 ? "text-arcane" : attr.traitMod < 0 ? "text-ember" : "text-parchment/40"
-                              )} />
-                            </div>
-                            <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider group-hover/trait:text-parchment/70 transition-colors">TRAÇO</p>
-                          </button>
-                        );
-                      })()}
-                    </div>
-                    <div className="text-right">
-                      <p className={cn(
-                        "text-lg sm:text-xl font-serif leading-none",
-                        attr.itemMod > 0 ? "text-arcane" : attr.itemMod < 0 ? "text-ember" : "text-parchment/20"
-                      )}>
-                        {attr.itemMod > 0 ? `+${attr.itemMod}` : attr.itemMod}
-                      </p>
-                      <p className="text-[8px] sm:text-[10px] text-parchment/40 font-mono uppercase tracking-wider">ITEM</p>
-                    </div>
+                    {/* ONLY TOTAL BADGE WITH COMPOSITION MODAL TRIGGER */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTraitAttr(attr);
+                        setIsTraitOriginModalOpen(true);
+                      }}
+                      className="flex items-center gap-2 sm:gap-2.5 px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-arcane/15 border border-arcane/40 hover:bg-arcane/25 hover:border-arcane transition-all cursor-pointer group/total shadow-sm shadow-arcane/10"
+                      title="Valor Total do Atributo (Clique para ver a Modal de Composição)"
+                    >
+                      <div className="flex flex-col items-end">
+                        <span className="text-xl sm:text-2xl font-serif font-bold text-glow-arcane text-parchment leading-none group-hover/total:scale-105 transition-transform">
+                          {attr.total}
+                        </span>
+                        <span className="text-[8px] font-mono uppercase tracking-widest text-arcane font-bold">TOTAL</span>
+                      </div>
+                      <ChevronRight size={14} className="text-arcane/60 group-hover/total:translate-x-0.5 transition-transform" />
+                    </button>
                   </div>
                 </motion.div>
               ))}
@@ -2732,137 +2726,165 @@ export default function CharacterSheet() {
                       transition={{ delay: 0.3 + idx * 0.05 }}
                       className="glass p-4 sm:p-5 rounded-3xl border border-white/10 hover:border-gold/30 transition-all group relative overflow-hidden"
                     >
-                      <div className="flex justify-between items-start mb-2 relative z-10">
-                        <div className="flex-1 min-w-0">
-                          <h5 className="font-serif text-base sm:text-lg text-glow-gold truncate">{talent.name}</h5>
-                          <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                            <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest whitespace-nowrap">B: {baseValue}</span>
-                            {canPlayerEdit ? (
-                              <div className="flex items-center gap-1">
-                                <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest">M:</span>
-                                <input 
-                                  type="number"
-                                  value={manualMod ?? 0}
-                                  onChange={(e) => {
-                                    const newMods = { ...talentMods, [talent.id]: parseInt(e.target.value) || 0 };
-                                    setTalentMods(newMods);
-                                    handleSave({ talentMods: newMods });
-                                  }}
-                                  className="w-8 h-4 bg-white/5 border border-white/10 rounded text-center text-[9px] font-mono text-ember focus:outline-none focus:border-ember/50"
-                                />
-                              </div>
-                            ) : (
-                              <span className="text-[9px] font-mono text-ember uppercase tracking-widest">M: {manualMod >= 0 ? `+${manualMod}` : manualMod}</span>
-                            )}
-                            {(() => {
-                              const contributingTalentTraits = contributingTraitsByTalent[talent.id.toLowerCase()] || [];
-                              const hasTalentTraitDetails = contributingTalentTraits.length > 0;
+                      {(() => {
+                        const openTalentDetails = (e?: React.MouseEvent) => {
+                          if (e) e.stopPropagation();
+                          const compDetails = (talent.composition || []).map((attrId: string) => {
+                            const lowerId = attrId.toLowerCase();
+                            const a = attributes.find(at => at.id.toLowerCase() === lowerId);
+                            return {
+                              id: attrId,
+                              label: a?.label || attrId.toUpperCase(),
+                              total: getAttr(attrId),
+                              value: a?.value || 0,
+                              mod: a?.mod || 0,
+                              traitMod: a?.traitMod || 0,
+                              itemMod: a?.itemMod || 0
+                            };
+                          });
 
-                              if (!hasTalentTraitDetails) {
-                                return (
-                                  <span className="text-[9px] font-mono text-parchment/20 uppercase tracking-widest px-1 py-0.5 select-none cursor-default">
-                                    T: {traitMod > 0 ? `+${traitMod}` : traitMod || 0}
-                                  </span>
-                                );
-                              }
+                          setSelectedTraitAttr({
+                            id: talent.id,
+                            label: talent.name,
+                            icon: 'Sparkles',
+                            color: 'text-gold',
+                            value: baseValue,
+                            mod: manualMod,
+                            traitMod,
+                            itemMod: 0,
+                            total: totalValue,
+                            isTalent: true,
+                            composition: talent.composition,
+                            compositionDetails: compDetails
+                          });
+                          setIsTraitOriginModalOpen(true);
+                        };
 
-                              return (
+                        return (
+                          <div className="flex justify-between items-start mb-2 relative z-10">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <h5 
+                                  onClick={openTalentDetails}
+                                  className="font-serif text-base sm:text-lg text-glow-gold truncate cursor-pointer hover:underline"
+                                  title="Clique para ver a composição e modificadores do talento"
+                                >
+                                  {talent.name}
+                                </h5>
                                 <button
                                   type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTraitAttr({
-                                      id: talent.id,
-                                      label: talent.name,
-                                      icon: 'Sparkles',
-                                      color: 'text-gold',
-                                      value: baseValue,
-                                      mod: manualMod,
-                                      traitMod,
-                                      itemMod: 0,
-                                      isTalent: true,
-                                      composition: talent.composition
-                                    });
-                                    setIsTraitOriginModalOpen(true);
-                                  }}
+                                  onClick={openTalentDetails}
+                                  className="text-gold/60 hover:text-gold transition-colors p-0.5 cursor-pointer"
+                                  title="Ver composição e traços"
+                                >
+                                  <Info size={12} />
+                                </button>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest whitespace-nowrap">B: {baseValue}</span>
+                                {canPlayerEdit ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] font-mono text-parchment/30 uppercase tracking-widest">M:</span>
+                                    <input 
+                                      type="number"
+                                      value={manualMod ?? 0}
+                                      onChange={(e) => {
+                                        const newMods = { ...talentMods, [talent.id]: parseInt(e.target.value) || 0 };
+                                        setTalentMods(newMods);
+                                        handleSave({ talentMods: newMods });
+                                      }}
+                                      className="w-8 h-4 bg-white/5 border border-white/10 rounded text-center text-[9px] font-mono text-ember focus:outline-none focus:border-ember/50"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-[9px] font-mono text-ember uppercase tracking-widest">M: {manualMod >= 0 ? `+${manualMod}` : manualMod}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={openTalentDetails}
                                   className={cn(
                                     "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest transition-all cursor-pointer hover:scale-105",
                                     traitMod > 0 ? "bg-arcane/15 text-arcane border border-arcane/30" :
                                     traitMod < 0 ? "bg-ember/15 text-ember border border-ember/30" :
-                                    "text-parchment/30 hover:text-parchment/60 hover:bg-white/5"
+                                    "text-parchment/40 hover:text-parchment/70 bg-white/5 border border-white/10"
                                   )}
-                                  title="Clique para ver a origem do modificador de traço do talento"
+                                  title="Clique para ver os traços que modificam este talento"
                                 >
                                   <span>T: {traitMod > 0 ? `+${traitMod}` : traitMod}</span>
-                                  <Info size={8} className="opacity-60" />
+                                  <Info size={8} className="opacity-70" />
                                 </button>
-                              );
-                            })()}
-                          </div>
-                        </div>
+                              </div>
+                            </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <div className="px-2 py-1 bg-gold/10 text-gold border border-gold/20 rounded-xl font-serif text-lg sm:text-xl shadow-lg shadow-gold/5">
-                            {totalValue}
-                          </div>
-                          <div className="relative">
-                            <AnimatePresence mode="wait">
-                              {activeRollAttr === talent.id ? (
-                                <motion.div 
-                                  key="diffs"
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="absolute right-0 bottom-full mb-2 flex gap-1.5 glass p-1.5 rounded-2xl border border-white/10 z-20 shadow-2xl"
-                                >
-                                  {[
-                                    { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
-                                    { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
-                                    { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
-                                    { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
-                                  ].map(d => (
-                                    <button
-                                      key={d.id}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={openTalentDetails}
+                                className="px-2.5 py-1 bg-gold/15 text-gold border border-gold/30 rounded-xl font-serif text-lg sm:text-xl shadow-lg shadow-gold/5 cursor-pointer hover:bg-gold/25 hover:scale-105 transition-all"
+                                title="Valor Total do Talento (Clique para ver Composição)"
+                              >
+                                {totalValue}
+                              </button>
+                              <div className="relative">
+                                <AnimatePresence mode="wait">
+                                  {activeRollAttr === talent.id ? (
+                                    <motion.div 
+                                      key="diffs"
+                                      initial={{ opacity: 0, scale: 0.8 }}
+                                      animate={{ opacity: 1, scale: 1 }}
+                                      exit={{ opacity: 0, scale: 0.8 }}
+                                      className="absolute right-0 bottom-full mb-2 flex gap-1.5 glass p-1.5 rounded-2xl border border-white/10 z-20 shadow-2xl"
+                                    >
+                                      {[
+                                        { id: 'easy', label: 'F', color: 'hover:text-green-400', title: `Fácil (+${globalSettings?.diffEasyMod ?? 2})` },
+                                        { id: 'normal', label: 'N', color: 'hover:text-arcane', title: 'Normal' },
+                                        { id: 'hard', label: 'D', color: 'hover:text-orange-400', title: `Difícil (1/${globalSettings?.diffHardDiv ?? 2})` },
+                                        { id: 'extreme', label: 'E', color: 'hover:text-ember', title: `Extremo (1/${globalSettings?.diffExtremeDiv ?? 5})` },
+                                      ].map(d => (
+                                        <button
+                                          key={d.id}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleQuickRoll(talent.name, totalValue, d.id as any);
+                                            setActiveRollAttr(null);
+                                          }}
+                                          className={cn("w-8 h-8 rounded-xl glass text-[10px] font-bold transition-all hover:scale-110 active:scale-95", d.color)}
+                                          title={d.title}
+                                        >
+                                          {d.label}
+                                        </button>
+                                      ))}
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveRollAttr(null);
+                                        }}
+                                        className="w-8 h-8 rounded-xl glass text-parchment/20 hover:text-ember transition-colors ml-1 pl-1 border-l border-white/10"
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    </motion.div>
+                                  ) : (
+                                    <motion.button 
+                                      key="dice"
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleQuickRoll(talent.name, totalValue, d.id as any);
-                                        setActiveRollAttr(null);
+                                        setActiveRollAttr(talent.id);
                                       }}
-                                      className={cn("w-8 h-8 rounded-xl glass text-[10px] font-bold transition-all hover:scale-110 active:scale-95", d.color)}
-                                      title={d.title}
+                                      className="p-2 hover:bg-gold/20 rounded-xl text-parchment/30 hover:text-gold transition-all hover:scale-110"
+                                      title="Rolar Teste"
                                     >
-                                      {d.label}
-                                    </button>
-                                  ))}
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActiveRollAttr(null);
-                                    }}
-                                    className="w-8 h-8 rounded-xl glass text-parchment/20 hover:text-ember transition-colors ml-1 pl-1 border-l border-white/10"
-                                  >
-                                    <X size={14} />
-                                  </button>
-                                </motion.div>
-                              ) : (
-                                <motion.button 
-                                  key="dice"
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveRollAttr(talent.id);
-                                  }}
-                                  className="p-2 hover:bg-gold/20 rounded-xl text-parchment/30 hover:text-gold transition-all hover:scale-110"
-                                  title="Rolar Teste"
-                                >
-                                  <Brain size={18} />
-                                </motion.button>
-                              )}
-                            </AnimatePresence>
+                                      <Brain size={18} />
+                                    </motion.button>
+                                  )}
+                                </AnimatePresence>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
+                        );
+                      })()}
                       <p className="text-[10px] text-parchment/40 line-clamp-2 mb-3 h-8">{talent.description}</p>
                       <div className="flex flex-wrap gap-1 relative z-10">
                         {talent.composition.map(attrId => {

@@ -216,10 +216,10 @@ export default function DiceRoller() {
   const [advantageMode, setAdvantageMode] = React.useState<AdvantageMode>('normal');
   const [selectedDie, setSelectedDie] = React.useState<DieType>(20);
   
-  // Target DC / Meta (Difficulty) configuration
+  // Target DC / Meta (Difficulty) configuration - por padrão sistema Menor é Melhor (Roll-Under)
   const [isTargetEnabled, setIsTargetEnabled] = React.useState<boolean>(false);
   const [targetDC, setTargetDC] = React.useState<number | ''>(15);
-  const [isRollUnder, setIsRollUnder] = React.useState<boolean>(false);
+  const [isRollUnder, setIsRollUnder] = React.useState<boolean>(true);
   
   // Show Sound Settings Inspector Modal
   const [showSoundModal, setShowSoundModal] = React.useState(false);
@@ -440,12 +440,26 @@ export default function DiceRoller() {
         // Advantage or Disadvantage on a single die roll
         const roll1 = Math.floor(Math.random() * dieType) + 1;
         const roll2 = Math.floor(Math.random() * dieType) + 1;
-        if (advMode === 'advantage') {
-          rolls = [Math.max(roll1, roll2)];
-          discardedRolls = [Math.min(roll1, roll2)];
+        if (isRollUnder) {
+          // No sistema Menor é Melhor:
+          // Vantagem seleciona o menor valor (melhor resultado)
+          // Desvantagem seleciona o maior valor (pior resultado)
+          if (advMode === 'advantage') {
+            rolls = [Math.min(roll1, roll2)];
+            discardedRolls = [Math.max(roll1, roll2)];
+          } else {
+            rolls = [Math.max(roll1, roll2)];
+            discardedRolls = [Math.min(roll1, roll2)];
+          }
         } else {
-          rolls = [Math.min(roll1, roll2)];
-          discardedRolls = [Math.max(roll1, roll2)];
+          // Sistema convencional Roll-Over (maior é melhor)
+          if (advMode === 'advantage') {
+            rolls = [Math.max(roll1, roll2)];
+            discardedRolls = [Math.min(roll1, roll2)];
+          } else {
+            rolls = [Math.min(roll1, roll2)];
+            discardedRolls = [Math.max(roll1, roll2)];
+          }
         }
       }
 
@@ -458,6 +472,7 @@ export default function DiceRoller() {
       const isMinRoll = rolls.every(r => r === 1);
 
       // Determine outcome: Critical, Fumble, Success, Failure
+      // No sistema atual: Menor é melhor (1 é sucesso crítico, 20 é falha crítica)
       let outcome: RollOutcome;
       let outcomeLabel: string;
 
@@ -466,11 +481,11 @@ export default function DiceRoller() {
 
       if (hasTarget && dcVal !== null) {
         if (isRollUnder) {
-          // Roll-Under System (e.g., CoC / Attribute test): roll <= target is success; 1 is crit, max is fumble
-          if (isNat1 || isMinRoll) {
+          // Sistema Padrão Menor é Melhor (Roll-Under): total <= alvo é sucesso; 1 é crit, 20 é fumble
+          if (isNat1 || (qty === 1 && isMinRoll)) {
             outcome = 'critical';
             outcomeLabel = 'Acerto Crítico!';
-          } else if (isNat20 || isMaxRoll) {
+          } else if (isNat20 || (qty === 1 && isMaxRoll)) {
             outcome = 'fumble';
             outcomeLabel = 'Falha Crítica!';
           } else if (total <= dcVal) {
@@ -481,7 +496,7 @@ export default function DiceRoller() {
             outcomeLabel = `Falha! (> ${dcVal})`;
           }
         } else {
-          // Standard D20 / Roll-Over System: roll >= DC is success; 20 is crit, 1 is fumble
+          // Modo alternativo Roll-Over: total >= CD é sucesso; 20 é crit, 1 é fumble
           if (isNat20 || (qty === 1 && isMaxRoll)) {
             outcome = 'critical';
             outcomeLabel = 'Acerto Crítico!';
@@ -497,24 +512,43 @@ export default function DiceRoller() {
           }
         }
       } else {
-        // Free Roll without specific target:
-        if (isNat20 || (qty === 1 && isMaxRoll)) {
-          outcome = 'critical';
-          outcomeLabel = 'Acerto Crítico!';
-        } else if (isNat1 || (qty === 1 && isMinRoll)) {
-          outcome = 'fumble';
-          outcomeLabel = 'Falha Crítica!';
-        } else {
-          // Evaluate standard positive outcome
-          const passesAverage = dieType === 20 
-            ? (rawSum >= 10) 
-            : (rawSum >= Math.ceil((dieType * qty) / 2));
-          if (passesAverage) {
-            outcome = 'success';
-            outcomeLabel = 'Sucesso!';
+        // Rolagem Livre sem Meta de Dificuldade:
+        if (isRollUnder) {
+          // Menor é melhor por padrão: 1 é Acerto Crítico, 20 é Falha Crítica
+          if (isNat1 || (qty === 1 && isMinRoll)) {
+            outcome = 'critical';
+            outcomeLabel = 'Acerto Crítico!';
+          } else if (isNat20 || (qty === 1 && isMaxRoll)) {
+            outcome = 'fumble';
+            outcomeLabel = 'Falha Crítica!';
           } else {
-            outcome = 'failure';
-            outcomeLabel = 'Falha!';
+            // Em menor é melhor, rolar abaixo ou igual à média é sucesso
+            const average = Math.ceil((dieType * qty) / 2);
+            if (rawSum <= average) {
+              outcome = 'success';
+              outcomeLabel = 'Sucesso! (≤ média)';
+            } else {
+              outcome = 'failure';
+              outcomeLabel = 'Falha! (> média)';
+            }
+          }
+        } else {
+          // Roll-Over: 20 é crit, 1 é fumble
+          if (isNat20 || (qty === 1 && isMaxRoll)) {
+            outcome = 'critical';
+            outcomeLabel = 'Acerto Crítico!';
+          } else if (isNat1 || (qty === 1 && isMinRoll)) {
+            outcome = 'fumble';
+            outcomeLabel = 'Falha Crítica!';
+          } else {
+            const average = Math.ceil((dieType * qty) / 2);
+            if (rawSum >= average) {
+              outcome = 'success';
+              outcomeLabel = 'Sucesso!';
+            } else {
+              outcome = 'failure';
+              outcomeLabel = 'Falha!';
+            }
           }
         }
       }

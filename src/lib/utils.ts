@@ -103,11 +103,43 @@ export const normalizeTraitType = (str: string): string => {
     .replace(/[\u0300-\u036f]/g, '');
 };
 
-// Returns the true configured modifier number preserving the exact sign (+ or -)
-// defects/disadvantages can have positive modifiers and advantages can have negative modifiers
+// Returns the true effective modifier number (+ for advantages, - for disadvantages)
 export const getTraitEffectiveModifier = (trait: any): number => {
   if (!trait) return 0;
-  return Number(trait.modifier) || 0;
+
+  let rawMod = Number(trait.modifier);
+  if (isNaN(rawMod) || rawMod === 0) {
+    if (trait.effect) {
+      const match = String(trait.effect).match(/([+-]?\s*\d+)/);
+      if (match) {
+        rawMod = parseInt(match[1].replace(/\s+/g, ''), 10);
+      }
+    }
+  }
+  if (isNaN(rawMod)) rawMod = 0;
+
+  const typeLower = String(trait.type || '').toLowerCase();
+  const isDisadvantage = typeLower === 'disadvantage' || typeLower === 'defeito' || typeLower === 'desvantagem';
+  const isAdvantage = typeLower === 'advantage' || typeLower === 'vantagem';
+
+  if (isDisadvantage) {
+    // Disadvantages penalize attributes. If entered as positive (e.g. 2 pts cost), negate it to -2 on attribute
+    // unless the effect explicitly indicates a positive bonus (+2)
+    if (trait.effect && /[+]\s*\d+/.test(trait.effect)) {
+      return rawMod;
+    }
+    return -Math.abs(rawMod);
+  }
+
+  if (isAdvantage) {
+    // Advantages boost attributes. If entered as negative, make it positive unless effect explicitly has a minus
+    if (rawMod < 0 && (!trait.effect || !/[-]\s*\d+/.test(trait.effect))) {
+      return Math.abs(rawMod);
+    }
+    return rawMod;
+  }
+
+  return rawMod;
 };
 
 // Check if a trait's modifierType and effect refer to the same attribute or talent type.
@@ -120,7 +152,7 @@ export const isTraitModifierSameAsEffect = (
   talentsList: Array<{ id: string; name?: string }> = []
 ): boolean => {
   if (!trait) return false;
-  const modTypeRaw = normalizeTraitType(trait.modifierType || '');
+  const modTypeRaw = normalizeTraitType(trait.modifierType || trait.targetAttr || trait.attribute || trait.target || '');
   const effectRaw = normalizeTraitType(trait.effect || '');
   if (!modTypeRaw || !effectRaw) return false;
 
@@ -139,9 +171,10 @@ export const isTraitModifierSameAsEffect = (
   const attrMap: Record<string, string> = {};
   allAttrs.forEach(a => {
     const idNorm = normalizeTraitType(a.id);
-    attrMap[idNorm] = idNorm;
+    const canonicalId = a.id.toLowerCase();
+    attrMap[idNorm] = canonicalId;
     if (a.label) {
-      attrMap[normalizeTraitType(a.label)] = idNorm;
+      attrMap[normalizeTraitType(a.label)] = canonicalId;
     }
   });
 
@@ -149,9 +182,10 @@ export const isTraitModifierSameAsEffect = (
   if (talentsList) {
     talentsList.forEach(t => {
       const idNorm = normalizeTraitType(t.id);
-      talentMap[idNorm] = idNorm;
+      const canonicalId = t.id.toLowerCase();
+      talentMap[idNorm] = canonicalId;
       if (t.name) {
-        talentMap[normalizeTraitType(t.name)] = idNorm;
+        talentMap[normalizeTraitType(t.name)] = canonicalId;
       }
     });
   }
@@ -159,42 +193,44 @@ export const isTraitModifierSameAsEffect = (
   // Direct match
   if (modTypeRaw === effectRaw) return true;
 
-  const extractAttr = (text: string): string | null => {
-    if (!text) return null;
-    if (attrMap[text]) return attrMap[text];
+  const extractAllAttrs = (text: string): Set<string> => {
+    const found = new Set<string>();
+    if (!text) return found;
+    if (attrMap[text]) found.add(attrMap[text]);
     const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW && attrMap[cleanW]) {
-        return attrMap[cleanW];
+        found.add(attrMap[cleanW]);
       }
     }
-    return null;
+    return found;
   };
 
-  const extractTalent = (text: string): string | null => {
-    if (!text) return null;
-    if (talentMap[text]) return talentMap[text];
+  const extractAllTalents = (text: string): Set<string> => {
+    const found = new Set<string>();
+    if (!text) return found;
+    if (talentMap[text]) found.add(talentMap[text]);
     const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW && talentMap[cleanW]) {
-        return talentMap[cleanW];
+        found.add(talentMap[cleanW]);
       }
     }
-    return null;
+    return found;
   };
 
-  const modAttrId = extractAttr(modTypeRaw);
-  const modTalentId = extractTalent(modTypeRaw);
-  const effectAttrId = extractAttr(effectRaw);
-  const effectTalentId = extractTalent(effectRaw);
-
-  if (modAttrId && effectAttrId && modAttrId === effectAttrId) {
-    return true;
+  const modAttrs = extractAllAttrs(modTypeRaw);
+  const effectAttrs = extractAllAttrs(effectRaw);
+  for (const a of modAttrs) {
+    if (effectAttrs.has(a)) return true;
   }
-  if (modTalentId && effectTalentId && modTalentId === effectTalentId) {
-    return true;
+
+  const modTalents = extractAllTalents(modTypeRaw);
+  const effectTalents = extractAllTalents(effectRaw);
+  for (const t of modTalents) {
+    if (effectTalents.has(t)) return true;
   }
 
   return false;
@@ -264,14 +300,35 @@ export const getTraitTargets = (
     }
   };
 
-  // The modifier is always considered
+  // The modifier target is always considered first
   checkAndAdd(trait.modifierType);
+  checkAndAdd(trait.targetAttr);
+  checkAndAdd(trait.attribute);
+  checkAndAdd(trait.target);
 
-  // If the effect is of the same type as the modifier, the effect is disregarded (only modifier considered).
-  // If the effect is of a different type (e.g. modifier FOR and effect AGI), the effect is also considered!
-  const isSameType = isTraitModifierSameAsEffect(trait, allAttrs, talentsList);
-  if (!isSameType && trait.effect) {
-    checkAndAdd(trait.effect);
+  // If the effect modifies an attribute/talent that is ALREADY targeted by the modifier,
+  // do NOT duplicate it. The value considered will be only the modifier.
+  // If the effect targets a DIFFERENT attribute/talent, add only the distinct target.
+  if (trait.effect) {
+    const norm = normalizeTraitType(trait.effect);
+    const words = norm.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    for (const w of words) {
+      const cleanW = w.trim();
+      if (cleanW) {
+        if (attrMap[cleanW] && !attrIds.has(attrMap[cleanW])) {
+          attrIds.add(attrMap[cleanW]);
+        }
+        if (talentMap[cleanW] && !talentIds.has(talentMap[cleanW])) {
+          talentIds.add(talentMap[cleanW]);
+        }
+      }
+    }
+  }
+
+  // Fallback: If no target was found in modifierType or effect, check trait name and description
+  if (attrIds.size === 0 && talentIds.size === 0) {
+    if (trait.name) checkAndAdd(trait.name);
+    if (trait.description) checkAndAdd(trait.description);
   }
 
   return {

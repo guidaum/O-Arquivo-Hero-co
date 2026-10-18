@@ -13,9 +13,11 @@ import {
   Brain, 
   Heart, 
   Flame, 
-  Sparkles
+  Sparkles,
+  ShieldAlert,
+  CheckCircle2
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, isTraitModifierSameAsEffect } from '../lib/utils';
 
 const iconMap: Record<string, any> = {
   Shield, Sword, Zap, Flame, Eye, Brain, Heart, Sparkles, Star
@@ -33,8 +35,18 @@ export interface TraitOriginModalProps {
     mod: number;
     traitMod: number;
     itemMod?: number;
+    total?: number;
     isTalent?: boolean;
     composition?: string[];
+    compositionDetails?: Array<{
+      id: string;
+      label: string;
+      total: number;
+      value: number;
+      mod: number;
+      traitMod: number;
+      itemMod: number;
+    }>;
   } | null;
   contributingTraits: Array<{
     id: string;
@@ -45,6 +57,8 @@ export interface TraitOriginModalProps {
     description?: string;
     effect?: string;
     effectiveMod: number;
+    isDirect?: boolean;
+    sourceAttr?: string;
   }>;
   attrTotal: number;
 }
@@ -53,16 +67,14 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
   isOpen,
   onClose,
   attr,
-  contributingTraits,
+  contributingTraits = [],
   attrTotal
 }) => {
-  const hasDetails = Boolean(
-    attr && contributingTraits && contributingTraits.length > 0
-  );
+  if (!attr) return null;
 
   return (
     <AnimatePresence>
-      {isOpen && attr && hasDetails && (
+      {isOpen && (
         <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
           {/* Backdrop */}
           <motion.div
@@ -78,18 +90,21 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
             initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
-            className="relative w-full max-w-lg glass-modal bg-obsidian/90 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 overflow-hidden z-10 max-h-[90vh] flex flex-col"
+            className="relative w-full max-w-xl glass-modal bg-obsidian/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-6 sm:p-8 space-y-6 overflow-hidden z-10 max-h-[90vh] flex flex-col"
           >
             {/* Header */}
             {(() => {
               const IconComponent = (attr.icon && iconMap[attr.icon]) || (attr.isTalent ? Sparkles : Sword);
-              const traitsSum = (contributingTraits || []).reduce((acc, t) => acc + (Number(t.effectiveMod) || 0), 0);
+              const traitsSum = contributingTraits
+                .filter(t => attr.isTalent ? t.isDirect !== false : true)
+                .reduce((acc, t) => acc + (Number(t.effectiveMod) || 0), 0);
+              
               const effectiveTraitMod = contributingTraits && contributingTraits.length > 0 ? traitsSum : (attr.traitMod || 0);
               const isNegative = effectiveTraitMod < 0;
               const isPositive = effectiveTraitMod > 0;
               const isTalent = Boolean(attr.isTalent);
               const computedTotal = (attr.value || 0) + (attr.mod || 0) + effectiveTraitMod + (!isTalent ? (attr.itemMod ?? 0) : 0);
-              const displayTotal = attrTotal !== undefined && attrTotal !== null ? attrTotal : computedTotal;
+              const displayTotal = attrTotal !== undefined && attrTotal !== null ? attrTotal : (attr.total ?? computedTotal);
 
               return (
                 <>
@@ -100,7 +115,7 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       </div>
                       <div>
                         <h3 className="text-xl font-serif text-parchment flex items-center gap-2">
-                          Origem do Modificador
+                          Composição & Modificadores
                         </h3>
                         <p className="text-xs font-mono text-parchment/50 uppercase tracking-widest">
                           {isTalent ? 'Talento' : 'Atributo'}: <span className="text-parchment font-bold">{attr.label}</span> {!isTalent && `(${attr.id.toUpperCase()})`}
@@ -117,6 +132,19 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                   </div>
 
                   <div className="overflow-y-auto space-y-6 pr-1 -mr-1 custom-scrollbar">
+                    {/* Regra de Efeitos e Modificadores de Traços */}
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3">
+                      <ShieldAlert size={20} className="text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1 text-xs">
+                        <span className="font-mono uppercase tracking-wider text-amber-300 font-bold block">
+                          Regra de Aplicação de Efeitos e Modificadores
+                        </span>
+                        <p className="text-parchment/80 leading-relaxed font-sans text-[11px] sm:text-xs">
+                          Quando o efeito e o modificador de um traço alterarem o mesmo {isTalent ? 'talento' : 'atributo'}, é considerado apenas o valor do modificador (sem duplicidade). Todos os cálculos de testes, talentos e combate consideram o <strong className="text-parchment font-semibold">valor total</strong> dos atributos.
+                        </p>
+                      </div>
+                    </div>
+
                     {/* Trait Status Banner */}
                     <div className={cn(
                       "p-4 rounded-2xl border flex items-center gap-3.5",
@@ -135,7 +163,7 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="font-serif text-base font-bold">
-                            {isNegative ? "Penalidade Efetiva de Traços" : isPositive ? "Bônus Efetivo de Traços" : "Sem Modificador de Traços"}
+                            {isNegative ? "Penalidade Efetiva de Traços" : isPositive ? "Bônus Efetivo de Traços" : "Sem Modificador Direto de Traços"}
                           </span>
                           <span className="font-mono text-xl font-bold">
                             {effectiveTraitMod > 0 ? `+${effectiveTraitMod}` : effectiveTraitMod} pts
@@ -143,18 +171,48 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                         </div>
                         <p className="text-xs text-parchment/60 font-sans mt-0.5">
                           {isNegative 
-                            ? `Os modificadores ativos de traços aplicam uma redução de ${Math.abs(effectiveTraitMod)} ponto(s) neste ${isTalent ? 'talento' : 'atributo'}.`
+                            ? `Os traços ativos aplicam uma penalidade líquida de ${Math.abs(effectiveTraitMod)} ponto(s) neste ${isTalent ? 'talento' : 'atributo'}.`
                             : isPositive 
-                            ? `Os modificadores ativos de traços aplicam um ganho de ${effectiveTraitMod} ponto(s) neste ${isTalent ? 'talento' : 'atributo'}.`
-                            : `Nenhum traço ativo está alterando o valor deste ${isTalent ? 'talento' : 'atributo'}.`}
+                            ? `Os traços ativos concedem um bônus líquido de ${effectiveTraitMod} ponto(s) neste ${isTalent ? 'talento' : 'atributo'}.`
+                            : `Nenhum traço ativo está alterando diretamente este ${isTalent ? 'talento' : 'atributo'}.`}
                         </p>
                       </div>
                     </div>
 
+                    {/* Talent Composition Attributes Breakdown */}
+                    {isTalent && attr.compositionDetails && attr.compositionDetails.length > 0 && (
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-mono text-parchment/50 uppercase tracking-widest px-1">
+                          Atributos de Composição (Valores Totais Utilizados)
+                        </label>
+                        <div className="space-y-2">
+                          {attr.compositionDetails.map((comp) => (
+                            <div key={comp.id} className="p-3 rounded-2xl glass border border-white/10 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="font-serif text-sm font-bold text-parchment">{comp.label}</span>
+                                <span className="text-[10px] font-mono text-parchment/40">({comp.id.toUpperCase()})</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="text-[10px] font-mono text-parchment/50 hidden sm:flex items-center gap-1.5">
+                                  <span>Base: {comp.value}</span>
+                                  {comp.mod !== 0 && <span className="text-ember">Mod: {comp.mod > 0 ? `+${comp.mod}` : comp.mod}</span>}
+                                  {comp.traitMod !== 0 && <span className="text-arcane">Traço: {comp.traitMod > 0 ? `+${comp.traitMod}` : comp.traitMod}</span>}
+                                  {comp.itemMod !== 0 && <span className="text-gold">Item: {comp.itemMod > 0 ? `+${comp.itemMod}` : comp.itemMod}</span>}
+                                </div>
+                                <div className="px-2.5 py-1 rounded-xl bg-arcane/15 border border-arcane/30 text-arcane font-serif text-sm font-bold">
+                                  Total: {comp.total}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Complete Value Composition Bar */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest px-1">
-                        Composição Completa do {isTalent ? 'Talento' : 'Atributo'}
+                      <label className="text-[10px] font-mono text-parchment/50 uppercase tracking-widest px-1">
+                        Composição do Valor Final do {isTalent ? 'Talento' : 'Atributo'}
                       </label>
                       <div className={cn(
                         "grid gap-2 text-center p-3 rounded-2xl glass border border-white/10",
@@ -162,7 +220,7 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       )}>
                         <div className="space-y-0.5">
                           <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">
-                            {isTalent ? 'Base (Composição)' : 'Base'}
+                            {isTalent ? 'Soma Atributos Totais' : 'Base'}
                           </span>
                           <span className="font-serif text-base text-glow-arcane font-bold">{attr.value}</span>
                         </div>
@@ -174,7 +232,9 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                           "space-y-0.5 p-1 rounded-xl border",
                           isNegative ? "bg-ember/15 border-ember/30" : isPositive ? "bg-arcane/15 border-arcane/30" : "border-transparent"
                         )}>
-                          <span className="text-[9px] font-mono uppercase tracking-wider font-bold block">Traço</span>
+                          <span className="text-[9px] font-mono uppercase tracking-wider font-bold block">
+                            {isTalent ? 'Traço Direto' : 'Traço'}
+                          </span>
                           <span className={cn(
                             "font-serif text-base font-bold",
                             isNegative ? "text-ember" : isPositive ? "text-arcane" : "text-parchment/40"
@@ -184,14 +244,14 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                         </div>
                         {!isTalent && (
                           <div className="space-y-0.5">
-                            <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Item</span>
+                            <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Item / Equip.</span>
                             <span className="font-serif text-base text-arcane">{(attr.itemMod ?? 0) >= 0 ? `+${attr.itemMod ?? 0}` : attr.itemMod}</span>
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-mono">
-                        <span className="text-parchment/50">Total Efetivo:</span>
-                        <span className="text-parchment font-serif text-lg font-bold text-glow-arcane">{displayTotal} pts</span>
+                      <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-arcane/10 border border-arcane/30 text-sm font-mono shadow-sm">
+                        <span className="text-parchment/80 uppercase tracking-wider font-bold">Valor Total Final:</span>
+                        <span className="text-parchment font-serif text-2xl font-bold text-glow-arcane">{displayTotal} pts</span>
                       </div>
                     </div>
 
@@ -200,7 +260,7 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       <div className="flex items-center justify-between px-1">
                         <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest flex items-center gap-1.5">
                           <Star size={12} className="text-gold" />
-                          Traços que Modificam este {isTalent ? 'Talento' : 'Atributo'} ({contributingTraits.length})
+                          Traços que Influenciam este {isTalent ? 'Talento' : 'Atributo'} ({contributingTraits.length})
                         </label>
                       </div>
 
@@ -209,7 +269,10 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                           {contributingTraits.map((t, index) => {
                             const isPositiveMod = t.effectiveMod > 0;
                             const isNegativeMod = t.effectiveMod < 0;
-                            const isDisadvantage = t.type === 'disadvantage';
+                            const isDisadvantage = String(t.type || '').toLowerCase().includes('disadvantage') || 
+                                                   String(t.type || '').toLowerCase().includes('defeito') ||
+                                                   String(t.type || '').toLowerCase().includes('desvantagem');
+                            const sameType = isTraitModifierSameAsEffect(t);
 
                             return (
                               <div
@@ -225,13 +288,20 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
-                                    <h4 className={cn(
-                                      "font-serif text-base font-medium",
-                                      isNegativeMod ? "text-ember" : isPositiveMod ? "text-arcane" : "text-parchment"
-                                    )}>
-                                      {t.name}
-                                    </h4>
-                                    <div className="flex items-center gap-2 mt-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className={cn(
+                                        "font-serif text-base font-medium",
+                                        isNegativeMod ? "text-ember" : isPositiveMod ? "text-arcane" : "text-parchment"
+                                      )}>
+                                        {t.name}
+                                      </h4>
+                                      {t.sourceAttr && (
+                                        <span className="text-[9px] font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-parchment/60">
+                                          via {t.sourceAttr}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                                       <span className={cn(
                                         "text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border",
                                         isDisadvantage 
@@ -240,9 +310,17 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                                       )}>
                                         {isDisadvantage ? 'Defeito' : 'Vantagem'}
                                       </span>
-                                      <span className="text-[10px] text-parchment/40 font-mono">
-                                        Alvo: {t.modifierType?.toUpperCase()}
-                                      </span>
+                                      {t.modifierType && (
+                                        <span className="text-[10px] text-parchment/50 font-mono">
+                                          Alvo: {t.modifierType.toUpperCase()}
+                                        </span>
+                                      )}
+                                      {sameType && (
+                                        <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                          <CheckCircle2 size={10} />
+                                          Sem duplicidade (apenas modificador considerado)
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
@@ -265,8 +343,8 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                                 )}
 
                                 {t.effect && (
-                                  <div className="pt-2 border-t border-white/5 flex items-center gap-2 text-[11px] font-mono text-parchment/50">
-                                    <span className="text-gold uppercase tracking-wider text-[9px]">Efeito:</span>
+                                  <div className="pt-2 border-t border-white/5 flex items-center gap-2 text-[11px] font-mono text-parchment/60">
+                                    <span className="text-gold uppercase tracking-wider text-[9px] font-bold">Efeito Declarado:</span>
                                     <span className="truncate">{t.effect}</span>
                                   </div>
                                 )}
@@ -277,11 +355,11 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       ) : (
                         <div className="p-6 rounded-2xl glass border border-dashed border-white/10 text-center space-y-2">
                           <Star size={24} className="text-parchment/20 mx-auto" />
-                          <p className="font-serif text-sm text-parchment/60">
-                            Nenhum traço ativo está modificando este {isTalent ? 'talento' : 'atributo'}.
+                          <p className="font-serif text-sm text-parchment/70">
+                            Nenhum traço ativo está modificando diretamente este {isTalent ? 'talento' : 'atributo'}.
                           </p>
                           <p className="text-xs text-parchment/40 font-sans max-w-sm mx-auto">
-                            Os traços mantêm estritamente o sinal (+ ou -) configurado, permitindo defeitos com bônus ou vantagens com penalidades.
+                            O cálculo utiliza o valor base somado aos modificadores manuais e de itens. Se você adquirir novas Vantagens ou Defeitos, eles serão aplicados aqui automaticamente.
                           </p>
                         </div>
                       )}
@@ -295,7 +373,7 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       onClick={onClose}
                       className="w-full sm:w-auto px-6 py-2.5 bg-arcane text-obsidian rounded-xl text-xs font-mono uppercase tracking-wider font-bold hover:scale-105 transition-all shadow-lg shadow-arcane/20 cursor-pointer"
                     >
-                      Entendido
+                      Fechar
                     </button>
                   </div>
                 </>

@@ -258,7 +258,7 @@ export default function GMDashboard() {
   const [enFormula, setEnFormula] = React.useState('20 - ((AGI + (PER / 2)) + (LUTA * 2))');
   const [dmFormula, setDmFormula] = React.useState('20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
   const [skillCostFormula, setSkillCostFormula] = React.useState('(COST * LVL) / VAR');
-  const [powerCostFormula, setPowerCostFormula] = React.useState('(COST * LVL) / VAR');
+  const [powerCostFormula, setPowerCostFormula] = React.useState('(COST * LVL)');
   const [calculationVars, setCalculationVars] = React.useState<Record<string, string>>({});
   const [showNewVarInput, setShowNewVarInput] = React.useState(false);
   const [newVarName, setNewVarName] = React.useState('');
@@ -457,7 +457,7 @@ export default function GMDashboard() {
     setEnFormula(data.enFormula || '20 - ((AGI + (PER / 2)) + (LUTA * 2))');
     setDmFormula(data.dmFormula || '20 - ((AGI + (PER / 2)) + (MISTICA * 2))');
     setSkillCostFormula(data.skillCostFormula || '(COST * LVL) / VAR');
-    setPowerCostFormula(data.powerCostFormula || '(COST * LVL) / VAR');
+    setPowerCostFormula(data.powerCostFormula === '(COST * LVL) / VAR' ? '(COST * LVL)' : (data.powerCostFormula || '(COST * LVL)'));
     setCalculationVars(data.calculationVars || {});
     setTalentCategories(data.talentCategories || []);
     setSkillTypeVars(data.skillTypeVars || {

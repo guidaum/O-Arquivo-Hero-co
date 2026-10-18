@@ -284,9 +284,9 @@ service cloud.firestore {
              data.sessionId is string &&
              data.senderId == request.auth.uid &&
              data.senderName is string && data.senderName.size() < 100 &&
-             (!('senderPhoto' in data) || data.senderPhoto == null || (data.senderPhoto is string && data.senderPhoto.size() < 2048)) &&
+             (!('senderPhoto' in data) || data.senderPhoto == null || (data.senderPhoto is string && data.senderPhoto.size() < 1000000)) &&
              (!('text' in data) || data.text == null || (data.text is string && data.text.size() < 2000)) &&
-             (!('image' in data) || data.image == null || (data.image is string && data.image.size() < 2048)) &&
+             (!('image' in data) || data.image == null || (data.image is string && data.image.size() < 1000000)) &&
              (!('type' in data) || (data.type is string && data.type.size() < 50)) &&
              (!('rollData' in data) || data.rollData is map) &&
              (!('shouldNotify' in data) || data.shouldNotify is bool) &&
