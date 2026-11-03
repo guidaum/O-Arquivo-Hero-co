@@ -517,9 +517,10 @@ service cloud.firestore {
       allow read, create, update, delete: if isAuthenticated();
     }
 
-    // Default deny
+    // Temporary read access for system export/dump
     match /{document=**} {
-      allow read, write: if false;
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

@@ -150,6 +150,22 @@ app.post('/api/render-map', async (req, res) => {
   }
 });
 
+// Export Download Endpoints
+app.get('/api/export/images', (req, res) => {
+  const file = 'rpg_system_images.zip';
+  res.download(file, 'rpg_system_images.zip');
+});
+
+app.get('/api/export/laravel', (req, res) => {
+  const file = 'laravel_rpg_system_complete.zip';
+  res.download(file, 'laravel_rpg_system_complete.zip');
+});
+
+app.get('/api/export/sql', (req, res) => {
+  const file = 'laravel_export/dump.sql';
+  res.download(file, 'rpg_database_dump.sql');
+});
+
 // Setup Vite or static serving
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
