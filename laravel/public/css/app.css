@@ -1,0 +1,55 @@
+/* Tokens globais do tema. O layout completo é definido na fase 4. */
+:root {
+    --color-bg: #f4ecd8;
+    --color-surface: #fbf6ea;
+    --color-text: #2b2118;
+    --color-muted: #6b5a48;
+    --color-accent: #8b2e1f;
+    --font-body: Georgia, "Times New Roman", serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg: #15110d;
+        --color-surface: #211a14;
+        --color-text: #ede3cf;
+        --color-muted: #a8957c;
+        --color-accent: #d4694f;
+    }
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    line-height: 1.5;
+}
+
+.welcome {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.welcome__title {
+    margin: 0 0 0.5rem;
+    color: var(--color-accent);
+    font-size: 2.25rem;
+}
+
+.welcome__text {
+    margin: 0;
+    color: var(--color-muted);
+}
