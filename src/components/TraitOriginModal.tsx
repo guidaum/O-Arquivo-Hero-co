@@ -15,13 +15,26 @@ import {
   Flame, 
   Sparkles,
   ShieldAlert,
-  CheckCircle2
+  CheckCircle2,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { cn, isTraitModifierSameAsEffect } from '../lib/utils';
 
 const iconMap: Record<string, any> = {
   Shield, Sword, Zap, Flame, Eye, Brain, Heart, Sparkles, Star
 };
+
+export interface GMModifierItem {
+  id: string;
+  value: number;
+  justification: string;
+  authorId?: string;
+  authorName?: string;
+  createdAt?: string;
+  targetId?: string;
+  isTalent?: boolean;
+}
 
 export interface TraitOriginModalProps {
   isOpen: boolean;
@@ -35,6 +48,7 @@ export interface TraitOriginModalProps {
     mod: number;
     traitMod: number;
     itemMod?: number;
+    gmMod?: number;
     total?: number;
     isTalent?: boolean;
     composition?: string[];
@@ -46,6 +60,7 @@ export interface TraitOriginModalProps {
       mod: number;
       traitMod: number;
       itemMod: number;
+      gmMod?: number;
     }>;
   } | null;
   contributingTraits: Array<{
@@ -61,6 +76,10 @@ export interface TraitOriginModalProps {
     sourceAttr?: string;
   }>;
   attrTotal: number;
+  gmModifiers?: GMModifierItem[];
+  isGM?: boolean;
+  onAddGMModifier?: () => void;
+  onRemoveGMModifier?: (modId: string) => void;
 }
 
 export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
@@ -68,7 +87,11 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
   onClose,
   attr,
   contributingTraits = [],
-  attrTotal
+  attrTotal,
+  gmModifiers = [],
+  isGM = false,
+  onAddGMModifier,
+  onRemoveGMModifier
 }) => {
   if (!attr) return null;
 
@@ -214,45 +237,145 @@ export const TraitOriginModal: React.FC<TraitOriginModalProps> = ({
                       <label className="text-[10px] font-mono text-parchment/50 uppercase tracking-widest px-1">
                         Composição do Valor Final do {isTalent ? 'Talento' : 'Atributo'}
                       </label>
-                      <div className={cn(
-                        "grid gap-2 text-center p-3 rounded-2xl glass border border-white/10",
-                        isTalent ? "grid-cols-3" : "grid-cols-4"
-                      )}>
-                        <div className="space-y-0.5">
-                          <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">
-                            {isTalent ? 'Soma Atributos Totais' : 'Base'}
-                          </span>
-                          <span className="font-serif text-base text-glow-arcane font-bold">{attr.value}</span>
-                        </div>
-                        <div className="space-y-0.5">
-                          <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Manual (Mod)</span>
-                          <span className="font-serif text-base text-ember">{attr.mod >= 0 ? `+${attr.mod}` : attr.mod}</span>
-                        </div>
-                        <div className={cn(
-                          "space-y-0.5 p-1 rounded-xl border",
-                          isNegative ? "bg-ember/15 border-ember/30" : isPositive ? "bg-arcane/15 border-arcane/30" : "border-transparent"
-                        )}>
-                          <span className="text-[9px] font-mono uppercase tracking-wider font-bold block">
-                            {isTalent ? 'Traço Direto' : 'Traço'}
-                          </span>
-                          <span className={cn(
-                            "font-serif text-base font-bold",
-                            isNegative ? "text-ember" : isPositive ? "text-arcane" : "text-parchment/40"
-                          )}>
-                            {effectiveTraitMod > 0 ? `+${effectiveTraitMod}` : effectiveTraitMod}
-                          </span>
-                        </div>
-                        {!isTalent && (
-                          <div className="space-y-0.5">
-                            <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Item / Equip.</span>
-                            <span className="font-serif text-base text-arcane">{(attr.itemMod ?? 0) >= 0 ? `+${attr.itemMod ?? 0}` : attr.itemMod}</span>
+                      {(() => {
+                        const totalGMMod = gmModifiers.reduce((acc, m) => acc + (Number(m.value) || 0), 0) + (attr.gmMod && gmModifiers.length === 0 ? attr.gmMod : 0);
+                        const hasGMMod = totalGMMod !== 0 || gmModifiers.length > 0;
+                        let colsClass = "grid-cols-3";
+                        if (!isTalent && hasGMMod) colsClass = "grid-cols-5";
+                        else if (!isTalent || hasGMMod) colsClass = "grid-cols-4";
+
+                        return (
+                          <div className={cn("grid gap-2 text-center p-3 rounded-2xl glass border border-white/10", colsClass)}>
+                            <div className="space-y-0.5">
+                              <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">
+                                {isTalent ? 'Soma Atributos' : 'Base'}
+                              </span>
+                              <span className="font-serif text-base text-glow-arcane font-bold">{attr.value}</span>
+                            </div>
+                            <div className="space-y-0.5">
+                              <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Manual (Mod)</span>
+                              <span className="font-serif text-base text-ember">{attr.mod >= 0 ? `+${attr.mod}` : attr.mod}</span>
+                            </div>
+                            <div className={cn(
+                              "space-y-0.5 p-1 rounded-xl border",
+                              isNegative ? "bg-ember/15 border-ember/30" : isPositive ? "bg-arcane/15 border-arcane/30" : "border-transparent"
+                            )}>
+                              <span className="text-[9px] font-mono uppercase tracking-wider font-bold block">
+                                {isTalent ? 'Traço Direto' : 'Traço'}
+                              </span>
+                              <span className={cn(
+                                "font-serif text-base font-bold",
+                                isNegative ? "text-ember" : isPositive ? "text-arcane" : "text-parchment/40"
+                              )}>
+                                {effectiveTraitMod > 0 ? `+${effectiveTraitMod}` : effectiveTraitMod}
+                              </span>
+                            </div>
+                            {!isTalent && (
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] font-mono text-parchment/40 uppercase tracking-wider block">Item / Equip.</span>
+                                <span className="font-serif text-base text-arcane">{(attr.itemMod ?? 0) >= 0 ? `+${attr.itemMod ?? 0}` : attr.itemMod}</span>
+                              </div>
+                            )}
+                            {hasGMMod && (
+                              <div className="space-y-0.5 p-1 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                                <span className="text-[9px] font-mono text-amber-300 uppercase tracking-wider font-bold block">Mestre (GM)</span>
+                                <span className={cn("font-serif text-base font-bold", totalGMMod >= 0 ? "text-amber-400" : "text-ember")}>
+                                  {totalGMMod > 0 ? `+${totalGMMod}` : totalGMMod}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                       <div className="flex items-center justify-between px-4 py-3 rounded-2xl bg-arcane/10 border border-arcane/30 text-sm font-mono shadow-sm">
                         <span className="text-parchment/80 uppercase tracking-wider font-bold">Valor Total Final:</span>
                         <span className="text-parchment font-serif text-2xl font-bold text-glow-arcane">{displayTotal} pts</span>
                       </div>
+                    </div>
+
+                    {/* Modificadores do Mestre Section */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <label className="text-[10px] font-mono text-amber-400 uppercase tracking-widest flex items-center gap-1.5 font-bold">
+                          <ShieldAlert size={13} className="text-amber-400" />
+                          Modificadores do Mestre ({gmModifiers.length})
+                        </label>
+                        {isGM && onAddGMModifier && (
+                          <button
+                            type="button"
+                            onClick={onAddGMModifier}
+                            className="flex items-center gap-1 text-[10px] font-mono text-amber-300 hover:text-white bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 px-2.5 py-1 rounded-lg transition-all cursor-pointer font-bold shadow-sm"
+                          >
+                            <Plus size={12} />
+                            Adicionar Modificador
+                          </button>
+                        )}
+                      </div>
+
+                      {gmModifiers.length > 0 ? (
+                        <div className="space-y-2.5">
+                          {gmModifiers.map((gmMod) => (
+                            <div
+                              key={gmMod.id}
+                              className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 relative"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "px-2.5 py-1 rounded-xl font-serif text-base font-bold border",
+                                    gmMod.value >= 0 
+                                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-sm" 
+                                      : "bg-ember/20 border-ember/40 text-ember shadow-sm"
+                                  )}>
+                                    {gmMod.value > 0 ? `+${gmMod.value}` : gmMod.value}
+                                  </span>
+                                  <div>
+                                    <span className="text-xs font-mono uppercase tracking-wider text-amber-300 font-bold block">
+                                      Modificador do Mestre
+                                    </span>
+                                    <span className="text-[9px] font-mono text-parchment/50">
+                                      {gmMod.authorName ? `Por ${gmMod.authorName}` : 'Aplicado pelo Mestre'}
+                                      {gmMod.createdAt ? ` em ${new Date(gmMod.createdAt).toLocaleDateString('pt-BR')}` : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                                {isGM && onRemoveGMModifier && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onRemoveGMModifier(gmMod.id)}
+                                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-parchment/40 hover:text-rose-400 transition-colors cursor-pointer"
+                                    title="Remover este modificador"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
+                              <div className="p-3 rounded-xl bg-obsidian/70 border border-white/10 space-y-1">
+                                <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400/80 font-bold block">
+                                  Justificativa do Mestre:
+                                </span>
+                                <p className="text-xs text-parchment leading-relaxed font-sans italic">
+                                  "{gmMod.justification}"
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-3.5 rounded-2xl border border-dashed border-white/10 bg-white/[0.01] flex items-center justify-between text-xs text-parchment/40 font-mono">
+                          <span>Nenhum modificador do mestre aplicado neste {isTalent ? 'talento' : 'atributo'}.</span>
+                          {isGM && onAddGMModifier && (
+                            <button
+                              type="button"
+                              onClick={onAddGMModifier}
+                              className="text-amber-400 hover:underline flex items-center gap-1 font-sans font-medium text-xs cursor-pointer"
+                            >
+                              <Plus size={12} />
+                              Adicionar
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* List of Contributing Traits */}

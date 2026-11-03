@@ -32,9 +32,10 @@ import {
   Backpack,
   Pencil,
   Image as ImageIcon,
-  Camera
+  Camera,
+  AlertTriangle
 } from 'lucide-react';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName, calculateTraitCost, calculateTraitCostDetails } from '../lib/utils';
 import { auth, db, collection, setDoc, getDoc, doc, OperationType, handleFirestoreError, query, where, getDocs } from '../firebase';
 import { ImagePickerModal } from './ImagePickerModal';
 
@@ -130,6 +131,13 @@ export default function CharacterCreation() {
   const [powers, setPowers] = React.useState<any[]>([]);
   const [selectedTraits, setSelectedTraits] = React.useState<any[]>([]);
   const [detailTrait, setDetailTrait] = React.useState<any | null>(null);
+  const [unspentWarning, setUnspentWarning] = React.useState<{
+    isOpen: boolean;
+    targetStep: number;
+    stepName: string;
+    unspentCount: number;
+    pointsLabel: string;
+  } | null>(null);
 
   const [showSkillSuggestion, setShowSkillSuggestion] = React.useState(false);
   const [showPowerSuggestion, setShowPowerSuggestion] = React.useState(false);
@@ -569,12 +577,12 @@ export default function CharacterCreation() {
     const disadvantages = selectedTraits.filter(t => {
       const type = String(t.type || '').toLowerCase();
       return type === 'disadvantage' || type === 'defeito' || type === 'desvantagem';
-    }).reduce((acc, t) => acc + Math.abs(Number(t.modifier) || 0), 0);
+    }).reduce((acc, t) => acc + calculateTraitCost(t), 0);
 
     const advantages = selectedTraits.filter(t => {
       const type = String(t.type || '').toLowerCase();
       return type === 'advantage' || type === 'vantagem';
-    }).reduce((acc, t) => acc + Math.abs(Number(t.modifier) || 0), 0);
+    }).reduce((acc, t) => acc + calculateTraitCost(t), 0);
 
     return disadvantages - advantages;
   }, [selectedTraits]);
@@ -705,9 +713,73 @@ export default function CharacterCreation() {
     const isSelected = selectedTraits.some(t => t.id === trait.id);
     if (isSelected) {
       setSelectedTraits(prev => prev.filter(t => t.id !== trait.id));
-    } else {
-      setSelectedTraits(prev => [...prev, trait]);
+      return;
     }
+
+    const typeStr = String(trait.type || '').toLowerCase();
+    const isDisadvantage = typeStr === 'disadvantage' || typeStr === 'defeito' || typeStr === 'desvantagem';
+    const isAdvantage = typeStr === 'advantage' || typeStr === 'vantagem';
+
+    // Defeitos podem sempre ser escolhidos sem pontos porque eles fornecem pontos.
+    // Vantagens NÃO podem ser escolhidas se não houver pontos disponíveis suficientes!
+    if (isAdvantage) {
+      const cost = calculateTraitCost(trait);
+      if (traitBalance < cost) {
+        setSaveStatus({
+          type: 'error',
+          message: `Pontos insuficientes para esta Vantagem! (Custo: ${cost} pt${cost !== 1 ? 's' : ''}, Saldo: ${traitBalance}). Escolha defeitos para obter pontos adicionais.`
+        });
+        return;
+      }
+    }
+
+    setSelectedTraits(prev => [...prev, trait]);
+  };
+
+  const checkUnspentForStep = (currentStep: number): { hasUnspent: boolean; count: number; label: string } => {
+    if (currentStep === 1 && traitBalance > 0) {
+      return { hasUnspent: true, count: traitBalance, label: 'pontos de traços/vantagens obtidos por defeitos' };
+    }
+    if (currentStep === 3) {
+      const currentTotal = (Object.values(values) as number[]).reduce((a, b) => a + b, 0);
+      const unspentAttrs = maxPoints - currentTotal;
+      if (unspentAttrs > 0) {
+        return { hasUnspent: true, count: unspentAttrs, label: 'pontos de atributos' };
+      }
+    }
+    if (currentStep === 4 && skillPoints > 0) {
+      return { hasUnspent: true, count: skillPoints, label: 'pontos de perícia' };
+    }
+    if (currentStep === 5 && powerPoints > 0) {
+      return { hasUnspent: true, count: powerPoints, label: 'pontos de poder' };
+    }
+    return { hasUnspent: false, count: 0, label: '' };
+  };
+
+  const handleRequestStepChange = (targetStep: number) => {
+    if (targetStep <= step) {
+      setStep(targetStep);
+      return;
+    }
+
+    if (step === 2 && (!basics.sessionId || !basics.name)) {
+      setTouched({ name: true, sessionId: true });
+      return;
+    }
+
+    const unspent = checkUnspentForStep(step);
+    if (unspent.hasUnspent) {
+      setUnspentWarning({
+        isOpen: true,
+        targetStep,
+        stepName: steps[step - 1],
+        unspentCount: unspent.count,
+        pointsLabel: unspent.label
+      });
+      return;
+    }
+
+    setStep(targetStep);
   };
 
   const updatePowerType = (powerId: string, newType: string) => {
@@ -997,14 +1069,7 @@ export default function CharacterCreation() {
             <div className="flex flex-col items-center gap-2 relative">
               <button
                 type="button"
-                onClick={() => {
-                  if (idx + 1 > 2 && (!basics.sessionId || !basics.name)) {
-                    setTouched({ name: true, sessionId: true });
-                    setStep(2);
-                    return;
-                  }
-                  setStep(idx + 1);
-                }}
+                onClick={() => handleRequestStepChange(idx + 1)}
                 className={cn(
                   "w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-500 cursor-pointer hover:scale-105",
                   step > idx + 1 ? "bg-arcane border-arcane text-obsidian" :
@@ -1103,6 +1168,7 @@ export default function CharacterCreation() {
                   {filteredTraits.map((trait) => {
                     const isSelected = selectedTraits.some(t => t.id === trait.id);
                     const isAdvantage = trait.type === 'advantage';
+                    const traitCost = calculateTraitCost(trait);
                     return (
                       <div
                         key={trait.id}
@@ -1119,17 +1185,24 @@ export default function CharacterCreation() {
                           "glass p-6 rounded-3xl text-left transition-all border group relative cursor-pointer select-none",
                           isSelected 
                             ? (isAdvantage ? "border-arcane bg-arcane/10 shadow-lg shadow-arcane/5" : "border-ember bg-ember/10 shadow-lg shadow-ember/5") 
+                            : isAdvantage && !isSelected && traitBalance < traitCost
+                            ? "border-white/5 opacity-60 hover:opacity-90 hover:border-white/15"
                             : "border-white/10 hover:border-white/25 hover:bg-white/[0.04]"
                         )}
                       >
                         <div className="flex justify-between items-start mb-2 gap-2">
                           <h4 className="font-serif text-xl group-hover:text-arcane transition-colors pr-2 leading-tight">{trait.name}</h4>
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {isAdvantage && !isSelected && traitBalance < traitCost && (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-mono text-amber-300/80 bg-amber-500/10 border border-amber-500/20">
+                                Sem saldo
+                              </span>
+                            )}
                             <div className={cn(
                               "px-3 py-1 rounded-full text-[10px] font-mono uppercase tracking-widest font-bold",
                               isAdvantage ? "bg-arcane text-obsidian" : "bg-ember text-obsidian"
                             )}>
-                              {trait.modifier > 0 ? `+${trait.modifier}` : trait.modifier} pts
+                              {isAdvantage ? `${traitCost} pt${traitCost !== 1 ? 's' : ''}` : `+${traitCost} pt${traitCost !== 1 ? 's' : ''}`}
                             </div>
                             {/* Info icon in the top right corner */}
                             <button
@@ -1183,7 +1256,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(2)}
+                    onClick={() => handleRequestStepChange(2)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Origens</span>
@@ -1483,7 +1556,7 @@ export default function CharacterCreation() {
                         setTouched({ name: true, sessionId: true });
                         return;
                       }
-                      setStep(3);
+                      handleRequestStepChange(3);
                     }}
                     className={cn(
                       "px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform",
@@ -1691,7 +1764,7 @@ export default function CharacterCreation() {
                     <span>Voltar para Origens</span>
                   </button>
                   <button 
-                    onClick={() => setStep(4)}
+                    onClick={() => handleRequestStepChange(4)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Perícias</span>
@@ -1882,7 +1955,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(5)}
+                    onClick={() => handleRequestStepChange(5)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Poderes</span>
@@ -2068,7 +2141,7 @@ export default function CharacterCreation() {
 
                 <div className="flex justify-end pt-6">
                   <button 
-                    onClick={() => setStep(6)}
+                    onClick={() => handleRequestStepChange(6)}
                     className="px-8 py-4 bg-arcane text-obsidian rounded-2xl font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                   >
                     <span>Continuar para Equipamento</span>
@@ -2327,18 +2400,30 @@ export default function CharacterCreation() {
                     <div className="space-y-4">
                       <h4 className="text-xs font-mono text-parchment/40 uppercase tracking-widest">Vantagens & Defeitos</h4>
                       <div className="space-y-2">
-                        {selectedTraits.map(t => (
-                          <div key={t.id} className="flex justify-between text-sm">
-                            <span className={cn(
-                              t.type === 'advantage' ? "text-arcane" : "text-ember"
-                            )}>
-                              {t.name}
-                            </span>
-                            <span className="text-parchment/40">
-                              {t.modifier > 0 ? `+${t.modifier}` : t.modifier} {t.modifierType?.toUpperCase()}
-                            </span>
-                          </div>
-                        ))}
+                        {selectedTraits.map(t => {
+                          const isAdvantage = t.type === 'advantage';
+                          const cost = calculateTraitCost(t);
+                          return (
+                            <div key={t.id} className="flex justify-between text-sm items-center">
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  isAdvantage ? "text-arcane" : "text-ember"
+                                )}>
+                                  {t.name}
+                                </span>
+                                <span className={cn(
+                                  "text-[9px] font-mono px-1.5 py-0.5 rounded border",
+                                  isAdvantage ? "bg-arcane/10 text-arcane border-arcane/20" : "bg-ember/10 text-ember border-ember/20"
+                                )}>
+                                  {isAdvantage ? `${cost} pt${cost !== 1 ? 's' : ''}` : `+${cost} pt${cost !== 1 ? 's' : ''}`}
+                                </span>
+                              </div>
+                              <span className="text-parchment/40 font-mono text-xs">
+                                {t.modifier > 0 ? `+${t.modifier}` : t.modifier} {t.modifierType?.toUpperCase()}
+                              </span>
+                            </div>
+                          );
+                        })}
                         {selectedTraits.length === 0 && <p className="text-sm text-parchment/20">Nenhum traço selecionado.</p>}
                       </div>
                     </div>
@@ -2456,13 +2541,7 @@ export default function CharacterCreation() {
             <div className="space-y-3">
               {step < steps.length && (
                 <button 
-                  onClick={() => {
-                    if (step === 2 && (!basics.sessionId || !basics.name)) {
-                      setTouched({ name: true, sessionId: true });
-                      return;
-                    }
-                    setStep(prev => Math.min(steps.length, prev + 1));
-                  }}
+                  onClick={() => handleRequestStepChange(step + 1)}
                   disabled={step === 2 && (!basics.sessionId || !basics.name)}
                   className={cn(
                     "w-full py-4 bg-arcane text-obsidian rounded-2xl flex items-center justify-center gap-2 font-bold hover:scale-105 transition-transform shadow-lg shadow-arcane/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
@@ -2500,6 +2579,71 @@ export default function CharacterCreation() {
           </section>
         </div>
       </div>
+
+      {/* Unspent Points Warning Modal */}
+      <AnimatePresence>
+        {unspentWarning?.isOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setUnspentWarning(null)}
+              className="absolute inset-0 bg-obsidian/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-md glass-modal bg-obsidian/95 backdrop-blur-xl border border-amber-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-5 z-10"
+            >
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                  <AlertTriangle size={26} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-serif text-xl text-parchment font-bold">
+                    Pontos Restantes!
+                  </h3>
+                  <p className="text-xs font-mono text-amber-400/80 uppercase tracking-wider">
+                    {unspentWarning.stepName}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-parchment/90 space-y-2 leading-relaxed">
+                <p>
+                  Você ainda possui <span className="text-amber-300 font-bold font-mono text-sm px-1.5 py-0.5 rounded bg-amber-500/20">{unspentWarning.unspentCount}</span> {unspentWarning.pointsLabel} disponíveis para utilizar nesta etapa!
+                </p>
+                <p className="text-parchment/60 text-[11px]">
+                  Deseja permanecer no passo atual para distribuir esses pontos ou prefere avançar mesmo assim?
+                </p>
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={() => setUnspentWarning(null)}
+                  className="flex-1 py-3 px-4 rounded-xl bg-arcane text-obsidian font-bold text-xs uppercase tracking-wider hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-arcane/20 cursor-pointer text-center"
+                >
+                  Distribuir Pontos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = unspentWarning.targetStep;
+                    setUnspentWarning(null);
+                    setStep(next);
+                  }}
+                  className="py-3 px-4 rounded-xl border border-white/20 hover:border-amber-500/40 hover:bg-amber-500/10 text-parchment/70 hover:text-amber-300 text-xs font-mono uppercase tracking-wider transition-all cursor-pointer text-center"
+                >
+                  Avançar Mesmo Assim
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Suggestion Modals */}
       <AnimatePresence>
@@ -2974,9 +3118,14 @@ export default function CharacterCreation() {
                       )}>
                         {detailTrait.type === 'advantage' ? 'Vantagem' : 'Defeito'}
                       </span>
-                      <span className="text-xs font-mono text-parchment/40">
-                        {detailTrait.modifier > 0 ? `+${detailTrait.modifier}` : detailTrait.modifier} pontos
-                      </span>
+                      {(() => {
+                        const cost = calculateTraitCost(detailTrait);
+                        return (
+                          <span className="text-xs font-mono text-parchment/60 font-medium">
+                            {detailTrait.type === 'advantage' ? `Custo: ${cost} pts` : `+${cost} pts de saldo`}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -2990,23 +3139,50 @@ export default function CharacterCreation() {
               </div>
 
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-xs font-mono">
-                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1">Modifica / Alvo</span>
-                    <span className="text-parchment font-bold text-sm">
-                      {getTraitTargetDisplayName(detailTrait.modifierType, attributes, availableTalents)}
-                    </span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1">Valor do Modificador</span>
-                    <span className={cn(
-                      "font-serif font-bold text-base",
-                      detailTrait.modifier > 0 ? "text-arcane" : detailTrait.modifier < 0 ? "text-ember" : "text-parchment"
-                    )}>
-                      {detailTrait.modifier > 0 ? `+${detailTrait.modifier}` : detailTrait.modifier} pts
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const details = calculateTraitCostDetails(detailTrait);
+                  return (
+                    <>
+                      <div className="grid grid-cols-3 gap-2.5 text-xs font-mono">
+                        <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                          <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1">
+                            {details.isAdvantage ? 'Custo' : 'Saldo Obtido'}
+                          </span>
+                          <span className={cn(
+                            "font-serif font-bold text-base block",
+                            details.isAdvantage ? "text-arcane" : "text-ember"
+                          )}>
+                            {details.isAdvantage ? `${details.totalCost} pts` : `+${details.totalCost} pts`}
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                          <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1">Modificador</span>
+                          <span className={cn(
+                            "font-serif font-bold text-base block",
+                            detailTrait.modifier > 0 ? "text-arcane" : detailTrait.modifier < 0 ? "text-ember" : "text-parchment"
+                          )}>
+                            {detailTrait.modifier > 0 ? `+${detailTrait.modifier}` : detailTrait.modifier} pts
+                          </span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                          <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1">Alvo</span>
+                          <span className="text-parchment font-bold text-xs truncate block mt-0.5">
+                            {getTraitTargetDisplayName(detailTrait.modifierType, attributes, availableTalents)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-[11px] font-mono text-parchment/80 space-y-1.5">
+                        <span className="text-[9px] uppercase tracking-wider text-parchment/40 block font-bold">
+                          Cálculo do Valor de Custo ({details.isAdvantage ? 'Vantagem' : 'Defeito'}):
+                        </span>
+                        <p className="leading-relaxed">
+                          Soma dos Efeitos ({details.rawEffectSum >= 0 ? `+${details.rawEffectSum}` : details.rawEffectSum}) → Positivo: {details.positiveEffectSum} ÷ 2 ({details.isAdvantage ? 'teto' : 'piso'} = {details.halfEffect}) + |Modificador| ({details.modVal}) = <span className={cn("font-bold", details.isAdvantage ? "text-arcane" : "text-ember")}>{details.totalCost} pts</span>
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {detailTrait.description && (
                   <div className="space-y-1.5">

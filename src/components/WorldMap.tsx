@@ -46,6 +46,7 @@ import {
   Minimize2, 
   ChevronRight, 
   ChevronLeft,
+  ChevronDown,
   Navigation,
   BookOpen,
   Image as ImageIcon,
@@ -53,7 +54,9 @@ import {
   CheckCircle2,
   Lock,
   Globe,
-  User
+  User,
+  Radio,
+  Scroll
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { 
@@ -81,6 +84,11 @@ import {
 
 import MapRestrictedAccess from './MapRestrictedAccess';
 import CampaignMapManagerModal from './CampaignMapManagerModal';
+import { MapDrawingOverlay } from './map/MapDrawingOverlay';
+import { MapDrawingToolbar } from './map/MapDrawingToolbar';
+import { WorldMapPingData } from '../types/mapDrawing';
+import { playPingAudioAlert } from '../lib/pingSound';
+import CharacterSheet from './CharacterSheet';
 
 // Built-in map assets
 import aethelgardMap from '../assets/images/fantasy_world_map_1791537797619.jpg';
@@ -501,8 +509,9 @@ export default function WorldMap() {
   const [customMapsLoaded, setCustomMapsLoaded] = React.useState<boolean>(false);
 
   // Direct target map document from Firestore (loaded directly when map parameter is present in URL)
+  const isCustomTargetRequested = Boolean(initialMapParam && initialMapParam !== 'aethelgard' && initialMapParam !== 'archipelago');
   const [targetMapDoc, setTargetMapDoc] = React.useState<CampaignMapItem | null>(null);
-  const [targetMapLoading, setTargetMapLoading] = React.useState<boolean>(false);
+  const [targetMapLoading, setTargetMapLoading] = React.useState<boolean>(isCustomTargetRequested);
 
   // User Role & Campaign Management State
   const [userRole, setUserRole] = React.useState<'user' | 'gm' | 'admin'>('user');
@@ -597,6 +606,33 @@ export default function WorldMap() {
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
   const [cursorCoords, setCursorCoords] = React.useState<{ x: number; y: number } | null>(null);
+
+  // Freehand Map Drawing state
+  const [isDrawingMode, setIsDrawingMode] = React.useState(false);
+  const [drawingTool, setDrawingTool] = React.useState<'pen' | 'polygon' | 'eraser'>('pen');
+  const [drawingColor, setDrawingColor] = React.useState('#38bdf8');
+  const [drawingStrokeSize, setDrawingStrokeSize] = React.useState(3);
+
+  // Real-time Multiplayer Pings
+  const [isPingMode, setIsPingMode] = React.useState(false);
+  const [pings, setPings] = React.useState<WorldMapPingData[]>([]);
+
+  // Character Sheet Modal State
+  const [sheetModalCharacterId, setSheetModalCharacterId] = React.useState<string | null>(null);
+
+  // Map Selector Dropdown Popover State
+  const [isMapSelectorOpen, setIsMapSelectorOpen] = React.useState(false);
+  const mapSelectorRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mapSelectorRef.current && !mapSelectorRef.current.contains(e.target as Node)) {
+        setIsMapSelectorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
   const mapImageRef = React.useRef<HTMLImageElement>(null);
@@ -887,8 +923,8 @@ export default function WorldMap() {
     const customFound = customWorldMaps.find(m => m.id === selectedMapId);
     if (customFound) return customFound;
 
-    // 4. Se ainda está carregando o mapa solicitado, retorna estado provisório para NUNCA puxar o mapa base!
-    if (targetMapLoading && selectedMapId && selectedMapId !== 'aethelgard' && selectedMapId !== 'archipelago') {
+    // 4. Se o mapa solicitado for personalizado e ainda estiver carregando, NUNCA puxar o modelo base!
+    if (selectedMapId && selectedMapId !== 'aethelgard' && selectedMapId !== 'archipelago') {
       return {
         id: selectedMapId,
         name: 'Carregando Mapa...',
@@ -901,7 +937,7 @@ export default function WorldMap() {
       };
     }
 
-    // 5. Se for Mestre: primeiro mapa disponível ou modelo base
+    // 5. Se for Mestre e estiver em modelo base: primeiro mapa disponível ou modelo base
     if (isGM) {
       return allWorldPresets[0] || DEFAULT_WORLD_PRESETS[0];
     }
@@ -1038,9 +1074,95 @@ export default function WorldMap() {
     });
   }, [pins, currentPreset.id, isGM, selectedSessionId, selectedCategoryFilter, searchQuery]);
 
-  // Handle map click to place pin
+  // Real-time Multiplayer Pings Listener
+  React.useEffect(() => {
+    if (!currentPreset.id) return;
+
+    const qPings = query(
+      collection(db, 'worldMapPings'),
+      where('mapId', '==', currentPreset.id)
+    );
+
+    const unsub = onSnapshot(qPings, (snapshot) => {
+      const now = Date.now();
+      const list: WorldMapPingData[] = [];
+      snapshot.forEach(docSnap => {
+        const d = { id: docSnap.id, ...docSnap.data() } as WorldMapPingData;
+        if (now - (d.timestamp || 0) < 6000) {
+          list.push(d);
+        }
+      });
+      setPings(list);
+    }, (err) => {
+      console.warn('World map pings listener error:', err);
+    });
+
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      setPings(prev => prev.filter(p => now - (p.timestamp || 0) < 6000));
+    }, 1500);
+
+    return () => {
+      unsub();
+      clearInterval(cleanupInterval);
+    };
+  }, [currentPreset.id]);
+
+  // Drop a real-time multiplayer ping on World Map
+  const handleDropPing = async (pctX: number, pctY: number) => {
+    if (!user) return;
+    const newPing: WorldMapPingData = {
+      id: `ping_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      mapId: currentPreset.id,
+      sessionId: selectedSessionId || '',
+      x: pctX,
+      y: pctY,
+      userId: user.uid,
+      userName: user.displayName || (isGM ? 'Mestre' : 'Jogador'),
+      color: isGM ? '#f59e0b' : '#38bdf8',
+      timestamp: Date.now()
+    };
+
+    setPings(prev => [...prev, newPing]);
+    playPingAudioAlert();
+
+    try {
+      const docRef = await addDoc(collection(db, 'worldMapPings'), newPing);
+      setPings(prev => [
+        ...prev.filter(p => p.id !== docRef.id && p.id !== newPing.id),
+        { ...newPing, id: docRef.id }
+      ]);
+    } catch (err) {
+      console.warn('World map ping sync error:', err);
+    }
+  };
+
+  // Delete individual ping from World Map
+  const handleDeletePing = async (pingId: string) => {
+    setPings(prev => prev.filter(p => p.id !== pingId));
+    try {
+      await deleteDoc(doc(db, 'worldMapPings', pingId));
+    } catch (err) {
+      console.warn('Error deleting world map ping:', err);
+    }
+  };
+
+  // Clear all pings from World Map
+  const handleClearAllPings = async (onlyMine: boolean = false) => {
+    const toDelete = pings.filter(p => !onlyMine || isGM || p.userId === user?.uid);
+    setPings(prev => prev.filter(p => !toDelete.some(td => td.id === p.id)));
+    try {
+      const deletePromises = toDelete.map(p => deleteDoc(doc(db, 'worldMapPings', p.id)));
+      await Promise.all(deletePromises);
+    } catch (err) {
+      console.warn('Error clearing world map pings:', err);
+    }
+  };
+
+  // Handle map click to place pin or drop ping
   const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (isDragging) return;
+    if (isDrawingMode) return;
     if (!mapImageRef.current) return;
 
     const rect = mapImageRef.current.getBoundingClientRect();
@@ -1054,6 +1176,11 @@ export default function WorldMap() {
 
     const pctX = Number(((clickX / rect.width) * 100).toFixed(2));
     const pctY = Number(((clickY / rect.height) * 100).toFixed(2));
+
+    if (e.shiftKey || isPingMode) {
+      handleDropPing(pctX, pctY);
+      return;
+    }
 
     const initialCat = (selectedCategoryFilter !== 'all' && CATEGORIES[selectedCategoryFilter]) ? selectedCategoryFilter : 'dungeon';
     const initialConfig = getCategoryConfig(initialCat);
@@ -1317,86 +1444,134 @@ export default function WorldMap() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-obsidian text-parchment overflow-hidden select-none">
       {/* Top Map Control Bar */}
-      <header className="h-14 border-b border-white/10 bg-black/40 backdrop-blur-md px-4 flex items-center justify-between z-30 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-arcane/20 border border-arcane/30 flex items-center justify-center text-arcane">
-            <Compass size={18} className="animate-spin-slow" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-base sm:text-lg tracking-wide font-medium">
-                {currentPreset.name}
-              </h2>
-              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-arcane/10 border border-arcane/30 text-arcane hidden sm:inline-block">
-                Cartografia Tática
-              </span>
-            </div>
-            <p className="text-[11px] text-parchment/50 hidden md:block">
-              {currentPreset.subtitle}
-            </p>
+      <header className="h-14 border-b border-white/10 bg-black/60 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between z-30 shrink-0 gap-2">
+        {/* Left: Map Identity & Map Selector Popover */}
+        <div className="flex items-center gap-2">
+          <div className="relative" ref={mapSelectorRef}>
+            <button
+              type="button"
+              onClick={() => setIsMapSelectorOpen(!isMapSelectorOpen)}
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm group"
+              title="Trocar Mapa do Mundo ou Gerenciar Mapas"
+            >
+              <div className="w-6 h-6 rounded-lg bg-arcane/20 border border-arcane/40 flex items-center justify-center text-arcane text-xs">
+                <Compass size={14} className="group-hover:rotate-45 transition-transform" />
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-serif font-bold text-parchment max-w-[110px] sm:max-w-[160px] truncate leading-tight block">
+                    {currentPreset.name}
+                  </span>
+                  <ChevronDown size={13} className={cn("text-parchment/40 transition-transform", isMapSelectorOpen && "rotate-180 text-arcane")} />
+                </div>
+                <span className="text-[9px] font-mono text-parchment/40 hidden sm:block leading-none">
+                  {allWorldPresets.length} {allWorldPresets.length === 1 ? 'mapa disponível' : 'mapas disponíveis'}
+                </span>
+              </div>
+            </button>
+
+            {/* Map Selector Popover */}
+            <AnimatePresence>
+              {isMapSelectorOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                  className="absolute left-0 top-full mt-2 w-72 sm:w-80 bg-obsidian/95 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl p-2 z-[80] overflow-hidden"
+                >
+                  <div className="px-3 py-1.5 border-b border-white/10 mb-1 flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-parchment/50">Mapas do Mundo</span>
+                    <span className="text-[10px] font-mono text-arcane font-bold">{allWorldPresets.length} Mapas</span>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-1 p-0.5">
+                    {allWorldPresets.map((preset) => {
+                      const isSelected = selectedMapId === preset.id;
+                      return (
+                        <div
+                          key={preset.id}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-xl transition-all cursor-pointer group border",
+                            isSelected
+                              ? "bg-arcane/15 border-arcane/40 text-parchment shadow-sm"
+                              : "hover:bg-white/5 border-transparent text-parchment/70 hover:text-parchment"
+                          )}
+                          onClick={() => {
+                            setSelectedMapId(preset.id);
+                            setIsMapSelectorOpen(false);
+                            setSearchParams(prev => {
+                              const next = new URLSearchParams(prev);
+                              next.set('map', preset.id);
+                              if (selectedSessionId) next.set('session', selectedSessionId);
+                              return next;
+                            });
+                          }}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-black/40 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
+                              {preset.imageUrl ? (
+                                <img src={preset.imageUrl} alt={preset.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Compass size={14} className="text-arcane" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-serif text-xs font-bold truncate leading-tight group-hover:text-arcane transition-colors">
+                                {preset.name}
+                              </p>
+                              <p className="text-[10px] text-parchment/40 truncate leading-tight mt-0.5">
+                                {preset.subtitle || preset.defaultScale}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* GM Quick Activation Toggle */}
+                          {isGM && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCampaignMapActive(selectedSessionId, preset.id, preset.active, preset.isCustom, 'world');
+                              }}
+                              className="p-1 hover:bg-white/10 rounded-lg transition-colors ml-1.5 shrink-0"
+                              title={preset.active ? "Ativo para jogadores. Clique para ocultar." : "Desativado para jogadores. Clique para ativar."}
+                            >
+                              {preset.active ? (
+                                <Eye size={13} className="text-emerald-400" />
+                              ) : (
+                                <EyeOff size={13} className="text-amber-400" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* GM Map Management Link */}
+                  {isGM && (
+                    <div className="pt-2 mt-1 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsMapSelectorOpen(false);
+                          setIsMapManagerOpen(true);
+                        }}
+                        className="w-full py-2 px-3 rounded-xl bg-arcane/20 hover:bg-arcane/30 text-arcane text-xs font-mono font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Shield size={13} />
+                        <span>Gerenciador de Mapas da Campanha</span>
+                      </button>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
-        {/* Map Selector & Actions */}
-        <div className="flex items-center gap-2">
-          {/* GM Map Management Button */}
-          {isGM && (
-            <button
-              onClick={() => setIsMapManagerOpen(true)}
-              className="px-2.5 py-1.5 rounded-xl bg-arcane/20 text-arcane hover:bg-arcane/30 border border-arcane/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-              title="Gerenciar ativação e novos mapas da campanha"
-            >
-              <Shield size={14} />
-              <span className="hidden sm:inline">Gerenciar Mapas ({allWorldPresets.filter(m => m.active).length}/{allWorldPresets.length})</span>
-            </button>
-          )}
-
-          {/* Preset Selector */}
-          <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 text-xs items-center">
-            {allWorldPresets.map((preset) => (
-              <div key={preset.id} className="flex items-center">
-                <button
-                  onClick={() => {
-                    setSelectedMapId(preset.id);
-                    setSearchParams(prev => {
-                      const next = new URLSearchParams(prev);
-                      next.set('map', preset.id);
-                      if (selectedSessionId) next.set('session', selectedSessionId);
-                      return next;
-                    });
-                  }}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg transition-all font-medium flex items-center gap-1",
-                    selectedMapId === preset.id
-                      ? "bg-arcane/20 text-arcane border border-arcane/30 shadow-sm font-semibold"
-                      : "text-parchment/60 hover:text-parchment hover:bg-white/5"
-                  )}
-                >
-                  <span>{preset.name.split(' ')[0]}</span>
-                </button>
-
-                {/* GM Quick Activation Toggle */}
-                {isGM && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleCampaignMapActive(selectedSessionId, preset.id, preset.active, preset.isCustom, 'world');
-                    }}
-                    className="p-1 hover:bg-white/10 rounded-md transition-colors mr-0.5"
-                    title={preset.active ? "Ativo para jogadores. Clique para ocultar." : "Desativado para jogadores. Clique para ativar."}
-                  >
-                    {preset.active ? (
-                      <Eye size={12} className="text-emerald-400" />
-                    ) : (
-                      <EyeOff size={12} className="text-amber-400" />
-                    )}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
+        {/* Right / Center Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Session Selector (GM) OR Character Badge (Player) */}
           {isGM ? (
             <select
@@ -1410,11 +1585,11 @@ export default function WorldMap() {
                   return next;
                 });
               }}
-              className="bg-white/5 border border-white/10 text-parchment rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-arcane hidden lg:block"
+              className="bg-white/5 border border-white/10 text-parchment rounded-xl px-2.5 py-1.5 text-xs focus:outline-none focus:border-arcane hidden xl:block max-w-[150px] truncate"
             >
               {gmSessions.map(s => (
                 <option key={s.id} value={s.id} className="bg-obsidian">
-                  Campanha: {s.name}
+                  {s.name}
                 </option>
               ))}
             </select>
@@ -1441,23 +1616,91 @@ export default function WorldMap() {
                 })}
               </select>
             ) : (
-              <div className="items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs hidden lg:flex">
-                <User size={13} className="text-arcane" />
+              <div className="items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-xs hidden lg:flex">
+                <User size={12} className="text-arcane" />
                 <span className="font-semibold text-arcane">{userCharactersWithSession[0]?.name || 'Herói'}</span>
-                <span className="text-parchment/40 text-[10px]">({activeSessionData?.name || 'Campanha'})</span>
               </div>
             )
           )}
 
+          {/* Character Sheet Modal Trigger Button */}
+          {(selectedCharacterId || userCharactersWithSession.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                const charId = selectedCharacterId || userCharactersWithSession[0]?.id;
+                if (charId) setSheetModalCharacterId(charId);
+              }}
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-arcane/20 hover:bg-arcane/30 text-arcane border border-arcane/40 shadow-sm text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Abrir Ficha do Personagem em Modal (sem sair do mapa)"
+            >
+              <Scroll size={14} />
+              <span className="font-semibold text-[11px] sm:text-xs">Ficha</span>
+            </button>
+          )}
+
+          {/* Drawing and Ping Tools for GM and Players */}
+          <MapDrawingToolbar
+            isDrawingMode={isDrawingMode}
+            onToggleDrawingMode={(val) => {
+              setIsDrawingMode(val);
+              if (val) {
+                setIsPingMode(false);
+                setIsPlacingPin(false);
+              }
+            }}
+            drawingTool={drawingTool}
+            onChangeTool={setDrawingTool}
+            activeColor={drawingColor}
+            onChangeColor={setDrawingColor}
+            strokeSize={drawingStrokeSize}
+            onChangeStrokeSize={setDrawingStrokeSize}
+            mapId={currentPreset.id}
+            sessionId={selectedSessionId}
+            collectionName="mapDrawings"
+            isGM={isGM}
+            currentUserId={user?.uid}
+            currentUserName={user?.displayName || (isGM ? 'Mestre' : 'Jogador')}
+            isPingMode={isPingMode}
+            onTogglePingMode={(active) => {
+              setIsPingMode(active);
+              if (active) {
+                setIsDrawingMode(false);
+                setIsPlacingPin(false);
+              }
+            }}
+          />
+
+          {/* Clear Pings Quick Button */}
+          {pings.length > 0 && (
+            <button
+              type="button"
+              onClick={() => handleClearAllPings(false)}
+              className="px-2 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer shadow-sm animate-pulse"
+              title="Remover todos os sinais de ping ativos no mapa"
+            >
+              <Trash2 size={12} className="text-rose-400" />
+              <span className="hidden sm:inline">Limpar Pings</span>
+              <span className="px-1 py-0.2 rounded-full bg-rose-500/30 text-[9px] font-bold">{pings.length}</span>
+            </button>
+          )}
+
           {/* Place Pin Toggle */}
           <button
-            onClick={() => setIsPlacingPin(!isPlacingPin)}
+            onClick={() => {
+              setIsPlacingPin(!isPlacingPin);
+              if (!isPlacingPin) {
+                setIsDrawingMode(false);
+                setIsPingMode(false);
+              }
+            }}
             className={cn(
               "px-3 py-1.5 rounded-xl font-medium text-xs flex items-center gap-1.5 transition-all shadow-md",
               isPlacingPin
                 ? "bg-ember text-white animate-pulse ring-2 ring-ember/40"
                 : "bg-arcane hover:bg-arcane/90 text-obsidian"
             )}
+            title="Adicionar Marcador no Mapa do Mundo"
           >
             <MapPin size={14} className={isPlacingPin ? "animate-bounce" : ""} />
             <span className="hidden sm:inline">
@@ -1672,6 +1915,75 @@ export default function WorldMap() {
                   </div>
                 </div>
               )}
+
+              {/* Freehand Drawing Overlay for Players & GM */}
+              <MapDrawingOverlay
+                mapId={currentPreset.id}
+                sessionId={selectedSessionId}
+                collectionName="mapDrawings"
+                isDrawingMode={isDrawingMode}
+                drawingTool={drawingTool}
+                activeColor={drawingColor}
+                strokeSize={drawingStrokeSize}
+                isGM={isGM}
+                containerRef={mapImageRef}
+              />
+
+              {/* Real-time Multiplayer Pings (Sinais de Ping) */}
+              {pings.map((ping) => {
+                const canRemove = isGM || !ping.userId || ping.userId === user?.uid;
+
+                return (
+                  <div
+                    key={ping.id}
+                    style={{ left: `${ping.x}%`, top: `${ping.y}%` }}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none z-35 group select-none"
+                  >
+                    <div className="relative flex items-center justify-center pointer-events-none">
+                      <span 
+                        style={{ backgroundColor: ping.color }}
+                        className="absolute w-12 h-12 rounded-full animate-ping opacity-75 pointer-events-none"
+                      />
+                      <span 
+                        style={{ borderColor: ping.color }}
+                        className="absolute w-8 h-8 rounded-full border-2 animate-pulse opacity-90 pointer-events-none"
+                      />
+                      {/* Clickable Ping Core Button to Dismiss */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePing(ping.id);
+                        }}
+                        style={{ backgroundColor: ping.color, borderColor: '#ffffff' }}
+                        className="w-5 h-5 rounded-full border-2 shadow-2xl flex items-center justify-center text-[10px] font-black text-black z-10 pointer-events-auto cursor-pointer hover:scale-125 transition-transform"
+                        title={canRemove ? "Clique para remover este ping" : `Sinal de ${ping.userName}`}
+                      >
+                        !
+                      </button>
+
+                      {/* Ping User Pill Label with Close button */}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 rounded-md bg-black/95 text-[10px] font-mono font-semibold text-white whitespace-nowrap border border-white/20 shadow-2xl z-20 flex items-center gap-1.5 pointer-events-auto">
+                        <Radio size={10} className="animate-spin text-amber-400" />
+                        <span>{ping.userName}</span>
+                        {canRemove && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePing(ping.id);
+                            }}
+                            className="p-0.5 rounded hover:bg-rose-500/30 text-parchment/60 hover:text-rose-400 transition-colors cursor-pointer ml-0.5"
+                            title="Remover este sinal de ping"
+                          >
+                            <X size={10} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
 
               {/* Pins Placed on Map */}
               {visiblePins.map((pin) => {
@@ -2809,6 +3121,15 @@ export default function WorldMap() {
               window.location.href = `/dungeon?map=${id}${selectedSessionId ? `&session=${selectedSessionId}` : ''}`;
             }
           }}
+        />
+      )}
+
+      {/* Interactive Character Sheet Modal over World Map */}
+      {sheetModalCharacterId && (
+        <CharacterSheet
+          characterIdProp={sheetModalCharacterId}
+          isModal={true}
+          onClose={() => setSheetModalCharacterId(null)}
         />
       )}
     </div>

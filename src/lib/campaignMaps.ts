@@ -5,11 +5,97 @@ import templeMap from '../assets/images/dungeon_temple_map_1791542504225.jpg';
 import cavernMap from '../assets/images/dungeon_cavern_map_1791542526527.jpg';
 import genericWorldThumb from '../assets/images/generic_world_thumb_1791714431471.jpg';
 import genericDungeonThumb from '../assets/images/generic_dungeon_thumb_1791714444150.jpg';
-import { db, doc, updateDoc } from '../firebase';
+import { db, doc, updateDoc, setDoc } from '../firebase';
 
 // High-fidelity thematic generic thumbnails for players (protects adventure secrets and layout spoilers)
 export const GENERIC_WORLD_THUMB = genericWorldThumb;
 export const GENERIC_DUNGEON_THUMB = genericDungeonThumb;
+
+export interface MapGridScaleConfig {
+  unit: 'ft' | 'm' | 'squares' | 'km' | 'mi' | 'leagues';
+  unitLabel: string;
+  valuePerSquare: number;
+}
+
+export const DEFAULT_GRID_SCALE_CONFIG: MapGridScaleConfig = {
+  unit: 'ft',
+  unitLabel: 'pés (ft)',
+  valuePerSquare: 5
+};
+
+export interface MapLayerSettings {
+  showBackground: boolean;
+  backgroundOpacity: number; // 0 to 100
+  showGrid: boolean;
+  gridOpacity: number; // 0 to 100
+  showTokens: boolean;
+  // Fog of War secondary overlay layer
+  fogEnabled?: boolean;
+  fogOpacity?: number; // 0 to 100
+  revealedCells?: number[]; // Array of revealed cell indices
+  // Configurable Grid Scale for measurement
+  gridScale?: MapGridScaleConfig;
+}
+
+export const DEFAULT_LAYER_SETTINGS: MapLayerSettings = {
+  showBackground: true,
+  backgroundOpacity: 100,
+  showGrid: true,
+  gridOpacity: 75,
+  showTokens: true,
+  fogEnabled: false,
+  fogOpacity: 90,
+  revealedCells: [],
+  gridScale: DEFAULT_GRID_SCALE_CONFIG
+};
+
+export function calculateGridDistance(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  gridCols: number = 24,
+  gridRows: number = 14,
+  scale: MapGridScaleConfig = DEFAULT_GRID_SCALE_CONFIG
+): {
+  squares: number;
+  totalDistance: number;
+  formatted: string;
+  dxSquares: number;
+  dySquares: number;
+} {
+  const cellWidthPct = 100 / (gridCols || 24);
+  const cellHeightPct = 100 / (gridRows || 14);
+
+  const dxSquares = Math.abs(p2.x - p1.x) / cellWidthPct;
+  const dySquares = Math.abs(p2.y - p1.y) / cellHeightPct;
+  const squares = Math.sqrt(dxSquares * dxSquares + dySquares * dySquares);
+  const roundedSquares = Math.round(squares * 10) / 10;
+  const totalDistance = Math.round(squares * (scale?.valuePerSquare || 5) * 10) / 10;
+
+  const unit = scale?.unit || 'ft';
+  let formatted = '';
+  if (unit === 'ft') {
+    const meters = Math.round(totalDistance * 0.3048 * 10) / 10;
+    formatted = `${roundedSquares} quad. • ${totalDistance} pés (${meters}m)`;
+  } else if (unit === 'm') {
+    formatted = `${roundedSquares} quad. • ${totalDistance} metros`;
+  } else if (unit === 'km') {
+    formatted = `${roundedSquares} quad. • ${totalDistance} km`;
+  } else if (unit === 'mi') {
+    formatted = `${roundedSquares} quad. • ${totalDistance} milhas`;
+  } else if (unit === 'leagues') {
+    formatted = `${roundedSquares} quad. • ${totalDistance} léguas`;
+  } else {
+    formatted = `${roundedSquares} blocos`;
+  }
+
+  return {
+    squares: roundedSquares,
+    totalDistance,
+    formatted,
+    dxSquares: Math.round(dxSquares * 10) / 10,
+    dySquares: Math.round(dySquares * 10) / 10
+  };
+}
 
 export interface CampaignMapItem {
   id: string;
@@ -27,6 +113,7 @@ export interface CampaignMapItem {
   isCustom?: boolean;
   sessionId?: string;
   createdBy?: string;
+  layerSettings?: MapLayerSettings;
 }
 
 /**
@@ -121,19 +208,12 @@ export function resolveCampaignMaps(
 } {
   const mapSettings = sessionData?.mapSettings || {};
 
-  // Build World Maps
+  // Build World Maps: custom maps appear FIRST so user-created maps take center stage
   const worldMaps: CampaignMapItem[] = [
-    ...DEFAULT_WORLD_PRESETS.map(preset => {
-      const customSetting = mapSettings[preset.id];
-      const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : preset.active;
-      return {
-        ...preset,
-        active: isActive
-      };
-    }),
     ...customWorldMaps.map(m => {
       const customSetting = mapSettings[m.id];
       const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : (m.active !== false);
+      const layerSettings: MapLayerSettings = customSetting?.layerSettings || m.layerSettings || DEFAULT_LAYER_SETTINGS;
       return {
         id: m.id,
         name: m.name || 'Mapa do Mundo Personalizado',
@@ -143,24 +223,28 @@ export function resolveCampaignMaps(
         active: isActive,
         isCustom: true,
         sessionId: m.sessionId,
-        createdBy: m.createdBy
+        createdBy: m.createdBy,
+        layerSettings
+      };
+    }),
+    ...DEFAULT_WORLD_PRESETS.map(preset => {
+      const customSetting = mapSettings[preset.id];
+      const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : preset.active;
+      const layerSettings: MapLayerSettings = customSetting?.layerSettings || preset.layerSettings || DEFAULT_LAYER_SETTINGS;
+      return {
+        ...preset,
+        active: isActive,
+        layerSettings
       };
     })
   ];
 
-  // Build Dungeon Maps
+  // Build Dungeon Maps: custom maps appear FIRST so user-created dungeons take center stage
   const dungeonMaps: CampaignMapItem[] = [
-    ...DEFAULT_DUNGEON_PRESETS.map(preset => {
-      const customSetting = mapSettings[preset.id];
-      const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : preset.active;
-      return {
-        ...preset,
-        active: isActive
-      };
-    }),
     ...customDungeonMaps.map(m => {
       const customSetting = mapSettings[m.id];
       const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : (m.active !== false);
+      const layerSettings: MapLayerSettings = customSetting?.layerSettings || m.layerSettings || DEFAULT_LAYER_SETTINGS;
       return {
         id: m.id,
         name: m.name || 'Masmorra Personalizada',
@@ -174,7 +258,18 @@ export function resolveCampaignMaps(
         active: isActive,
         isCustom: true,
         sessionId: m.sessionId,
-        createdBy: m.createdBy
+        createdBy: m.createdBy,
+        layerSettings
+      };
+    }),
+    ...DEFAULT_DUNGEON_PRESETS.map(preset => {
+      const customSetting = mapSettings[preset.id];
+      const isActive = customSetting?.active !== undefined ? Boolean(customSetting.active) : preset.active;
+      const layerSettings: MapLayerSettings = customSetting?.layerSettings || preset.layerSettings || DEFAULT_LAYER_SETTINGS;
+      return {
+        ...preset,
+        active: isActive,
+        layerSettings
       };
     })
   ];
@@ -257,3 +352,66 @@ export async function deleteCampaignCustomMap(
   const col = type === 'world' ? 'worldMaps' : 'dungeonMaps';
   await deleteDoc(doc(db, col, mapId));
 }
+
+/**
+ * Persists map layer configuration (background, grid, tokens)
+ * both to Firestore and localStorage cache.
+ */
+export async function saveMapLayerSettings(
+  mapId: string,
+  type: 'world' | 'dungeon',
+  layerSettings: MapLayerSettings,
+  sessionId?: string,
+  isCustom?: boolean
+): Promise<void> {
+  try {
+    // 1. Local storage cache for zero-latency retrieval
+    try {
+      localStorage.setItem(`map_layers_${mapId}`, JSON.stringify(layerSettings));
+    } catch (_) {}
+
+    // 2. Persist to gameSession if a session is selected
+    if (sessionId) {
+      try {
+        const sessionRef = doc(db, 'gameSessions', sessionId);
+        await updateDoc(sessionRef, {
+          [`mapSettings.${mapId}.layerSettings`]: layerSettings
+        });
+      } catch (e) {
+        console.warn('Could not save layerSettings to session:', e);
+      }
+    }
+
+    // 3. Persist to custom map document in Firestore if it is custom
+    if (isCustom !== false) {
+      try {
+        const col = type === 'world' ? 'worldMaps' : 'dungeonMaps';
+        await updateDoc(doc(db, col, mapId), {
+          layerSettings: layerSettings,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.warn('Could not save layerSettings to map doc:', e);
+      }
+    }
+
+    // 4. If fog settings are present, also sync directly with dungeonFog collection
+    if (layerSettings.fogEnabled !== undefined || layerSettings.revealedCells) {
+      try {
+        const fogRef = doc(db, 'dungeonFog', mapId);
+        await setDoc(fogRef, {
+          dungeonId: mapId,
+          enabled: Boolean(layerSettings.fogEnabled),
+          revealedCells: layerSettings.revealedCells || [],
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn('Could not synchronize dungeonFog document:', e);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save layerSettings:', err);
+    throw err;
+  }
+}
+

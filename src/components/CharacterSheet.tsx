@@ -38,13 +38,14 @@ import {
   Image as ImageIcon,
   Camera,
   Feather,
-  Map as MapIcon
+  Map as MapIcon,
+  ShieldAlert,
+  Trash2
 } from 'lucide-react';
-import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName } from '../lib/utils';
+import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio, getTraitEffectiveModifier, isTraitModifierSameAsEffect, getTraitTargets, getTraitTargetDisplayName, calculateTraitCost } from '../lib/utils';
 import { auth, db, doc, getDoc, onSnapshot, setDoc, OperationType, handleFirestoreError, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, addDoc } from '../firebase';
 import { SoundConfig, DEFAULT_SOUNDS, playSoundEffect, playRollOutcomeSound } from '../lib/soundEngine';
 import Inventory from './Inventory';
-import SessionChat from './SessionChat';
 import QuickNotes from './QuickNotes';
 import { ImagePickerModal } from './ImagePickerModal';
 import { TraitOriginModal } from './TraitOriginModal';
@@ -87,10 +88,20 @@ const RollingValue = ({ sides = 20, isDamage = false }: { sides?: number, isDama
 };
 
 
-export default function CharacterSheet() {
+interface CharacterSheetProps {
+  characterIdProp?: string;
+  isModal?: boolean;
+  onClose?: () => void;
+}
+
+export default function CharacterSheet({
+  characterIdProp,
+  isModal = false,
+  onClose
+}: CharacterSheetProps = {}) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const characterId = searchParams.get('id');
+  const characterId = characterIdProp || searchParams.get('id');
   const fromSessionParam = searchParams.get('fromSession');
   const [isQuickNotesOpen, setIsQuickNotesOpen] = React.useState(false);
   
@@ -130,6 +141,27 @@ export default function CharacterSheet() {
   const [selectedTraitAttr, setSelectedTraitAttr] = React.useState<any | null>(null);
   const [isTraitOriginModalOpen, setIsTraitOriginModalOpen] = React.useState(false);
   const [detailTrait, setDetailTrait] = React.useState<any | null>(null);
+  const [gmModifiers, setGmModifiers] = React.useState<Record<string, Array<{ id: string; value: number; justification: string; authorId?: string; authorName?: string; createdAt?: string; targetId?: string; isTalent?: boolean }>>>({});
+  const [isAddingTrait, setIsAddingTrait] = React.useState(false);
+  const [traitSearchTerm, setTraitSearchTerm] = React.useState('');
+  const [traitFilterType, setTraitFilterType] = React.useState<'all' | 'advantage' | 'disadvantage'>('all');
+  const [activeTraitModalTab, setActiveTraitModalTab] = React.useState<'library' | 'custom'>('library');
+  const [customTrait, setCustomTrait] = React.useState({
+    name: '',
+    type: 'advantage',
+    modifier: 1,
+    modifierType: 'for',
+    effect: '',
+    description: ''
+  });
+  const [gmModifierModal, setGmModifierModal] = React.useState<{
+    isOpen: boolean;
+    targetId: string;
+    targetName: string;
+    isTalent: boolean;
+  } | null>(null);
+  const [gmModValue, setGmModValue] = React.useState<number>(1);
+  const [gmModJustification, setGmModJustification] = React.useState<string>('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = React.useState(false);
   const [quickRoll, setQuickRoll] = React.useState<{ 
@@ -184,6 +216,23 @@ export default function CharacterSheet() {
   const notesTargetType = (isGMOfCampaign && activeSessionId) ? 'campaign' : 'character';
   const notesTargetId = (isGMOfCampaign && activeSessionId) ? activeSessionId : (characterId || character?.id || 'isolated');
   const notesTargetName = (isGMOfCampaign && activeSessionId) ? (session?.name || 'Campanha') : (character?.name || 'Personagem');
+
+  // Sync context with global floating ActionMenu
+  React.useEffect(() => {
+    if (character) {
+      window.dispatchEvent(new CustomEvent('action_menu_context_update', {
+        detail: {
+          sessionId: activeSessionId || character.sessionId || undefined,
+          senderOverride: { name: character.name, photo: character.image },
+          isGM: isGMOfCampaign,
+          notesTargetType,
+          notesTargetId,
+          notesTargetName,
+          characterContext: { id: characterId || character.id || '', name: character.name }
+        }
+      }));
+    }
+  }, [character, activeSessionId, isGMOfCampaign, notesTargetType, notesTargetId, notesTargetName, characterId]);
 
   const [newEquip, setNewEquip] = React.useState({
     name: '',
@@ -291,6 +340,7 @@ export default function CharacterSheet() {
         setStatsMods(charStatsMods);
         setCanEditStats(data.canEditStats ?? false);
         setTalentMods(data.talentMods || {});
+        setGmModifiers(data.gmModifiers || {});
 
         const getVal = (id: string) => (charStats[id] || 0) + (charStatsMods[id] || 0);
         
@@ -645,6 +695,122 @@ export default function CharacterSheet() {
     }
   };
 
+  const handleAddGMModifier = async () => {
+    if (!gmModifierModal || !characterId) return;
+    if (!gmModJustification.trim()) {
+      setSaveStatus({ type: 'error', message: 'A justificativa do mestre é obrigatória!' });
+      return;
+    }
+
+    const targetKey = gmModifierModal.targetId.toLowerCase();
+    const newMod = {
+      id: crypto.randomUUID(),
+      value: Number(gmModValue) || 0,
+      justification: gmModJustification.trim(),
+      authorId: auth.currentUser?.uid || '',
+      authorName: auth.currentUser?.displayName || auth.currentUser?.email || 'Mestre',
+      createdAt: new Date().toISOString(),
+      targetId: targetKey,
+      isTalent: gmModifierModal.isTalent
+    };
+
+    const currentList = gmModifiers[targetKey] || [];
+    const updatedGmModifiers = {
+      ...gmModifiers,
+      [targetKey]: [...currentList, newMod]
+    };
+
+    setGmModifiers(updatedGmModifiers);
+    try {
+      await updateDoc(doc(db, 'characters', characterId), { gmModifiers: updatedGmModifiers });
+      setSaveStatus({ type: 'success', message: 'Modificador do mestre salvo com sucesso!' });
+      setGmModifierModal(null);
+      setGmModJustification('');
+      setGmModValue(1);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
+    }
+  };
+
+  const handleRemoveGMModifier = async (targetId: string, modId: string) => {
+    if (!characterId) return;
+    const targetKey = targetId.toLowerCase();
+    const currentList = gmModifiers[targetKey] || [];
+    const updatedList = currentList.filter(m => m.id !== modId);
+    const updatedGmModifiers = {
+      ...gmModifiers,
+      [targetKey]: updatedList
+    };
+
+    setGmModifiers(updatedGmModifiers);
+    try {
+      await updateDoc(doc(db, 'characters', characterId), { gmModifiers: updatedGmModifiers });
+      setSaveStatus({ type: 'success', message: 'Modificador do mestre removido.' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
+    }
+  };
+
+  const handleAddTraitToCharacter = async (trait: any) => {
+    if (!characterId) return;
+    const currentTraits = characterTraits || [];
+    const traitId = trait.id || crypto.randomUUID();
+    const newTrait = { ...trait, id: traitId };
+    const updatedTraits = [...currentTraits, newTrait];
+    setCharacterTraits(updatedTraits);
+    try {
+      await updateDoc(doc(db, 'characters', characterId), { traits: updatedTraits });
+      setSaveStatus({ type: 'success', message: `Traço "${trait.name}" adicionado à ficha!` });
+      setIsAddingTrait(false);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
+    }
+  };
+
+  const handleCreateCustomTrait = async () => {
+    if (!characterId) return;
+    if (!customTrait.name.trim()) {
+      setSaveStatus({ type: 'error', message: 'O nome do traço é obrigatório!' });
+      return;
+    }
+
+    const newTrait = {
+      id: crypto.randomUUID(),
+      name: customTrait.name.trim(),
+      type: customTrait.type,
+      modifier: Number(customTrait.modifier) || 0,
+      modifierType: customTrait.modifierType || 'for',
+      effect: customTrait.effect || '',
+      description: customTrait.description || '',
+      isCustom: true
+    };
+
+    await handleAddTraitToCharacter(newTrait);
+    setCustomTrait({
+      name: '',
+      type: 'advantage',
+      modifier: 1,
+      modifierType: 'for',
+      effect: '',
+      description: ''
+    });
+  };
+
+  const handleRemoveTrait = async (traitId: string) => {
+    if (!characterId) return;
+    const updatedTraits = (characterTraits || []).filter((item: any) => {
+      if (typeof item === 'string') return item !== traitId;
+      return item.id !== traitId;
+    });
+    setCharacterTraits(updatedTraits);
+    try {
+      await updateDoc(doc(db, 'characters', characterId), { traits: updatedTraits });
+      setSaveStatus({ type: 'success', message: 'Traço removido da ficha.' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `characters/${characterId}`);
+    }
+  };
+
   const resolvedTraits = React.useMemo(() => {
     const list: any[] = [];
     const seen = new Set<string>();
@@ -830,12 +996,13 @@ export default function CharacterSheet() {
       const mod = statsMods[attr.id] || 0;
       const rawTraitMod = traitStatsMods[attr.id.toLowerCase()] ?? traitStatsMods[attr.id] ?? 0;
       const itemMod = itemStatsMods[attr.id] ?? itemStatsMods[attr.id.toLowerCase()] ?? 0;
+      const gmMod = (gmModifiers[attr.id.toLowerCase()] || []).reduce((sum, m) => sum + (Number(m.value) || 0), 0);
 
       // Se o traço e o modificador vêm do mesmo defeito ou vantagem e afetam o mesmo atributo ou talento,
       // o traço deve ser desconsiderado no cálculo do atributo:
       const traitDisregarded = mod !== 0 && rawTraitMod !== 0;
       const traitMod = traitDisregarded ? 0 : rawTraitMod;
-      const total = val + mod + traitMod + itemMod;
+      const total = val + mod + traitMod + itemMod + gmMod;
 
       return {
         ...attr,
@@ -845,10 +1012,11 @@ export default function CharacterSheet() {
         rawTraitMod,
         traitDisregarded,
         itemMod,
+        gmMod,
         total
       };
     });
-  }, [globalSettings, stats, statsMods, traitStatsMods, itemStatsMods]);
+  }, [globalSettings, stats, statsMods, traitStatsMods, itemStatsMods, gmModifiers]);
 
   const contributingTraitsForSelectedAttr = React.useMemo(() => {
     if (!selectedTraitAttr) return [];
@@ -987,7 +1155,8 @@ export default function CharacterSheet() {
     const rawTrMod = traitStatsMods[id] ?? traitStatsMods[lowerId] ?? 0;
     const trMod = (mod !== 0 && rawTrMod !== 0) ? 0 : rawTrMod;
     const itMod = itemStatsMods[id] ?? itemStatsMods[lowerId] ?? 0;
-    return val + mod + trMod + itMod;
+    const gmMod = (gmModifiers[lowerId] || []).reduce((sum, m) => sum + (Number(m.value) || 0), 0);
+    return val + mod + trMod + itMod + gmMod;
   };
   
   const FOR = getAttr('for');
@@ -1256,7 +1425,8 @@ export default function CharacterSheet() {
     const rawTraitMod = getTraitTalentMod(talent);
     // Se o traço e o modificador vêm do mesmo defeito ou vantagem e afetam o mesmo talento, o traço é desconsiderado:
     const traitMod = (manualMod !== 0 && rawTraitMod !== 0) ? 0 : rawTraitMod;
-    return baseValue + manualMod + traitMod;
+    const gmMod = (gmModifiers[talent.id.toLowerCase()] || []).reduce((sum, m) => sum + (Number(m.value) || 0), 0);
+    return baseValue + manualMod + traitMod + gmMod;
   };
 
   const categories = [
@@ -1365,8 +1535,8 @@ export default function CharacterSheet() {
 
   const isAll = activeSection === 'all';
 
-  return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:gap-10 min-h-screen relative">
+  const sheetContent = (
+    <div className={cn("flex flex-col lg:flex-row gap-6 lg:gap-10 relative", isModal ? "p-3 sm:p-5" : "min-h-screen")}>
       <AnimatePresence>
         {saveStatus && (
           <motion.div
@@ -1852,6 +2022,28 @@ export default function CharacterSheet() {
                         </motion.button>
                       )}
                     </AnimatePresence>
+
+                    {isGM && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGmModifierModal({
+                            isOpen: true,
+                            targetId: attr.id,
+                            targetName: attr.label,
+                            isTalent: false
+                          });
+                          setGmModValue(1);
+                          setGmModJustification('');
+                        }}
+                        className="p-1.5 sm:p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/35 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-mono shadow-sm"
+                        title="Adicionar Modificador do Mestre neste Atributo"
+                      >
+                        <ShieldAlert size={14} />
+                        <span className="hidden sm:inline font-bold">GM</span>
+                      </button>
+                    )}
 
                     {/* ONLY TOTAL BADGE WITH COMPOSITION MODAL TRIGGER */}
                     <button
@@ -2463,11 +2655,27 @@ export default function CharacterSheet() {
                 <Star className="text-gold" size={24} />
                 Vantagens e Defeitos
               </h3>
+              {canPlayerEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTraitSearchTerm('');
+                    setTraitFilterType('all');
+                    setActiveTraitModalTab('library');
+                    setIsAddingTrait(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-arcane/15 hover:bg-arcane/25 text-arcane border border-arcane/30 text-xs font-mono uppercase tracking-wider transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm shadow-arcane/10 font-bold"
+                  title="Adicionar Vantagem ou Defeito na ficha"
+                >
+                  <Plus size={16} />
+                  <span>Adicionar Traço</span>
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {resolvedTraits.map((trait, idx) => {
                 const effMod = getTraitEffectiveModifier(trait);
-                const isDisadvantage = trait.type === 'disadvantage';
+                const isDisadvantage = trait.type === 'disadvantage' || trait.type === 'defeito' || trait.type === 'desvantagem';
                 const targetName = getTraitTargetDisplayName(trait.modifierType, globalSettings?.attributes || DEFAULT_ATTRIBUTES, talents);
                 return (
                   <motion.div
@@ -2503,7 +2711,7 @@ export default function CharacterSheet() {
                           {isDisadvantage ? 'Defeito' : 'Vantagem'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <div className={cn(
                           "px-3 py-1 rounded-lg font-serif text-xl border",
                           effMod > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : effMod < 0 ? "bg-ember/10 text-ember border-ember/20" : "bg-white/5 text-parchment/60 border-white/10"
@@ -2521,6 +2729,19 @@ export default function CharacterSheet() {
                         >
                           <Info size={16} />
                         </button>
+                        {canPlayerEdit && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveTrait(trait.id);
+                            }}
+                            className="p-1.5 rounded-full hover:bg-rose-500/20 text-parchment/40 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Remover este traço da ficha"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <p className="text-xs text-parchment/60 mb-2 line-clamp-2 leading-relaxed">{trait.description}</p>
@@ -2817,6 +3038,27 @@ export default function CharacterSheet() {
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                              {isGM && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGmModifierModal({
+                                      isOpen: true,
+                                      targetId: talent.id,
+                                      targetName: talent.name,
+                                      isTalent: true
+                                    });
+                                    setGmModValue(1);
+                                    setGmModJustification('');
+                                  }}
+                                  className="p-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/35 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-mono shadow-sm"
+                                  title="Adicionar Modificador do Mestre neste Talento"
+                                >
+                                  <ShieldAlert size={14} />
+                                  <span className="hidden sm:inline font-bold">GM</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={openTalentDetails}
@@ -3458,14 +3700,6 @@ export default function CharacterSheet() {
           </motion.div>
         )}
       </AnimatePresence>
-      {character.sessionId && (
-        <SessionChat 
-          sessionId={character.sessionId} 
-          isGM={isGM}
-          senderOverride={{ name: character.name, photo: character.image }}
-        />
-      )}
-
       {/* Character Image Picker Modal */}
       <ImagePickerModal
         isOpen={isImagePickerOpen}
@@ -3488,7 +3722,427 @@ export default function CharacterSheet() {
         attr={selectedTraitAttr}
         contributingTraits={contributingTraitsForSelectedAttr}
         attrTotal={selectedTraitAttr ? (selectedTraitAttr.isTalent ? calculateTalentValue(selectedTraitAttr) : getAttr(selectedTraitAttr.id)) : 0}
+        gmModifiers={selectedTraitAttr ? (gmModifiers[(selectedTraitAttr.id || '').toLowerCase()] || []) : []}
+        isGM={isGM}
+        onAddGMModifier={isGM && selectedTraitAttr ? () => {
+          setGmModifierModal({
+            isOpen: true,
+            targetId: selectedTraitAttr.id,
+            targetName: selectedTraitAttr.label || selectedTraitAttr.id,
+            isTalent: Boolean(selectedTraitAttr.isTalent)
+          });
+          setGmModValue(1);
+          setGmModJustification('');
+        } : undefined}
+        onRemoveGMModifier={isGM && selectedTraitAttr ? (modId) => {
+          handleRemoveGMModifier(selectedTraitAttr.id, modId);
+        } : undefined}
       />
+
+      {/* GM Modifier Modal */}
+      <AnimatePresence>
+        {gmModifierModal?.isOpen && (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setGmModifierModal(null)}
+              className="absolute inset-0 bg-obsidian/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-lg glass-modal bg-obsidian/95 backdrop-blur-xl border border-amber-500/40 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-6 z-10"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                    <ShieldAlert size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-xl text-parchment font-bold">
+                      Modificador do Mestre
+                    </h3>
+                    <p className="text-xs font-mono text-amber-400 uppercase tracking-wider">
+                      Alvo: {gmModifierModal.targetName} ({gmModifierModal.isTalent ? 'Talento' : 'Atributo'})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGmModifierModal(null)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40 hover:text-parchment cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono uppercase tracking-wider text-parchment/70 block">
+                    Valor do Modificador (+ ou -)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setGmModValue(prev => prev - 1)}
+                      className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xl font-serif text-parchment flex items-center justify-center transition-colors cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      value={gmModValue}
+                      onChange={(e) => setGmModValue(parseInt(e.target.value) || 0)}
+                      className="flex-1 py-2 px-4 rounded-xl bg-white/5 border border-white/15 text-center font-serif text-2xl font-bold text-parchment focus:outline-none focus:border-amber-500/50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setGmModValue(prev => prev + 1)}
+                      className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xl font-serif text-parchment flex items-center justify-center transition-colors cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-mono uppercase tracking-wider text-parchment/70 block">
+                      Justificativa do Mestre <span className="text-amber-400 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] font-mono text-parchment/40">Obrigatória</span>
+                  </div>
+                  <textarea
+                    value={gmModJustification}
+                    onChange={(e) => setGmModJustification(e.target.value)}
+                    rows={3}
+                    placeholder="Ex: Bênção divina concedida pelo Templo do Sol / Fratura sofrida na batalha de Karas..."
+                    className="w-full bg-white/5 border border-white/15 rounded-2xl p-3.5 text-xs font-sans text-parchment focus:outline-none focus:border-amber-500/50 resize-none"
+                  />
+                  <p className="text-[10px] text-parchment/50 font-sans">
+                    Esta justificativa ficará visível no detalhamento de composição deste atributo/talento.
+                  </p>
+                </div>
+
+                {/* Modificadores já existentes */}
+                {(() => {
+                  const existingMods = gmModifiers[gmModifierModal.targetId.toLowerCase()] || [];
+                  if (existingMods.length === 0) return null;
+                  return (
+                    <div className="space-y-2 pt-2 border-t border-white/10">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-parchment/50 block font-bold">
+                        Modificadores já aplicados nesta ficha ({existingMods.length})
+                      </span>
+                      <div className="space-y-2 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
+                        {existingMods.map(m => (
+                          <div key={m.id} className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-start justify-between gap-2">
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={cn("px-1.5 py-0.5 rounded text-xs font-bold font-serif", m.value >= 0 ? "text-emerald-400 bg-emerald-500/10" : "text-ember bg-ember/10")}>
+                                  {m.value > 0 ? `+${m.value}` : m.value}
+                                </span>
+                                <span className="text-xs text-parchment truncate italic">"{m.justification}"</span>
+                              </div>
+                              <span className="text-[9px] font-mono text-parchment/40 block">
+                                Por {m.authorName || 'Mestre'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveGMModifier(gmModifierModal.targetId, m.id)}
+                              className="p-1 rounded hover:bg-rose-500/20 text-parchment/40 hover:text-rose-400 transition-colors shrink-0"
+                              title="Excluir modificador"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGmModifierModal(null)}
+                  className="flex-1 py-3 px-4 rounded-xl border border-white/15 text-parchment/70 hover:text-white hover:bg-white/5 font-mono text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddGMModifier}
+                  disabled={!gmModJustification.trim()}
+                  className="flex-1 py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-obsidian font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Salvar Modificador
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Trait Modal */}
+      <AnimatePresence>
+        {isAddingTrait && (
+          <div className="fixed inset-0 z-[170] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddingTrait(false)}
+              className="absolute inset-0 bg-obsidian/85 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-2xl glass-modal bg-obsidian/95 backdrop-blur-xl border border-arcane/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 z-10 max-h-[90vh] flex flex-col"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-arcane/20 text-arcane border border-arcane/30 flex items-center justify-center">
+                    <Star size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-xl text-parchment font-bold">
+                      Adicionar Vantagem ou Defeito
+                    </h3>
+                    <p className="text-xs font-mono text-parchment/50">
+                      Disponível na edição da ficha mesmo sem pontos prévios
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingTrait(false)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors text-parchment/40 hover:text-parchment cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/10 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTraitModalTab('library')}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg text-xs font-mono uppercase tracking-wider transition-colors font-bold",
+                    activeTraitModalTab === 'library' ? "bg-arcane text-obsidian shadow-sm" : "text-parchment/60 hover:text-parchment"
+                  )}
+                >
+                  Biblioteca ({availableTraits.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTraitModalTab('custom')}
+                  className={cn(
+                    "flex-1 py-2 rounded-lg text-xs font-mono uppercase tracking-wider transition-colors font-bold",
+                    activeTraitModalTab === 'custom' ? "bg-arcane text-obsidian shadow-sm" : "text-parchment/60 hover:text-parchment"
+                  )}
+                >
+                  Criar Traço Personalizado
+                </button>
+              </div>
+
+              {activeTraitModalTab === 'library' ? (
+                <div className="space-y-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                  <div className="flex gap-3">
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-parchment/40" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Buscar vantagem ou defeito..."
+                        value={traitSearchTerm}
+                        onChange={(e) => setTraitSearchTerm(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-xs font-sans text-parchment focus:outline-none focus:border-arcane/50"
+                      />
+                    </div>
+                    <select
+                      value={traitFilterType}
+                      onChange={(e) => setTraitFilterType(e.target.value as any)}
+                      className="bg-obsidian border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-parchment/80 focus:outline-none focus:border-arcane/50"
+                    >
+                      <option value="all">Todos</option>
+                      <option value="advantage">Vantagens</option>
+                      <option value="disadvantage">Defeitos</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-3">
+                    {availableTraits
+                      .filter(t => {
+                        const isDisadvantage = String(t.type || '').toLowerCase().includes('disadvantage') || String(t.type || '').toLowerCase().includes('defeito') || String(t.type || '').toLowerCase().includes('desvantagem');
+                        const isAdvantage = !isDisadvantage;
+                        if (traitFilterType === 'advantage' && !isAdvantage) return false;
+                        if (traitFilterType === 'disadvantage' && !isDisadvantage) return false;
+                        if (!traitSearchTerm.trim()) return true;
+                        const term = traitSearchTerm.toLowerCase();
+                        return (t.name || '').toLowerCase().includes(term) || (t.description || '').toLowerCase().includes(term) || (t.effect || '').toLowerCase().includes(term);
+                      })
+                      .map((trait) => {
+                        const effMod = getTraitEffectiveModifier(trait);
+                        const isDisadvantage = String(trait.type || '').toLowerCase().includes('disadvantage') || String(trait.type || '').toLowerCase().includes('defeito') || String(trait.type || '').toLowerCase().includes('desvantagem');
+                        const alreadyHas = resolvedTraits.some(rt => rt.id === trait.id || rt.name?.toLowerCase() === trait.name?.toLowerCase());
+
+                        return (
+                          <div
+                            key={trait.id}
+                            className={cn(
+                              "p-3.5 rounded-2xl glass border transition-all flex items-start justify-between gap-3",
+                              alreadyHas ? "border-white/10 bg-white/[0.02] opacity-75" : "border-white/15 hover:border-arcane/40"
+                            )}
+                          >
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <h5 className={cn("font-serif text-base font-bold truncate", isDisadvantage ? "text-ember" : "text-arcane")}>
+                                  {trait.name}
+                                </h5>
+                                <span className={cn(
+                                  "text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border",
+                                  isDisadvantage ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-arcane/15 text-arcane border-arcane/30"
+                                )}>
+                                  {isDisadvantage ? 'Defeito' : 'Vantagem'}
+                                </span>
+                                {alreadyHas && (
+                                  <span className="text-[9px] font-mono text-parchment/40 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                                    Na Ficha
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-parchment/70 line-clamp-2 leading-relaxed">
+                                {trait.description}
+                              </p>
+                              {trait.effect && (
+                                <p className="text-[10px] font-mono text-gold/80 truncate">
+                                  Efeito: {trait.effect}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {(() => {
+                                const cost = calculateTraitCost(trait);
+                                return (
+                                  <span className={cn(
+                                    "text-[10px] font-mono px-2 py-0.5 rounded-full border",
+                                    isDisadvantage ? "bg-ember/15 text-ember border-ember/30" : "bg-arcane/15 text-arcane border-arcane/30"
+                                  )}>
+                                    {isDisadvantage ? `+${cost} pts` : `Custo: ${cost} pts`}
+                                  </span>
+                                );
+                              })()}
+                              <span className={cn(
+                                "px-2 py-1 rounded-lg font-serif text-base border",
+                                effMod > 0 ? "bg-arcane/10 text-arcane border-arcane/20" : effMod < 0 ? "bg-ember/10 text-ember border-ember/20" : "bg-white/5 text-parchment/60 border-white/10"
+                              )}>
+                                {effMod > 0 ? `+${effMod}` : effMod}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAddTraitToCharacter(trait)}
+                                className="px-3 py-1.5 rounded-xl bg-arcane text-obsidian text-xs font-mono uppercase tracking-wider font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-sm shadow-arcane/20"
+                              >
+                                {alreadyHas ? '+ Outro' : 'Adicionar'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Nome do Traço *</label>
+                      <input
+                        type="text"
+                        value={customTrait.name}
+                        onChange={(e) => setCustomTrait({ ...customTrait, name: e.target.value })}
+                        placeholder="Ex: Mente Brilhante"
+                        className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs font-sans text-parchment focus:outline-none focus:border-arcane/50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Tipo</label>
+                      <select
+                        value={customTrait.type}
+                        onChange={(e) => setCustomTrait({ ...customTrait, type: e.target.value })}
+                        className="w-full bg-obsidian border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-arcane/50"
+                      >
+                        <option value="advantage">Vantagem</option>
+                        <option value="disadvantage">Defeito</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Modificador Numérico</label>
+                      <input
+                        type="number"
+                        value={customTrait.modifier}
+                        onChange={(e) => setCustomTrait({ ...customTrait, modifier: parseInt(e.target.value) || 0 })}
+                        className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-arcane/50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Atributo Alvo</label>
+                      <select
+                        value={customTrait.modifierType}
+                        onChange={(e) => setCustomTrait({ ...customTrait, modifierType: e.target.value })}
+                        className="w-full bg-obsidian border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-arcane/50 uppercase"
+                      >
+                        {(globalSettings?.attributes || DEFAULT_ATTRIBUTES).map((a: any) => (
+                          <option key={a.id} value={a.id}>{a.label} ({a.id.toUpperCase()})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Efeito Declarado (Opcional)</label>
+                    <input
+                      type="text"
+                      value={customTrait.effect}
+                      onChange={(e) => setCustomTrait({ ...customTrait, effect: e.target.value })}
+                      placeholder="Ex: +1 FOR, +1 CON ou +2 em testes de Percepção"
+                      className="w-full bg-white/5 border border-white/15 rounded-xl px-3 py-2 text-xs font-sans text-parchment focus:outline-none focus:border-arcane/50"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono uppercase tracking-wider text-parchment/70 block">Descrição</label>
+                    <textarea
+                      value={customTrait.description}
+                      onChange={(e) => setCustomTrait({ ...customTrait, description: e.target.value })}
+                      rows={3}
+                      placeholder="Descrição narrativa deste traço..."
+                      className="w-full bg-white/5 border border-white/15 rounded-xl p-3 text-xs font-sans text-parchment focus:outline-none focus:border-arcane/50 resize-none"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCreateCustomTrait}
+                      disabled={!customTrait.name.trim()}
+                      className="px-6 py-2.5 rounded-xl bg-arcane text-obsidian text-xs font-mono uppercase tracking-wider font-bold hover:scale-105 active:scale-95 transition-all shadow-lg shadow-arcane/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      Salvar e Adicionar à Ficha
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Trait Detail Modal */}
       <TraitDetailModal
@@ -3499,7 +4153,7 @@ export default function CharacterSheet() {
         talents={talents}
       />
 
-      {/* Quick Notes (Floating Button & Modal) */}
+      {/* Quick Notes (Controlled Modal - triggered from ActionMenu or header button) */}
       <QuickNotes
         targetType={notesTargetType}
         targetId={notesTargetId}
@@ -3507,10 +4161,57 @@ export default function CharacterSheet() {
         isGM={isGMOfCampaign}
         isOpen={isQuickNotesOpen}
         onOpenChange={setIsQuickNotesOpen}
-        showFloatingButton={true}
+        showFloatingButton={false}
         characterContext={character ? { id: characterId || character.id || '', name: character.name } : undefined}
       />
     </div>
     </div>
   );
+
+  if (isModal) {
+    return (
+      <div 
+        className="fixed inset-0 z-[120] bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 select-text"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && onClose) onClose();
+        }}
+      >
+        <div 
+          className="bg-obsidian border border-arcane/40 rounded-3xl w-full max-w-6xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden relative"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 bg-black/70 border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-arcane/20 border border-arcane/40 flex items-center justify-center text-arcane">
+                <Scroll size={16} />
+              </div>
+              <div>
+                <h3 className="font-serif text-base font-bold text-parchment leading-tight">
+                  Ficha do Personagem {character?.name ? `— ${character.name}` : ''}
+                </h3>
+                <span className="text-[11px] font-mono text-parchment/50">
+                  {session?.name ? `Campanha: ${session.name}` : 'Visualizador em Modal'}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/20 text-parchment/60 hover:text-rose-400 transition-colors cursor-pointer"
+              title="Fechar Ficha"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {/* Scrollable Sheet Body */}
+          <div className="flex-1 overflow-y-auto no-scrollbar">
+            {sheetContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return sheetContent;
 }

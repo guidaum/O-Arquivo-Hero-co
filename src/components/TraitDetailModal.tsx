@@ -15,7 +15,7 @@ import {
   Heart,
   Check
 } from 'lucide-react';
-import { cn, getTraitTargetDisplayName, getTraitEffectiveModifier } from '../lib/utils';
+import { cn, getTraitTargetDisplayName, getTraitEffectiveModifier, calculateTraitCost, calculateTraitCostDetails } from '../lib/utils';
 
 export interface TraitDetailModalProps {
   isOpen: boolean;
@@ -43,6 +43,7 @@ export const TraitDetailModal: React.FC<TraitDetailModalProps> = ({
   const isAdvantage = trait.type === 'advantage';
   const effMod = getTraitEffectiveModifier(trait);
   const targetDisplayName = getTraitTargetDisplayName(trait.modifierType, attributes, talents);
+  const costDetails = calculateTraitCostDetails(trait);
 
   return (
     <AnimatePresence>
@@ -98,7 +99,7 @@ export const TraitDetailModal: React.FC<TraitDetailModalProps> = ({
                       {isAdvantage ? 'Vantagem' : 'Defeito'}
                     </span>
                     <span className="text-xs font-mono text-parchment/60 font-medium">
-                      {effMod > 0 ? `+${effMod}` : effMod} {Math.abs(effMod) === 1 ? 'ponto' : 'pontos'}
+                      {isAdvantage ? `Custo: ${costDetails.totalCost} pts` : `+${costDetails.totalCost} pts de saldo`}
                     </span>
                   </div>
                 </div>
@@ -116,22 +117,21 @@ export const TraitDetailModal: React.FC<TraitDetailModalProps> = ({
 
             {/* Details Cards */}
             <div className="space-y-4 relative z-10">
-              <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="grid grid-cols-3 gap-2.5 text-xs font-mono">
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                  <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Target size={12} className={isAdvantage ? "text-arcane" : "text-ember"} />
-                    Modifica / Alvo
+                  <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1">
+                    {costDetails.isAdvantage ? 'Custo' : 'Saldo'}
                   </span>
                   <span className={cn(
-                    "font-bold text-sm sm:text-base truncate block",
-                    isAdvantage ? "text-arcane" : "text-ember"
+                    "font-serif font-bold text-base sm:text-lg block",
+                    costDetails.isAdvantage ? "text-arcane" : "text-ember"
                   )}>
-                    {targetDisplayName}
+                    {costDetails.isAdvantage ? `${costDetails.totalCost} pts` : `+${costDetails.totalCost} pts`}
                   </span>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                  <span className="text-parchment/40 block text-[10px] uppercase tracking-wider mb-1">
+                  <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1">
                     Modificador
                   </span>
                   <span className={cn(
@@ -141,6 +141,25 @@ export const TraitDetailModal: React.FC<TraitDetailModalProps> = ({
                     {effMod > 0 ? `+${effMod}` : effMod} pts
                   </span>
                 </div>
+
+                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                  <span className="text-parchment/40 block text-[9px] uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Target size={10} className={isAdvantage ? "text-arcane" : "text-ember"} />
+                    Alvo
+                  </span>
+                  <span className="text-parchment font-bold text-xs truncate block mt-0.5">
+                    {targetDisplayName}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-[11px] font-mono text-parchment/80 space-y-1">
+                <span className="text-[9px] uppercase tracking-wider text-parchment/40 block font-bold">
+                  Cálculo do Valor de Custo ({costDetails.isAdvantage ? 'Vantagem' : 'Defeito'}):
+                </span>
+                <p className="leading-relaxed">
+                  Soma dos Efeitos ({costDetails.rawEffectSum >= 0 ? `+${costDetails.rawEffectSum}` : costDetails.rawEffectSum}) → Positivo: {costDetails.positiveEffectSum} ÷ 2 ({costDetails.isAdvantage ? 'teto' : 'piso'} = {costDetails.halfEffect}) + |Modificador| ({costDetails.modVal}) = <span className={cn("font-bold", costDetails.isAdvantage ? "text-arcane" : "text-ember")}>{costDetails.totalCost} pts</span>
+                </p>
               </div>
 
               {trait.description && (

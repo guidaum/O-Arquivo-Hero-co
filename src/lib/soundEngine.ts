@@ -5,7 +5,27 @@
  */
 
 export type RollOutcome = 'critical' | 'fumble' | 'success' | 'failure';
-export type SoundEffectType = 'diceRoll' | 'success' | 'failure' | 'critical' | 'fumble';
+export type SoundEffectType = 
+  | 'diceRoll' 
+  | 'success' 
+  | 'failure' 
+  | 'critical' 
+  | 'fumble'
+  | 'attack'
+  | 'shield'
+  | 'arrow'
+  | 'damage'
+  | 'spell'
+  | 'heal'
+  | 'footsteps'
+  | 'trap'
+  | 'chest'
+  | 'door'
+  | 'ping'
+  | 'roar'
+  | 'levelup'
+  | 'combat_start'
+  | string;
 
 export interface SoundPreset {
   id: string;
@@ -21,14 +41,50 @@ export interface SoundConfig {
   failureSound?: string;
   criticalSound?: string;
   fumbleSound?: string;
+  attackSound?: string;
+  shieldSound?: string;
+  arrowSound?: string;
+  damageSound?: string;
+  spellSound?: string;
+  healSound?: string;
+  footstepsSound?: string;
+  trapSound?: string;
+  chestSound?: string;
+  doorSound?: string;
+  pingSound?: string;
+  monsterRoarSound?: string;
+  levelUpSound?: string;
+  combatStartSound?: string;
+  customAmbientSound?: string;
+  customAmbientName?: string;
+  [key: string]: string | undefined;
 }
 
-export const DEFAULT_SOUNDS: Required<SoundConfig> = {
+export const DEFAULT_SOUNDS: Required<Omit<SoundConfig, 'customAmbientSound' | 'customAmbientName'>> & {
+  customAmbientSound?: string;
+  customAmbientName?: string;
+} = {
   diceRollSound: 'https://assets.mixkit.co/active_storage/sfx/2002/2002-preview.mp3',
   successSound: 'https://assets.mixkit.co/active_storage/sfx/1113/1113-preview.mp3',
   failureSound: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
   criticalSound: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
-  fumbleSound: 'https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3'
+  fumbleSound: 'https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3',
+  attackSound: 'https://assets.mixkit.co/active_storage/sfx/2168/2168-preview.mp3',
+  shieldSound: 'https://assets.mixkit.co/active_storage/sfx/2171/2171-preview.mp3',
+  arrowSound: 'https://assets.mixkit.co/active_storage/sfx/2174/2174-preview.mp3',
+  damageSound: 'https://assets.mixkit.co/active_storage/sfx/2165/2165-preview.mp3',
+  spellSound: 'https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3',
+  healSound: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
+  footstepsSound: 'https://assets.mixkit.co/active_storage/sfx/2144/2144-preview.mp3',
+  trapSound: 'https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3',
+  chestSound: 'https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3',
+  doorSound: 'https://assets.mixkit.co/active_storage/sfx/2569/2569-preview.mp3',
+  pingSound: 'https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3',
+  monsterRoarSound: 'https://assets.mixkit.co/active_storage/sfx/2551/2551-preview.mp3',
+  levelUpSound: 'https://assets.mixkit.co/active_storage/sfx/1432/1432-preview.mp3',
+  combatStartSound: 'https://assets.mixkit.co/active_storage/sfx/2014/2014-preview.mp3',
+  customAmbientSound: '',
+  customAmbientName: ''
 };
 
 export const SOUND_PRESETS: Record<SoundEffectType, SoundPreset[]> = {
@@ -387,22 +443,482 @@ export function playSynthFumbleSound(volume: number = 0.6) {
   }
 }
 
+export function playSynthAttackSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Sword slash metallic whoosh + clash
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.15);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, now);
+    filter.Q.setValueAtTime(2.5, now);
+
+    gain.gain.setValueAtTime(volume * 0.7, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.18);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthShieldSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Metallic shield block resonance
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(520, now);
+    osc1.frequency.exponentialRampToValueAtTime(180, now + 0.25);
+
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1040, now);
+    osc2.frequency.exponentialRampToValueAtTime(320, now + 0.2);
+
+    gain.gain.setValueAtTime(volume * 0.65, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.3);
+    osc2.stop(now + 0.3);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthArrowSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1600, now);
+    osc.frequency.exponentialRampToValueAtTime(240, now + 0.12);
+
+    gain.gain.setValueAtTime(volume * 0.45, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthDamageSound(volume: number = 0.6) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.22);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(350, now);
+
+    gain.gain.setValueAtTime(volume * 0.75, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.26);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthSpellSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = [350, 523, 659, 880, 1174];
+    freqs.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + idx * 0.04 + 0.25);
+
+      gain.gain.setValueAtTime(volume * 0.25, now + idx * 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.3);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.04);
+      osc.stop(now + idx * 0.04 + 0.32);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthHealSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+      gain.gain.setValueAtTime(volume * 0.35, now + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.4);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.08);
+      osc.stop(now + idx * 0.08 + 0.42);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthFootstepsSound(volume: number = 0.4) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.2].forEach(delay => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, now + delay);
+      osc.frequency.exponentialRampToValueAtTime(60, now + delay + 0.06);
+
+      gain.gain.setValueAtTime(volume * 0.3, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.07);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.08);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthTrapSound(volume: number = 0.6) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Mechanical click + sudden spike snap
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.1);
+
+    gain.gain.setValueAtTime(volume * 0.7, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.13);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthChestSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Wood creak + coin shimmer
+    const creak = ctx.createOscillator();
+    const cGain = ctx.createGain();
+    creak.type = 'sawtooth';
+    creak.frequency.setValueAtTime(220, now);
+    creak.frequency.exponentialRampToValueAtTime(340, now + 0.18);
+    cGain.gain.setValueAtTime(volume * 0.35, now);
+    cGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    creak.connect(cGain);
+    cGain.connect(ctx.destination);
+    creak.start(now);
+    creak.stop(now + 0.25);
+
+    // Coins
+    [0.12, 0.18, 0.25].forEach(time => {
+      const coin = ctx.createOscillator();
+      const coinGain = ctx.createGain();
+      coin.type = 'sine';
+      coin.frequency.setValueAtTime(1900 + Math.random() * 600, now + time);
+      coinGain.gain.setValueAtTime(volume * 0.3, now + time);
+      coinGain.gain.exponentialRampToValueAtTime(0.001, now + time + 0.08);
+      coin.connect(coinGain);
+      coinGain.connect(ctx.destination);
+      coin.start(now + time);
+      coin.stop(now + time + 0.09);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthDoorSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.exponentialRampToValueAtTime(65, now + 0.4);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(260, now);
+
+    gain.gain.setValueAtTime(volume * 0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.48);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthPingSound(volume: number = 0.5) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now); // A5 radar ping
+    osc.frequency.exponentialRampToValueAtTime(440, now + 0.25);
+
+    gain.gain.setValueAtTime(volume * 0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.32);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthMonsterRoarSound(volume: number = 0.6) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.6);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(380, now);
+    filter.frequency.exponentialRampToValueAtTime(140, now + 0.6);
+
+    gain.gain.setValueAtTime(volume * 0.8, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.7);
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthLevelUpSound(volume: number = 0.6) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [440, 554.37, 659.25, 880, 1108.73];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+      gain.gain.setValueAtTime(volume * 0.45, now + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.5);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.08);
+      osc.stop(now + idx * 0.08 + 0.55);
+    });
+  } catch {
+    // ignore
+  }
+}
+
+export function playSynthCombatStartSound(volume: number = 0.6) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Heavy war drum strike
+    [0, 0.16].forEach((time, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(120 - idx * 25, now + time);
+      osc.frequency.exponentialRampToValueAtTime(40, now + time + 0.3);
+
+      gain.gain.setValueAtTime(volume * 0.75, now + time);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + time + 0.35);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + time);
+      osc.stop(now + time + 0.38);
+    });
+  } catch {
+    // ignore
+  }
+}
+
 export function playSynthSound(type: SoundEffectType, volume: number = 0.5) {
   switch (type) {
     case 'diceRoll':
+    case 'synth:roll':
       playSynthRollSound(volume);
       break;
     case 'success':
+    case 'synth:success':
       playSynthSuccessSound(volume);
       break;
     case 'failure':
+    case 'synth:failure':
       playSynthFailureSound(volume);
       break;
     case 'critical':
+    case 'synth:critical':
       playSynthCriticalSound(volume);
       break;
     case 'fumble':
+    case 'synth:fumble':
       playSynthFumbleSound(volume);
+      break;
+    case 'attack':
+    case 'attackSound':
+    case 'synth:attack':
+      playSynthAttackSound(volume);
+      break;
+    case 'shield':
+    case 'shieldSound':
+    case 'synth:shield':
+      playSynthShieldSound(volume);
+      break;
+    case 'arrow':
+    case 'arrowSound':
+    case 'synth:arrow':
+      playSynthArrowSound(volume);
+      break;
+    case 'damage':
+    case 'damageSound':
+    case 'synth:damage':
+      playSynthDamageSound(volume);
+      break;
+    case 'spell':
+    case 'spellSound':
+    case 'synth:spell':
+      playSynthSpellSound(volume);
+      break;
+    case 'heal':
+    case 'healSound':
+    case 'synth:heal':
+      playSynthHealSound(volume);
+      break;
+    case 'footsteps':
+    case 'footstepsSound':
+    case 'synth:footsteps':
+      playSynthFootstepsSound(volume);
+      break;
+    case 'trap':
+    case 'trapSound':
+    case 'synth:trap':
+      playSynthTrapSound(volume);
+      break;
+    case 'chest':
+    case 'chestSound':
+    case 'synth:chest':
+      playSynthChestSound(volume);
+      break;
+    case 'door':
+    case 'doorSound':
+    case 'synth:door':
+      playSynthDoorSound(volume);
+      break;
+    case 'ping':
+    case 'pingSound':
+    case 'synth:ping':
+      playSynthPingSound(volume);
+      break;
+    case 'roar':
+    case 'monsterRoarSound':
+    case 'synth:roar':
+      playSynthMonsterRoarSound(volume);
+      break;
+    case 'levelup':
+    case 'levelUpSound':
+    case 'synth:levelup':
+      playSynthLevelUpSound(volume);
+      break;
+    case 'combat_start':
+    case 'combatStartSound':
+    case 'synth:combat_start':
+      playSynthCombatStartSound(volume);
+      break;
+    default:
+      playSynthRollSound(volume);
       break;
   }
 }
@@ -485,6 +1001,18 @@ export function playRollOutcomeSound(
     case 'failure':
       return playSoundEffect('failure', effectiveConfig.failureSound, volume * 0.9);
   }
+}
+
+/**
+ * Plays any configured system sound by its key (e.g. 'attackSound', 'spellSound', 'pingSound')
+ */
+export function playSystemSound(
+  soundKey: string,
+  config: SoundConfig = {},
+  volume: number = 0.5
+): HTMLAudioElement | null {
+  const soundUrl = (config as any)[soundKey] || (DEFAULT_SOUNDS as any)[soundKey];
+  return playSoundEffect(soundKey, soundUrl, volume);
 }
 
 // ==========================================

@@ -17,10 +17,12 @@ import {
   AlertTriangle,
   Database,
   Check,
-  X
+  X,
+  Sliders
 } from 'lucide-react';
 import { db, collection, getDocs, doc, deleteDoc, updateDoc, query, orderBy } from '../firebase';
 import { cn } from '../lib/utils';
+import FeatureManagerTab from './admin/FeatureManagerTab';
 
 interface AdminStats {
   totalUsers: number;
@@ -30,7 +32,7 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = React.useState<'users' | 'characters' | 'sessions' | 'stats'>('stats');
+  const [activeTab, setActiveTab] = React.useState<'users' | 'characters' | 'sessions' | 'stats' | 'features'>('stats');
   const [loading, setLoading] = React.useState(true);
   const [data, setData] = React.useState<any[]>([]);
   const [stats, setStats] = React.useState<AdminStats | null>(null);
@@ -55,6 +57,10 @@ export default function AdminDashboard() {
   }, [status]);
 
   const fetchData = async () => {
+    if (activeTab === 'features') {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       if (activeTab === 'stats') {
@@ -188,6 +194,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-1 bg-white/5 rounded-2xl p-1 border border-white/10 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'stats', label: 'Dashboard', icon: BarChart3 },
+            { id: 'features', label: 'Recursos do Menu', icon: Sliders },
             { id: 'users', label: 'Usuários', icon: Users },
             { id: 'characters', label: 'Personagens', icon: Sword },
             { id: 'sessions', label: 'Sessões', icon: ScrollText },
@@ -196,7 +203,7 @@ export default function AdminDashboard() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 sm:px-6 sm:py-3 rounded-xl transition-all font-bold text-xs sm:text-sm whitespace-nowrap",
+                "flex items-center gap-2 px-3 py-2 sm:px-6 sm:py-3 rounded-xl transition-all font-bold text-xs sm:text-sm whitespace-nowrap cursor-pointer",
                 activeTab === tab.id 
                   ? "bg-amber-400 text-obsidian shadow-lg" 
                   : "text-parchment/40 hover:text-parchment hover:bg-white/5"
@@ -229,6 +236,10 @@ export default function AdminDashboard() {
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        {activeTab === 'features' && (
+          <FeatureManagerTab />
+        )}
+
         {activeTab === 'stats' && stats && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard label="Total de Usuários" value={stats.totalUsers} icon={Users} color="text-arcane" bg="bg-arcane/10" />
@@ -238,7 +249,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {activeTab !== 'stats' && (
+        {activeTab !== 'stats' && activeTab !== 'features' && (
           <div className="space-y-6">
             <div className="flex flex-wrap gap-4 items-center justify-between mb-6">
               <div className="relative flex-1 max-w-md">

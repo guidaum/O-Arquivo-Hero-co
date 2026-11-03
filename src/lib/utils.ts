@@ -103,43 +103,212 @@ export const normalizeTraitType = (str: string): string => {
     .replace(/[\u0300-\u036f]/g, '');
 };
 
-// Returns the true effective modifier number (+ for advantages, - for disadvantages)
+/**
+ * Extracts all signed or numerical values from a trait's effect description or structure.
+ * Respects positive and negative values (e.g., "+2 FOR, -1 AGI" -> [2, -1]).
+ * Ignores dice rolls (like 1d6, 2d20) and durations/counts (like 1 vez, 2 turnos).
+ */
+export const extractTraitEffectValues = (effectInput: any): number[] => {
+  if (effectInput === undefined || effectInput === null || effectInput === '') {
+    return [];
+  }
+  if (typeof effectInput === 'number') {
+    return isNaN(effectInput) ? [] : [effectInput];
+  }
+  if (Array.isArray(effectInput)) {
+    return effectInput.flatMap(item => extractTraitEffectValues(item));
+  }
+  if (typeof effectInput === 'object') {
+    if (typeof effectInput.value === 'number') return [effectInput.value];
+    if (typeof effectInput.modifier === 'number') return [effectInput.modifier];
+    if (effectInput.effect) return extractTraitEffectValues(effectInput.effect);
+    return [];
+  }
+
+  let text = String(effectInput);
+
+  // 1. Remove dice notations (e.g. 1d6, 2d20, d100)
+  text = text.replace(/\b\d*d\d+\b/gi, ' ');
+
+  // 2. Remove count/duration words to avoid parsing "1 vez", "2 rodadas", "nível 1" as stat effect values
+  text = text.replace(/(\d+)\s*(?:vez|vezes|turno|turnos|dia|dias|hora|horas|rodada|rodadas|nível|nivel|lvl)\b/gi, ' ');
+
+  // 3. Normalize verbal reductions/penalties to negative signs and bonuses to positive
+  text = text.replace(/\b(?:menos|reduz(?:e)?|penalidade(?: de)?|subtrai)\s*(\d+)/gi, '-$1');
+  text = text.replace(/\b(?:mais|aumenta|bônus(?: de)?|adiciona)\s*(\d+)/gi, '+$1');
+
+  // 4. Match explicitly signed numbers (e.g., +2, -1, + 3, - 4) or numbers with signs
+  const values: number[] = [];
+  const regex = /([+-]?\s*\d+)/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const rawMatch = match[1].replace(/\s+/g, '');
+    const num = parseInt(rawMatch, 10);
+    if (!isNaN(num)) {
+      values.push(num);
+    }
+  }
+
+  return values;
+};
+
+export interface TraitCostBreakdown {
+  isAdvantage: boolean;
+  modVal: number;
+  effectValues: number[];
+  rawEffectSum: number;
+  positiveEffectSum: number;
+  halfEffect: number;
+  totalCost: number;
+}
+
+/**
+ * Calculates the cost value of advantages and defects (disadvantages) in character creation:
+ * - Vantagem: soma dos efeitos dividido por 2 arredondado para cima (Math.ceil), somado com o valor integral do modificador.
+ * - Desvantagem: soma dos efeitos dividido por 2 arredondado para baixo (Math.floor), somado com o valor integral do modificador.
+ * - Atenção: nos efeitos existem valores negativos e positivos, isso é levado em consideração no cálculo dos efeitos;
+ *   quando for somado ao valor do modificador, tanto o modificador quanto o resultado da somatória dos efeitos são considerados positivos.
+ */
+export const calculateTraitCostDetails = (trait: any): TraitCostBreakdown => {
+  if (!trait) {
+    return {
+      isAdvantage: true,
+      modVal: 0,
+      effectValues: [],
+      rawEffectSum: 0,
+      positiveEffectSum: 0,
+      halfEffect: 0,
+      totalCost: 0
+    };
+  }
+
+  const typeStr = String(trait.type || '').toLowerCase();
+  const isDisadvantage = typeStr.includes('disadvantage') || typeStr.includes('defeito') || typeStr.includes('desvantagem');
+  const isAdvantage = !isDisadvantage;
+
+  // Extract all effect values with their respective positive and negative signs
+  const effectValues = extractTraitEffectValues(trait.effect || trait.effects);
+
+  // Sum of effects taking negative and positive values into account
+  const rawEffectSum = effectValues.reduce((acc, v) => acc + v, 0);
+
+  // Both modifier and the result of effect summation are considered positive
+  const positiveEffectSum = Math.abs(rawEffectSum);
+
+  const rawMod = Number(trait.modifier);
+  const modVal = !isNaN(rawMod) ? Math.abs(rawMod) : 0;
+
+  // Divide by 2: ceil for advantage, floor for disadvantage
+  const halfEffect = isAdvantage
+    ? Math.ceil(positiveEffectSum / 2)
+    : Math.floor(positiveEffectSum / 2);
+
+  const totalCost = halfEffect + modVal;
+
+  return {
+    isAdvantage,
+    modVal,
+    effectValues,
+    rawEffectSum,
+    positiveEffectSum,
+    halfEffect,
+    totalCost
+  };
+};
+
+export const calculateTraitCost = (trait: any): number => {
+  return calculateTraitCostDetails(trait).totalCost;
+};
+
+// Returns the true effective modifier number, respecting the sign explicitly attributed to modifier or in effect,
+// regardless of whether the trait is an advantage or disadvantage.
 export const getTraitEffectiveModifier = (trait: any): number => {
   if (!trait) return 0;
 
-  let rawMod = Number(trait.modifier);
-  if (isNaN(rawMod) || rawMod === 0) {
-    if (trait.effect) {
-      const match = String(trait.effect).match(/([+-]?\s*\d+)/);
-      if (match) {
-        rawMod = parseInt(match[1].replace(/\s+/g, ''), 10);
+  // 1. If trait.modifier is defined, respect its exact sign and numerical value
+  if (trait.modifier !== undefined && trait.modifier !== null && trait.modifier !== '') {
+    const raw = Number(trait.modifier);
+    if (!isNaN(raw)) {
+      return raw;
+    }
+  }
+
+  // 2. If trait.modifier was not provided or not a number, extract signed integer from trait.effect
+  if (trait.effect) {
+    const match = String(trait.effect).match(/([+-]?\s*\d+)/);
+    if (match) {
+      const parsed = parseInt(match[1].replace(/\s+/g, ''), 10);
+      if (!isNaN(parsed)) {
+        return parsed;
       }
     }
   }
-  if (isNaN(rawMod)) rawMod = 0;
 
-  const typeLower = String(trait.type || '').toLowerCase();
-  const isDisadvantage = typeLower === 'disadvantage' || typeLower === 'defeito' || typeLower === 'desvantagem';
-  const isAdvantage = typeLower === 'advantage' || typeLower === 'vantagem';
+  return 0;
+};
 
-  if (isDisadvantage) {
-    // Disadvantages penalize attributes. If entered as positive (e.g. 2 pts cost), negate it to -2 on attribute
-    // unless the effect explicitly indicates a positive bonus (+2)
-    if (trait.effect && /[+]\s*\d+/.test(trait.effect)) {
-      return rawMod;
+// Returns the modifier specifically for a given target attribute or talent.
+// If the effect specifies distinct modifiers per target (e.g. "+2 FOR, -1 AGI" or "+1 em Força, -2 em Agilidade"),
+// it returns that specific signed value. Otherwise, it returns getTraitEffectiveModifier(trait).
+export const getTraitModifierForTarget = (
+  trait: any,
+  targetId: string,
+  attributesList: Array<{ id: string; label?: string }> = [],
+  talentsList: Array<{ id: string; name?: string }> = []
+): number => {
+  if (!trait || !targetId) return 0;
+  const targetNorm = normalizeTraitType(targetId);
+
+  // Check if effect specifies target-specific signed modifier
+  if (trait.effect) {
+    const effStr = String(trait.effect);
+
+    // Pattern 1: [+-]?\d+\s*(?:em|no|na|de|para)?\s*([A-Za-zÀ-ÿ]+)
+    const regex1 = /([+-]?\s*\d+)\s*(?:em|no|na|de|para)?\s*([A-Za-zÀ-ÿ]+)/gi;
+    let match;
+    while ((match = regex1.exec(effStr)) !== null) {
+      const valStr = match[1].replace(/\s+/g, '');
+      const word = normalizeTraitType(match[2]);
+      if (word === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      // Check if word matches label or id
+      const matchedAttr = attributesList.find(a => normalizeTraitType(a.id) === word || normalizeTraitType(a.label || '') === word);
+      if (matchedAttr && normalizeTraitType(matchedAttr.id) === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      const matchedTalent = talentsList.find(t => normalizeTraitType(t.id) === word || normalizeTraitType(t.name || '') === word);
+      if (matchedTalent && normalizeTraitType(matchedTalent.id) === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
     }
-    return -Math.abs(rawMod);
+
+    // Pattern 2: ([A-Za-zÀ-ÿ]+)\s*([+-]\s*\d+)
+    const regex2 = /([A-Za-zÀ-ÿ]+)\s*([+-]\s*\d+)/gi;
+    while ((match = regex2.exec(effStr)) !== null) {
+      const word = normalizeTraitType(match[1]);
+      const valStr = match[2].replace(/\s+/g, '');
+      if (word === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      const matchedAttr = attributesList.find(a => normalizeTraitType(a.id) === word || normalizeTraitType(a.label || '') === word);
+      if (matchedAttr && normalizeTraitType(matchedAttr.id) === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      const matchedTalent = talentsList.find(t => normalizeTraitType(t.id) === word || normalizeTraitType(t.name || '') === word);
+      if (matchedTalent && normalizeTraitType(matchedTalent.id) === targetNorm) {
+        const parsed = parseInt(valStr, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+    }
   }
 
-  if (isAdvantage) {
-    // Advantages boost attributes. If entered as negative, make it positive unless effect explicitly has a minus
-    if (rawMod < 0 && (!trait.effect || !/[-]\s*\d+/.test(trait.effect))) {
-      return Math.abs(rawMod);
-    }
-    return rawMod;
-  }
-
-  return rawMod;
+  return getTraitEffectiveModifier(trait);
 };
 
 // Check if a trait's modifierType and effect refer to the same attribute or talent type.
@@ -197,7 +366,7 @@ export const isTraitModifierSameAsEffect = (
     const found = new Set<string>();
     if (!text) return found;
     if (attrMap[text]) found.add(attrMap[text]);
-    const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    const words = text.replace(/\be\b/g, ' ').split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW && attrMap[cleanW]) {
@@ -211,7 +380,7 @@ export const isTraitModifierSameAsEffect = (
     const found = new Set<string>();
     if (!text) return found;
     if (talentMap[text]) found.add(talentMap[text]);
-    const words = text.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    const words = text.replace(/\be\b/g, ' ').split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW && talentMap[cleanW]) {
@@ -237,9 +406,7 @@ export const isTraitModifierSameAsEffect = (
 };
 
 // Gets the list of attribute and talent IDs that this trait legitimately affects.
-// If modifierType and effect refer to the same attribute/talent (isTraitModifierSameAsEffect is true),
-// the effect is disregarded in calculations and origins: ONLY the modifier is considered.
-// If effect refers to a different attribute/talent (e.g. modifier in FOR and effect in AGI), both are considered.
+// A trait can affect multiple attributes or talents simultaneously.
 export const getTraitTargets = (
   trait: any,
   attributesList: Array<{ id: string; label?: string }> = [],
@@ -292,7 +459,11 @@ export const getTraitTargets = (
     if (attrMap[norm]) attrIds.add(attrMap[norm]);
     if (talentMap[norm]) talentIds.add(talentMap[norm]);
 
-    const words = norm.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    if (norm.includes('todos os atributos') || norm.includes('todos atributos')) {
+      allAttrs.forEach(a => attrIds.add(a.id.toLowerCase()));
+    }
+
+    const words = norm.replace(/\be\b/g, ' ').split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW && attrMap[cleanW]) attrIds.add(attrMap[cleanW]);
@@ -306,19 +477,21 @@ export const getTraitTargets = (
   checkAndAdd(trait.attribute);
   checkAndAdd(trait.target);
 
-  // If the effect modifies an attribute/talent that is ALREADY targeted by the modifier,
-  // do NOT duplicate it. The value considered will be only the modifier.
-  // If the effect targets a DIFFERENT attribute/talent, add only the distinct target.
+  // If the effect modifies an attribute/talent, add them to targets
   if (trait.effect) {
     const norm = normalizeTraitType(trait.effect);
-    const words = norm.split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
+    if (norm.includes('todos os atributos') || norm.includes('todos atributos')) {
+      allAttrs.forEach(a => attrIds.add(a.id.toLowerCase()));
+    }
+
+    const words = norm.replace(/\be\b/g, ' ').split(/[\s,.;:+\-()\[\]{}/*\\|]+/);
     for (const w of words) {
       const cleanW = w.trim();
       if (cleanW) {
-        if (attrMap[cleanW] && !attrIds.has(attrMap[cleanW])) {
+        if (attrMap[cleanW]) {
           attrIds.add(attrMap[cleanW]);
         }
-        if (talentMap[cleanW] && !talentIds.has(talentMap[cleanW])) {
+        if (talentMap[cleanW]) {
           talentIds.add(talentMap[cleanW]);
         }
       }
@@ -397,3 +570,108 @@ export const getTraitTargetDisplayName = (
 
   return rawTarget.charAt(0).toUpperCase() + rawTarget.slice(1);
 };
+
+/**
+ * Compresses an image File or Blob using HTML5 Canvas to safely stay under Firestore's 1MB limit.
+ * Resizes down to maxWidth x maxHeight and compresses to JPEG/WebP.
+ */
+export async function compressImageFile(
+  file: File | Blob,
+  maxWidth: number = 1920,
+  maxHeight: number = 1080,
+  quality: number = 0.82
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = (err) => reject(err);
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) {
+        reject(new Error('Failed to read file'));
+        return;
+      }
+      const img = new Image();
+      img.onerror = () => resolve(dataUrl); // fallback to original dataUrl if decoding fails
+      img.onload = () => {
+        let { naturalWidth: width, naturalHeight: height } = img;
+        if (!width || !height) {
+          resolve(dataUrl);
+          return;
+        }
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, width, height);
+
+        try {
+          const webpData = canvas.toDataURL('image/webp', quality);
+          if (webpData.startsWith('data:image/webp') && webpData.length < 900000) {
+            resolve(webpData);
+            return;
+          }
+        } catch (_) {}
+
+        const jpegData = canvas.toDataURL('image/jpeg', quality);
+        resolve(jpegData);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Compresses a Data URL string using HTML5 Canvas if it exceeds safe Firestore thresholds.
+ */
+export async function compressDataUrl(
+  dataUrl: string,
+  maxWidth: number = 1920,
+  maxHeight: number = 1080,
+  quality: number = 0.82
+): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return dataUrl;
+  // If already small enough (under 450KB string), avoid recompressing
+  if (dataUrl.length < 450000) return dataUrl;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve(dataUrl);
+    img.onload = () => {
+      let { naturalWidth: width, naturalHeight: height } = img;
+      if (!width || !height) {
+        resolve(dataUrl);
+        return;
+      }
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.max(1, Math.round(width * ratio));
+        height = Math.max(1, Math.round(height * ratio));
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}

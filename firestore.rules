@@ -362,7 +362,8 @@ service cloud.firestore {
         ) && (
           // Player cannot change canEditStats
           !request.resource.data.diff(resource.data).affectedKeys().hasAny(['canEditStats'])
-        ))
+        )) ||
+        (isAuthenticated() && resource.data.get('sessionId', null) != null && (isGMOfSession(resource.data.sessionId) || isPlayerInSession(resource.data.sessionId)) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['modelSheet3d', 'updatedAt']))
       );
       allow delete: if isDocOwner() || isAdmin();
     }
@@ -483,9 +484,37 @@ service cloud.firestore {
       allow read, create, delete: if isAuthenticated();
     }
 
+    match /dungeonMarkers/{markerId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    match /dungeonAoEs/{aoeId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
     match /dungeonFog/{fogId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAuthenticated();
+    }
+
+    match /dungeonAtmosphere/{dungeonId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    match /mapDrawings/{drawingId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    match /dungeonDrawings/{drawingId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    match /worldMapPings/{pingId} {
+      allow read, create, delete: if isAuthenticated();
+    }
+
+    match /customSounds/{soundId} {
+      allow read, create, update, delete: if isAuthenticated();
     }
 
     // Default deny

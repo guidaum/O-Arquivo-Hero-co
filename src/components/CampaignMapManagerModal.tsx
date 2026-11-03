@@ -15,9 +15,12 @@ import {
   Grid,
   Sparkles,
   Layers,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Upload,
+  Ratio,
+  Loader2
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, compressImageFile, compressDataUrl } from '../lib/utils';
 import { db, collection, addDoc, auth } from '../firebase';
 import { 
   CampaignMapItem, 
@@ -58,6 +61,69 @@ export default function CampaignMapManagerModal({
   const [newGridCols, setNewGridCols] = React.useState(24);
   const [newGridRows, setNewGridRows] = React.useState(14);
   const [newTheme, setNewTheme] = React.useState('Personalizado');
+  const [detectedDimensions, setDetectedDimensions] = React.useState<{ width: number; height: number; ratioStr: string } | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Measure Image Dimensions and Auto-calculate Grid
+  const measureImageDimensions = (url: string) => {
+    if (!url) return;
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const ratio = w / h;
+      let ratioStr = `${w} × ${h}`;
+      if (Math.abs(ratio - 16 / 9) < 0.15) ratioStr += ' (16:9)';
+      else if (Math.abs(ratio - 1) < 0.15) ratioStr += ' (1:1 Quadrado)';
+      else if (Math.abs(ratio - 21 / 9) < 0.2) ratioStr += ' (21:9 Panorâmico)';
+      else if (ratio < 0.8) ratioStr += ' (Vertical)';
+
+      setDetectedDimensions({ width: w, height: h, ratioStr });
+
+      if (newMapType === 'dungeon') {
+        if (ratio >= 1.5) {
+          setNewGridCols(24);
+          setNewGridRows(14);
+        } else if (ratio >= 0.85 && ratio <= 1.25) {
+          setNewGridCols(24);
+          setNewGridRows(24);
+        } else if (ratio < 0.85) {
+          setNewGridCols(14);
+          setNewGridRows(24);
+        }
+      }
+    };
+    img.src = url;
+  };
+
+  const [isCompressing, setIsCompressing] = React.useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP).');
+      return;
+    }
+
+    setIsCompressing(true);
+    setErrorMsg(null);
+    try {
+      const compressedDataUrl = await compressImageFile(file, 1920, 1080, 0.82);
+      setNewImageUrl(compressedDataUrl);
+      measureImageDimensions(compressedDataUrl);
+      if (!newName.trim()) {
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setNewName(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+      }
+    } catch (err) {
+      console.error('Error compressing map file:', err);
+      setErrorMsg('Erro ao processar imagem.');
+    } finally {
+      setIsCompressing(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -100,11 +166,13 @@ export default function CampaignMapManagerModal({
 
     try {
       const user = auth.currentUser;
+      const finalImg = await compressDataUrl(newImageUrl.trim(), 1920, 1080, 0.82);
+
       if (newMapType === 'world') {
         await addDoc(collection(db, 'worldMaps'), {
           name: newName.trim(),
           subtitle: newSubtitle.trim() || 'Mapa do mundo da campanha',
-          imageUrl: newImageUrl.trim(),
+          imageUrl: finalImg,
           defaultScale: newScale.trim() || '1 cm = 25 léguas',
           sessionId,
           active: true,
@@ -116,7 +184,7 @@ export default function CampaignMapManagerModal({
           name: newName.trim(),
           subtitle: newSubtitle.trim() || 'Mapa de batalha tático criado pelo Mestre',
           theme: newTheme.trim() || 'Personalizado',
-          imageUrl: newImageUrl.trim(),
+          imageUrl: finalImg,
           gridCols: Number(newGridCols) || 24,
           gridRows: Number(newGridRows) || 14,
           entranceCoord: { x: 10, y: 50 },
@@ -131,6 +199,7 @@ export default function CampaignMapManagerModal({
       setNewName('');
       setNewSubtitle('');
       setNewImageUrl('');
+      setDetectedDimensions(null);
       setIsAddingMap(false);
       setActiveTab(newMapType);
     } catch (err: any) {
@@ -324,18 +393,71 @@ export default function CampaignMapManagerModal({
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
-                    URL da Imagem do Mapa * (Link direto)
-                  </label>
-                  <input
-                    type="url"
-                    required
-                    value={newImageUrl}
-                    onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="https://... (ex: link do Pinterest, Imgur, ou gerador)"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane font-mono text-xs"
-                  />
+                {/* Image Source Selection: URL or Local File */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60">
+                      Imagem do Mapa * (Arquivo local ou Link direto)
+                    </label>
+                    {detectedDimensions && (
+                      <span className="text-[10px] font-mono text-arcane bg-arcane/10 border border-arcane/20 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                        <Ratio size={11} />
+                        <span>Dimensão detectada: <strong>{detectedDimensions.ratioStr}</strong></span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-8">
+                      <input
+                        type="url"
+                        value={newImageUrl.startsWith('data:') ? '' : newImageUrl}
+                        onChange={(e) => {
+                          setNewImageUrl(e.target.value);
+                          measureImageDimensions(e.target.value);
+                        }}
+                        placeholder="Cole um link direto JPG/PNG/WebP ou use o botão ao lado"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-arcane font-mono"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-4 flex items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-parchment border border-white/15 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Upload size={14} className="text-arcane" />
+                        <span>Enviar Arquivo</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Preview image thumbnail if available */}
+                  {newImageUrl && (
+                    <div className="relative w-full h-24 rounded-xl overflow-hidden border border-white/15 bg-black/40 flex items-center justify-center group">
+                      <img src={newImageUrl} alt="Prévia do Mapa" className="w-full h-full object-contain" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewImageUrl('');
+                            setDetectedDimensions(null);
+                          }}
+                          className="px-3 py-1 rounded-lg bg-rose-500/80 text-white text-xs font-semibold"
+                        >
+                          Remover Imagem
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {newMapType === 'world' ? (
@@ -352,44 +474,80 @@ export default function CampaignMapManagerModal({
                     />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
-                        Tema / Atmosfera
-                      </label>
-                      <input
-                        type="text"
-                        value={newTheme}
-                        onChange={(e) => setNewTheme(e.target.value)}
-                        placeholder="Ex: Cripta, Ruína, Caverna"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
-                      />
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
+                          Tema / Atmosfera
+                        </label>
+                        <input
+                          type="text"
+                          value={newTheme}
+                          onChange={(e) => setNewTheme(e.target.value)}
+                          placeholder="Ex: Cripta, Ruína, Caverna"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
+                          Colunas do Grid (X)
+                        </label>
+                        <input
+                          type="number"
+                          min="6"
+                          max="80"
+                          value={newGridCols}
+                          onChange={(e) => setNewGridCols(Number(e.target.value))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
+                          Linhas do Grid (Y)
+                        </label>
+                        <input
+                          type="number"
+                          min="6"
+                          max="60"
+                          value={newGridRows}
+                          onChange={(e) => setNewGridRows(Number(e.target.value))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
+                        />
+                      </div>
                     </div>
+
+                    {/* Grid Presets for Battlemaps */}
                     <div>
-                      <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
-                        Colunas do Grid (X)
-                      </label>
-                      <input
-                        type="number"
-                        min="10"
-                        max="60"
-                        value={newGridCols}
-                        onChange={(e) => setNewGridCols(Number(e.target.value))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-mono uppercase tracking-wider text-parchment/60 mb-1">
-                        Linhas do Grid (Y)
-                      </label>
-                      <input
-                        type="number"
-                        min="8"
-                        max="40"
-                        value={newGridRows}
-                        onChange={(e) => setNewGridRows(Number(e.target.value))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-arcane"
-                      />
+                      <span className="text-[10px] font-mono text-parchment/50 uppercase block mb-1">
+                        Atalhos de Proporção da Grade:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          { label: '16:9 Padrão (24×14)', cols: 24, rows: 14 },
+                          { label: 'Quadrado 1:1 (24×24)', cols: 24, rows: 24 },
+                          { label: 'Vertical 9:16 (14×24)', cols: 14, rows: 24 },
+                          { label: 'Panorâmico 21:9 (32×12)', cols: 32, rows: 12 },
+                          { label: 'Grande (36×20)', cols: 36, rows: 20 },
+                          { label: 'Épico (48×28)', cols: 48, rows: 28 },
+                        ].map(p => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => {
+                              setNewGridCols(p.cols);
+                              setNewGridRows(p.rows);
+                            }}
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-[10px] font-mono transition-all cursor-pointer border",
+                              newGridCols === p.cols && newGridRows === p.rows
+                                ? "bg-purple-500/30 text-purple-200 border-purple-400 font-bold"
+                                : "bg-white/5 text-parchment/60 hover:text-white border-white/10"
+                            )}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

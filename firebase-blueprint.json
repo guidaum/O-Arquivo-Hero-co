@@ -394,6 +394,83 @@
         "updatedBy": { "type": "string" }
       },
       "required": ["dungeonId", "enabled"]
+    },
+    "DungeonAoE": {
+      "title": "DungeonAoE",
+      "description": "Area of effect spell templates on dungeon battlemap",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dungeonId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "type": { "type": "string", "enum": ["circle", "cone", "line", "cube"] },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "radiusFeet": { "type": "number" },
+        "color": { "type": "string" },
+        "name": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["dungeonId", "type", "x", "y", "radiusFeet", "color"]
+    },
+    "DungeonMarker": {
+      "title": "DungeonMarker",
+      "description": "Tactical markers placed on dungeon battlemaps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mapId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "label": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["mapId", "x", "y", "label", "category"]
+    },
+    "DungeonAtmosphere": {
+      "title": "DungeonAtmosphere",
+      "description": "Atmospheric soundscape and weather state for dungeon battlemaps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dungeonId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "soundscape": { "type": "string" },
+        "weather": { "type": "string" },
+        "volume": { "type": "number" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["dungeonId"]
+    },
+    "CustomSound": {
+      "title": "CustomSound",
+      "description": "Custom sound effect or ambient audio uploaded or linked by the GM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "type": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "url": { "type": "string" },
+        "size": { "type": "number" },
+        "format": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "sessionName": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "systemSoundKey": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "url", "userId"]
     }
   },
   "firestore": {
@@ -460,6 +537,22 @@
     "/dungeonFog/{fogId}": {
       "schema": "DungeonFog",
       "description": "Persistent Fog of War state for dungeon battlemaps"
+    },
+    "/dungeonAoEs/{aoeId}": {
+      "schema": "DungeonAoE",
+      "description": "Area of effect spell templates on dungeon battlemaps"
+    },
+    "/dungeonMarkers/{markerId}": {
+      "schema": "DungeonMarker",
+      "description": "Tactical markers placed on dungeon battlemaps"
+    },
+    "/dungeonAtmosphere/{dungeonId}": {
+      "schema": "DungeonAtmosphere",
+      "description": "Atmospheric soundscapes and visual weather for battlemaps"
+    },
+    "/customSounds/{soundId}": {
+      "schema": "CustomSound",
+      "description": "Custom sound effects and ambient tracks uploaded or linked by the GM"
     }
   }
 }

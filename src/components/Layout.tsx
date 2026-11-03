@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -22,14 +22,17 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { auth, signOut, db, doc, getDoc, collection, query, where, onSnapshot, updateDoc, serverTimestamp } from '../firebase';
+import { DEFAULT_ROLE_PERMISSIONS, RoleFeaturePermissions, UserRole } from '../types/menuFeatures';
 import NotificationBell from './NotificationBell';
-import DiceRoller from './DiceRoller';
 import ProfileModal from './ProfileModal';
 import { useTheme } from './ThemeProvider';
 import ThemeToggle from './ThemeToggle';
+import ActionMenu from './ActionMenu';
 
 export default function Layout() {
   const { theme } = useTheme();
+  const location = useLocation();
+  const isMapRoute = location.pathname.startsWith('/dungeon') || location.pathname.startsWith('/map');
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = React.useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
@@ -170,34 +173,71 @@ export default function Layout() {
     }
   };
 
+  const [menuPermissions, setMenuPermissions] = React.useState<RoleFeaturePermissions>(DEFAULT_ROLE_PERMISSIONS);
+
+  // Subscribe to real-time menu feature flags from Firestore
+  React.useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'globalSettings', 'menuFeatures'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Partial<RoleFeaturePermissions>;
+        setMenuPermissions({
+          admin: { ...DEFAULT_ROLE_PERMISSIONS.admin, ...(data.admin || {}) },
+          gm: { ...DEFAULT_ROLE_PERMISSIONS.gm, ...(data.gm || {}) },
+          user: { ...DEFAULT_ROLE_PERMISSIONS.user, ...(data.user || {}) },
+        });
+      }
+    }, (err) => {
+      console.warn('Could not read globalSettings/menuFeatures:', err);
+    });
+    return () => unsub();
+  }, []);
+
   // Se o usuário tem permissão para mestrar:
   const canBeGM = userRole === 'gm' || userRole === 'admin' || masteredCount > 0;
 
   // Quando o modo jogador está habilitado, mesmo sendo mestre/admin, ele vê APENAS os menus de jogador!
   const isGM = canBeGM && viewMode === 'gm';
 
-  const navItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Minhas Lendas' },
-    { to: '/journal', icon: BookOpen, label: 'Diário de Sessão' },
-  ];
+  // Perfil efetivo de navegação
+  const effectiveProfile: UserRole = (userRole === 'admin' && viewMode === 'gm') ? 'admin' : isGM ? 'gm' : 'user';
+  const rolePerms = menuPermissions[effectiveProfile] || DEFAULT_ROLE_PERMISSIONS[effectiveProfile];
 
-  // O menu de mapas na barra lateral global SÓ aparece para o Mestre no Modo Mestre (Gerenciador de Mapas)
-  // Para o jogador (e quando o mestre habilita o modo jogador), ele vê APENAS os menus de jogador!
-  if (isGM) {
-    navItems.push(
-      { to: '/map-manager', icon: Map, label: 'Gerenciador de Mapas' },
-      { to: '/dungeon', icon: Skull, label: 'Dungeons & Tokens' },
-      { to: '/map', icon: Compass, label: 'Mapa do Mundo' }
-    );
+  const navItems: Array<{ to: string; icon: any; label: string }> = [];
+
+  if (rolePerms.legends !== false) {
+    navItems.push({ to: '/', icon: LayoutDashboard, label: 'Minhas Lendas' });
   }
 
-  navItems.push(
-    { to: '/inventory', icon: Backpack, label: 'Inventário' },
-    { to: '/create', icon: UserPlus, label: 'Criação de Personagem' },
-    { to: '/sheet', icon: ScrollText, label: 'Ficha Geral' }
-  );
+  if (rolePerms.journal !== false) {
+    navItems.push({ to: '/journal', icon: BookOpen, label: 'Diário de Sessão' });
+  }
 
-  if (userRole === 'admin' && viewMode === 'gm') {
+  // Menus de Mestre (Gerenciador de Mapas)
+  if (isGM && rolePerms.mapManager !== false) {
+    navItems.push({ to: '/map-manager', icon: Map, label: 'Gerenciador de Mapas' });
+  }
+
+  if (rolePerms.dungeon !== false && (isGM || effectiveProfile === 'user')) {
+    navItems.push({ to: '/dungeon', icon: Skull, label: 'Dungeons & Tokens' });
+  }
+
+  if (rolePerms.worldMap !== false) {
+    navItems.push({ to: '/map', icon: Compass, label: 'Mapa do Mundo' });
+  }
+
+  if (rolePerms.inventory !== false) {
+    navItems.push({ to: '/inventory', icon: Backpack, label: 'Inventário' });
+  }
+
+  if (rolePerms.characterCreation !== false) {
+    navItems.push({ to: '/create', icon: UserPlus, label: 'Criação de Personagem' });
+  }
+
+  if (rolePerms.characterSheet !== false) {
+    navItems.push({ to: '/sheet', icon: ScrollText, label: 'Ficha Geral' });
+  }
+
+  if (userRole === 'admin' && viewMode === 'gm' && rolePerms.adminPanel !== false) {
     navItems.push({ to: '/admin', icon: Shield, label: 'Painel Admin' });
   }
 
@@ -443,40 +483,35 @@ export default function Layout() {
 
         {/* Main Content */}
         <main className={cn(
-          "flex-1 min-w-0 p-4 lg:p-10 overflow-auto pb-24 lg:pb-10 transition-all duration-300",
+          "flex-1 min-w-0 transition-all duration-300",
+          isMapRoute 
+            ? "p-0 overflow-hidden" 
+            : "p-4 sm:p-6 lg:p-10 overflow-auto pb-24 lg:pb-10",
           "ml-0 lg:ml-0"
         )}>
           <Outlet />
         </main>
 
-        {/* Bottom Navigation for Mobile */}
-        <nav className="lg:hidden fixed bottom-6 left-4 right-4 h-16 glass rounded-2xl border border-white/10 flex items-center justify-around px-2 z-40 shadow-2xl">
-          {navItems.slice(0, 4).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => cn(
-                "flex flex-col items-center gap-1 p-2 rounded-xl transition-all",
-                isActive ? "text-arcane" : "text-parchment/40"
-              )}
-            >
-              <item.icon size={20} />
-              <span className="text-[10px] font-mono uppercase tracking-tighter">{item.label.split(' ')[0]}</span>
-            </NavLink>
-          ))}
-          <NavLink
-            to="/sheet"
-            className={({ isActive }) => cn(
-              "flex flex-col items-center gap-1 p-2 rounded-xl transition-all",
-              isActive ? "text-arcane" : "text-parchment/40"
-            )}
-          >
-            <ScrollText size={20} />
-            <span className="text-[10px] font-mono uppercase tracking-tighter">Ficha</span>
-          </NavLink>
-        </nav>
+        {/* Bottom Navigation for Mobile (hidden on tactical battlemaps to maximize touch area) */}
+        {!isMapRoute && (
+          <nav className="lg:hidden fixed bottom-6 left-4 right-4 h-16 glass rounded-2xl border border-white/10 flex items-center justify-around px-2 z-40 shadow-2xl">
+            {navItems.slice(0, 5).map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => cn(
+                  "flex flex-col items-center gap-1 p-2 rounded-xl transition-all",
+                  isActive ? "text-arcane font-bold" : "text-parchment/50 hover:text-parchment"
+                )}
+              >
+                <item.icon size={20} />
+                <span className="text-[10px] font-mono uppercase tracking-tighter truncate max-w-[60px]">{item.label.split(' ')[0]}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </div>
-      <DiceRoller />
+      <ActionMenu />
       <ProfileModal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} />
     </div>
   );

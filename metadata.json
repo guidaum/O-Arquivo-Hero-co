@@ -1,5 +1,8 @@
 {
   "name": "The Heroic Archive",
   "description": "A fantasy RPG character sheet and session journal app with a digital tome aesthetic.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

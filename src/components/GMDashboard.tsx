@@ -43,11 +43,15 @@ import {
   Image as ImageIcon,
   Feather,
   Music,
-  Volume2
+  Volume2,
+  Skull,
+  EyeOff,
+  MapPin
 } from 'lucide-react';
 import { ImagePickerModal } from './ImagePickerModal';
 import QuickNotes from './QuickNotes';
 import SoundEffectManager from './SoundEffectManager';
+import GMAudioController from './GMAudioController';
 import { SoundConfig, DEFAULT_SOUNDS } from '../lib/soundEngine';
 import { 
   auth,
@@ -68,7 +72,6 @@ import {
 } from '../firebase';
 import { cn, evaluateFormula, rollDiceFormula, resolveStatsWithVars, playAudio } from '../lib/utils';
 import SessionJournal from './SessionJournal';
-import SessionChat from './SessionChat';
 
 interface GameSession {
   id: string;
@@ -120,6 +123,10 @@ interface Character {
     [key: string]: number;
   };
   isNPC?: boolean;
+  isMonster?: boolean;
+  monsterType?: string;
+  monsterSize?: number;
+  dangerLevel?: string;
   ownerId?: string;
   traits?: string[];
   skillOverrides?: Record<string, { type: string; description?: string; level?: number }>;
@@ -248,6 +255,7 @@ export default function GMDashboard() {
   const [failureSound, setFailureSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
   const [criticalSound, setCriticalSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3');
   const [fumbleSound, setFumbleSound] = React.useState('https://assets.mixkit.co/active_storage/sfx/2550/2550-preview.mp3');
+  const [campaignSounds, setCampaignSounds] = React.useState<SoundConfig>({ ...DEFAULT_SOUNDS });
 
   const [pvFormula, setPvFormula] = React.useState('((FOR / 2) + CON) * 10');
   const [atpFormula, setAtpFormula] = React.useState('(INT + 3) * 3');
@@ -415,7 +423,7 @@ export default function GMDashboard() {
   const [filterClass, setFilterClass] = React.useState<string>('all');
   const [filterLevel, setFilterLevel] = React.useState<string>('all');
   const [filterStatus, setFilterStatus] = React.useState<string>('all');
-  const [filterType, setFilterType] = React.useState<'all' | 'player' | 'npc'>('all');
+  const [filterType, setFilterType] = React.useState<'all' | 'player' | 'npc' | 'monster'>('all');
   const [sortBy, setSortBy] = React.useState<'name' | 'level'>('name');
   const [userPresence, setUserPresence] = React.useState<Record<string, any>>({});
 
@@ -505,7 +513,8 @@ export default function GMDashboard() {
     }
   }, [activeTab, baseSettings, session, applySettingsToUI]);
 
-  // NPC Generator State
+  // NPC Generator State & Session Dungeon Maps
+  const [sessionDungeonMaps, setSessionDungeonMaps] = React.useState<any[]>([]);
   const [isGeneratingNPC, setIsGeneratingNPC] = React.useState(false);
   const [npcConfig, setNpcConfig] = React.useState({
     level: 1,
@@ -515,9 +524,35 @@ export default function GMDashboard() {
     traitCount: 0,
     minAttrValue: 0,
     maxAttrValue: 100,
-    archetype: 'random' as 'combat' | 'scholar' | 'common' | 'random',
-    useSessionDefaults: true
+    archetype: 'random' as 'combat' | 'scholar' | 'common' | 'brute' | 'stalker' | 'boss' | 'random',
+    useSessionDefaults: true,
+    isMonster: false,
+    monsterType: 'Morto-vivo',
+    monsterSize: 1,
+    dangerLevel: 'Moderado' as 'Fraco' | 'Moderado' | 'Perigoso' | 'Letal' | 'Chefe',
+    addToMapHidden: true,
+    targetMapId: 'catacombs',
+    customName: ''
   });
+
+  // Listen to dungeon maps for current session so GM can select target map for hidden monster spawns
+  React.useEffect(() => {
+    if (!sessionId) return;
+    const qDungeon = query(collection(db, 'dungeonMaps'));
+    const unsub = onSnapshot(qDungeon, (snap) => {
+      const list: any[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.sessionId === sessionId || !data.sessionId) {
+          list.push({ id: d.id, ...data });
+        }
+      });
+      setSessionDungeonMaps(list);
+    }, err => {
+      console.warn('Error loading session dungeon maps for NPC generator:', err);
+    });
+    return () => unsub();
+  }, [sessionId]);
 
   const generateRandomName = () => {
     const firstNames = ['Alaric', 'Bryn', 'Caelum', 'Dara', 'Elowen', 'Faelan', 'Gideon', 'Hestia', 'Ivor', 'Juno', 'Kael', 'Lyra', 'Maelis', 'Nyx', 'Orion', 'Phaedra', 'Quill', 'Rhea', 'Soren', 'Thalia', 'Uriel', 'Vesper', 'Wren', 'Xander', 'Yara', 'Zane'];
@@ -525,15 +560,112 @@ export default function GMDashboard() {
     return `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
   };
 
+  const MONSTER_NAME_PREFIXES = [
+    'Gárgula', 'Espectro', 'Lorde', 'Besta', 'Basilisco', 'Quimera', 'Golem', 'Verme', 
+    'Necromante', 'Carniçal', 'Horror', 'Espreitador', 'Abominação', 'Demônio', 'Titã',
+    'Troll', 'Guardião', 'Vampiro', 'Serpente', 'Devorador'
+  ];
+  const MONSTER_NAME_SUFFIXES = [
+    'das Sombras', 'de Obsidiana', 'Carmesim', 'Rúnico', 'Profano', 'do Vazio', 
+    'Abissal', 'Putrefato', 'Vulcânico', 'Espectral', 'Sangrento', 'Ancestral', 'Lúgubre',
+    'de Ébano', 'das Catacumbas', 'da Cripta', 'de Sangue', 'Venifero'
+  ];
+
+  const generateRandomMonsterName = () => {
+    const p = MONSTER_NAME_PREFIXES[Math.floor(Math.random() * MONSTER_NAME_PREFIXES.length)];
+    const s = MONSTER_NAME_SUFFIXES[Math.floor(Math.random() * MONSTER_NAME_SUFFIXES.length)];
+    return `${p} ${s}`;
+  };
+
+  // Spawn token directly onto dungeon map (supports hidden/concealed mode for monster ambushes)
+  const handleSpawnTokenToMap = async (
+    char: { id: string; name: string; isMonster?: boolean; image?: string; currentPV?: number; stats?: any; monsterSize?: number },
+    mapId: string = 'catacombs',
+    isHidden: boolean = true
+  ) => {
+    if (!sessionId || !user) return;
+    try {
+      const activeDungeonKey = `session_${sessionId}_${mapId}`;
+      
+      // Compute tactical spawn coordinates (inside rooms or ambush spots)
+      const ambushCoords = [
+        { x: 38, y: 38 },
+        { x: 62, y: 42 },
+        { x: 48, y: 64 },
+        { x: 72, y: 68 },
+        { x: 28, y: 62 }
+      ];
+      const randomAmbush = ambushCoords[Math.floor(Math.random() * ambushCoords.length)];
+      const posX = Number((randomAmbush.x + (Math.random() * 6 - 3)).toFixed(1));
+      const posY = Number((randomAmbush.y + (Math.random() * 6 - 3)).toFixed(1));
+
+      const isMonster = Boolean(char.isMonster);
+      const newTokenDoc = {
+        dungeonId: activeDungeonKey,
+        sessionId,
+        userId: user.uid,
+        userName: 'Mestre',
+        characterId: char.id,
+        name: char.name,
+        avatar: char.image || '',
+        color: isMonster ? '#ef4444' : '#10b981',
+        type: isMonster ? 'monster' : 'npc',
+        hp: char.currentPV || char.stats?.pv || 20,
+        maxHp: char.stats?.pv || 20,
+        x: posX,
+        y: posY,
+        size: char.monsterSize || 1,
+        initiative: Math.floor(Math.random() * 20) + 1,
+        hidden: isHidden,
+        isHidden: isHidden,
+        lastMovedAt: new Date().toISOString(),
+        lastMovedBy: 'Mestre'
+      };
+
+      await addDoc(collection(db, 'dungeonTokens'), newTokenDoc);
+
+      setSaveStatus({
+        type: 'success',
+        message: isHidden
+          ? `👻 ${char.name} posicionado no mapa de forma OCULTA (invisível aos jogadores)!`
+          : `👁️ ${char.name} posicionado no mapa de forma visível!`
+      });
+    } catch (err) {
+      console.error('Error spawning token to map:', err);
+      setSaveStatus({ type: 'error', message: 'Erro ao posicionar token no mapa.' });
+    }
+  };
+
+  // Toggle character between Monster and friendly/neutral NPC
+  const handleToggleMonsterStatus = async (char: Character) => {
+    try {
+      const newStatus = !char.isMonster;
+      await updateDoc(doc(db, 'characters', char.id), {
+        isMonster: newStatus,
+        class: newStatus ? (char.monsterType || 'Monstro') : (char.class || 'NPC Aliado')
+      });
+      setSaveStatus({
+        type: 'success',
+        message: newStatus ? `${char.name} agora está ativado como Monstro!` : `${char.name} agora é um NPC normal.`
+      });
+    } catch (err) {
+      console.error('Error toggling monster status:', err);
+      setSaveStatus({ type: 'error', message: 'Erro ao alterar tipo de personagem.' });
+    }
+  };
 
   const handleGenerateNPC = async () => {
     if (!session || !user) return;
 
     try {
-      const name = generateRandomName();
+      const isMonster = Boolean(npcConfig.isMonster);
+      const name = npcConfig.customName.trim() || (isMonster ? generateRandomMonsterName() : generateRandomName());
       const level = npcConfig.level || 1;
+      
       const archetype = npcConfig.archetype === 'random' 
-        ? (['combat', 'scholar', 'common'][Math.floor(Math.random() * 3)] as any)
+        ? (isMonster 
+            ? (['combat', 'brute', 'stalker', 'boss'][Math.floor(Math.random() * 4)] as any)
+            : (['combat', 'scholar', 'common'][Math.floor(Math.random() * 3)] as any))
         : npcConfig.archetype;
 
       // Distribute Attributes
@@ -546,6 +678,12 @@ export default function GMDashboard() {
       const baseAttrPoints = npcConfig.useSessionDefaults ? npcDefaultAttrPoints : npcConfig.attributePoints;
       const levelBonusAttr = (attrPointsPerLevel || 0) * (level - 1);
       let totalPool = baseAttrPoints + levelBonusAttr;
+
+      // Monster threat level modifiers
+      if (isMonster) {
+        if (npcConfig.dangerLevel === 'Letal') totalPool = Math.round(totalPool * 1.25);
+        else if (npcConfig.dangerLevel === 'Chefe') totalPool = Math.round(totalPool * 1.5);
+      }
       
       // Ensure we don't exceed the total possible (all attributes at maxVal)
       totalPool = Math.min(totalPool, maxVal * attributes.length);
@@ -555,6 +693,9 @@ export default function GMDashboard() {
 
       const priorities: Record<string, string[]> = {
         combat: ['for', 'con', 'agi', 'ini', 'vel'],
+        brute: ['for', 'con', 'cor'],
+        stalker: ['agi', 'per', 'vel', 'ini'],
+        boss: ['for', 'con', 'int', 'cor', 'ini'],
         scholar: ['int', 'per', 'cor', 'ini'],
         common: attributes.map(a => a.id)
       };
@@ -564,9 +705,7 @@ export default function GMDashboard() {
       // Stochastic weighted distribution for true randomness
       const weights: Record<string, number> = {};
       attributes.forEach(attr => {
-        // Random base weight between 1 and 10
         let weight = Math.floor(Math.random() * 10) + 1;
-        // Significant boost for priority attributes
         if (currentPriorities.includes(attr.id)) {
           weight *= (Math.random() * 3 + 2); // 2x to 5x boost
         }
@@ -575,19 +714,14 @@ export default function GMDashboard() {
 
       // Distribute points in chunks using weighted selection
       let iterations = 0;
-      const maxIterations = 5000; // High limit to ensure all points are spent
+      const maxIterations = 5000;
       
       while (remainingAttrPoints > 0 && iterations < maxIterations) {
         iterations++;
-        
-        // Filter attributes that can still receive points
         const available = attributes.filter(a => stats[a.id] < maxVal);
         if (available.length === 0) break;
 
-        // Calculate total weight of available attributes
         const currentTotalWeight = available.reduce((sum, a) => sum + weights[a.id], 0);
-        
-        // Pick one attribute based on weights
         let random = Math.random() * currentTotalWeight;
         let selectedAttr = available[0];
         
@@ -599,7 +733,6 @@ export default function GMDashboard() {
           }
         }
 
-        // Add a random chunk (1 to 10% of maxVal, or at least 1)
         const maxChunk = Math.max(1, Math.floor(maxVal * 0.1));
         const add = Math.min(remainingAttrPoints, maxVal - stats[selectedAttr.id], Math.floor(Math.random() * maxChunk) + 1);
         
@@ -669,17 +802,32 @@ export default function GMDashboard() {
 
       const statsForFormula = resolveStatsWithVars(baseStatsForFormula, calculationVars);
 
-      const maxPV = evaluateFormula(session.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
-      const maxATP = evaluateFormula(session.atpFormula || '(INT + 3) * 3', statsForFormula);
+      let maxPV = evaluateFormula(session.pvFormula || '((FOR / 2) + CON) * 10', statsForFormula);
+      let maxATP = evaluateFormula(session.atpFormula || '(INT + 3) * 3', statsForFormula);
+
+      // Boss / Deadly HP Boost
+      if (isMonster) {
+        if (npcConfig.dangerLevel === 'Perigoso') maxPV = Math.round(maxPV * 1.3);
+        else if (npcConfig.dangerLevel === 'Letal') maxPV = Math.round(maxPV * 1.6);
+        else if (npcConfig.dangerLevel === 'Chefe') maxPV = Math.round(maxPV * 2.2);
+      }
 
       stats.pv = maxPV;
       stats.atp = maxATP;
 
+      const characterClass = isMonster 
+        ? `${npcConfig.monsterType || 'Monstro'} (${npcConfig.dangerLevel || 'Ameaça'})` 
+        : (archetype.charAt(0).toUpperCase() + archetype.slice(1));
+
+      const avatarUrl = isMonster
+        ? `https://picsum.photos/seed/creature-${encodeURIComponent(name.replace(/\s+/g, '-'))}/400/400`
+        : `https://picsum.photos/seed/${name.replace(/\s+/g, '')}/400/400`;
+
       const npcData = {
         name,
-        class: archetype.charAt(0).toUpperCase() + archetype.slice(1),
+        class: characterClass,
         level,
-        image: `https://picsum.photos/seed/${name.replace(' ', '')}/400/400`,
+        image: avatarUrl,
         ownerId: user.uid,
         sessionId: session.id,
         stats,
@@ -691,15 +839,33 @@ export default function GMDashboard() {
         powerPoints: remainingPowerPoints,
         currentPV: maxPV,
         currentATP: maxATP,
-        money: Math.floor(Math.random() * 100),
+        money: isMonster ? 0 : Math.floor(Math.random() * 100),
         inventory: [],
         isNPC: true,
+        isMonster,
+        monsterType: isMonster ? npcConfig.monsterType : undefined,
+        monsterSize: isMonster ? npcConfig.monsterSize : 1,
+        dangerLevel: isMonster ? npcConfig.dangerLevel : undefined,
         createdAt: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'characters'), npcData);
+      const docRef = await addDoc(collection(db, 'characters'), npcData);
+
+      // If requested, immediately spawn on the selected dungeon map in hidden mode!
+      if (npcConfig.addToMapHidden) {
+        await handleSpawnTokenToMap({
+          ...npcData,
+          id: docRef.id
+        }, npcConfig.targetMapId || 'catacombs', true);
+      }
+
       setIsGeneratingNPC(false);
-      setSaveStatus({ type: 'success', message: `NPC ${name} gerado com sucesso!` });
+      setSaveStatus({ 
+        type: 'success', 
+        message: isMonster 
+          ? `Monstro ${name} gerado${npcConfig.addToMapHidden ? ' e inserido OCULTO no mapa' : ''} com sucesso!` 
+          : `NPC ${name} gerado com sucesso!` 
+      });
     } catch (err) {
       console.error('Error generating NPC:', err);
       handleFirestoreError(err, OperationType.CREATE, 'characters');
@@ -891,7 +1057,13 @@ export default function GMDashboard() {
       .filter(char => {
         const matchesClass = filterClass === 'all' || char.class === filterClass;
         const matchesLevel = filterLevel === 'all' || char.level.toString() === filterLevel;
-        const matchesType = filterType === 'all' || (filterType === 'npc' ? char.isNPC : !char.isNPC);
+        const matchesType = filterType === 'all' 
+          ? true 
+          : filterType === 'player' 
+            ? !char.isNPC 
+            : filterType === 'monster' 
+              ? Boolean(char.isNPC && char.isMonster) 
+              : Boolean(char.isNPC && !char.isMonster);
         
         const online = isOnline(char.ownerId);
         const matchesStatus = filterStatus === 'all' || (filterStatus === 'online' ? online : !online);
@@ -934,6 +1106,21 @@ export default function GMDashboard() {
         setGmNotes(data.gmNotes || '');
         setSessionName(data.name || '');
         setSessionImage(data.image || '');
+
+        // Load full campaign sounds if stored
+        if (data.soundSettings || data.diceRollSound) {
+          const mergedSounds: SoundConfig = {
+            ...DEFAULT_SOUNDS,
+            ...(data.soundSettings || {}),
+            ...data
+          };
+          setCampaignSounds(mergedSounds);
+          if (data.diceRollSound) setDiceRollSound(data.diceRollSound);
+          if (data.successSound) setSuccessSound(data.successSound);
+          if (data.failureSound) setFailureSound(data.failureSound);
+          if (data.criticalSound) setCriticalSound(data.criticalSound);
+          if (data.fumbleSound) setFumbleSound(data.fumbleSound);
+        }
       } else {
         navigate('/');
       }
@@ -1228,6 +1415,8 @@ export default function GMDashboard() {
     try {
       if (sessionId) {
         await updateDoc(doc(db, 'gameSessions', sessionId), {
+          ...soundConfig,
+          soundSettings: soundConfig,
           diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
           successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
           failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
@@ -1240,6 +1429,8 @@ export default function GMDashboard() {
 
       if (alsoSaveGlobal) {
         await setDoc(doc(db, 'globalSettings', 'config'), {
+          ...soundConfig,
+          soundSettings: soundConfig,
           diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
           successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
           failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
@@ -1249,6 +1440,7 @@ export default function GMDashboard() {
         }, { merge: true });
       }
 
+      setCampaignSounds(soundConfig);
       setDiceRollSound(soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound);
       setSuccessSound(soundConfig.successSound || DEFAULT_SOUNDS.successSound);
       setFailureSound(soundConfig.failureSound || DEFAULT_SOUNDS.failureSound);
@@ -1264,6 +1456,8 @@ export default function GMDashboard() {
   const handleSaveGlobalSounds = async (soundConfig: SoundConfig) => {
     try {
       await setDoc(doc(db, 'globalSettings', 'config'), {
+        ...soundConfig,
+        soundSettings: soundConfig,
         diceRollSound: soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound,
         successSound: soundConfig.successSound || DEFAULT_SOUNDS.successSound,
         failureSound: soundConfig.failureSound || DEFAULT_SOUNDS.failureSound,
@@ -1272,6 +1466,7 @@ export default function GMDashboard() {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
+      setCampaignSounds(soundConfig);
       setDiceRollSound(soundConfig.diceRollSound || DEFAULT_SOUNDS.diceRollSound);
       setSuccessSound(soundConfig.successSound || DEFAULT_SOUNDS.successSound);
       setFailureSound(soundConfig.failureSound || DEFAULT_SOUNDS.failureSound);
@@ -1972,77 +2167,110 @@ export default function GMDashboard() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 pb-2 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 lg:justify-end items-center">
-            <button 
-              onClick={() => setActiveTab('characters')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'characters' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Personagens
-            </button>
-            <button 
-              onClick={() => setActiveTab('journal')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'journal' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Diário
-            </button>
-            <button 
-              onClick={() => setActiveTab('notes')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'notes' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Notas
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={cn(
-                "px-4 sm:px-6 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap",
-                activeTab === 'settings' ? "bg-arcane text-obsidian" : "glass hover:bg-white/5"
-              )}
-            >
-              Config. Campanha
-            </button>
-            <button 
-              onClick={() => setActiveTab('sounds')}
-              className={cn(
-                "px-3 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5",
-                activeTab === 'sounds' ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" : "glass hover:bg-white/5 text-parchment"
-              )}
-              title="Gerenciador de Efeitos Sonoros"
-            >
-              <Music size={16} />
-              <span>Efeitos Sonoros</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2 pb-2 lg:pb-0 -mx-6 px-6 lg:mx-0 lg:px-0 lg:justify-end">
+            {/* Primary Navigation Tabs */}
+            <div className="flex items-center bg-white/5 p-1 rounded-2xl border border-white/10 overflow-x-auto max-w-full no-scrollbar">
+              <button 
+                onClick={() => setActiveTab('characters')}
+                className={cn(
+                  "px-3.5 sm:px-5 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                  activeTab === 'characters' 
+                    ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" 
+                    : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+                )}
+              >
+                <Users size={15} />
+                <span>Personagens</span>
+                <span className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold",
+                  activeTab === 'characters' ? "bg-obsidian/30 text-obsidian" : "bg-white/10 text-parchment/60"
+                )}>
+                  {characters.length}
+                </span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('journal')}
+                className={cn(
+                  "px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                  activeTab === 'journal' 
+                    ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" 
+                    : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+                )}
+              >
+                <Scroll size={15} />
+                <span>Diário</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('notes')}
+                className={cn(
+                  "px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                  activeTab === 'notes' 
+                    ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" 
+                    : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+                )}
+              >
+                <Feather size={15} />
+                <span>Notas</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('settings')}
+                className={cn(
+                  "px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                  activeTab === 'settings' 
+                    ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" 
+                    : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+                )}
+              >
+                <Shield size={15} />
+                <span>Config. Campanha</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('sounds')}
+                className={cn(
+                  "px-3 sm:px-4 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer",
+                  activeTab === 'sounds' 
+                    ? "bg-arcane text-obsidian font-bold shadow-md shadow-arcane/20" 
+                    : "text-parchment/60 hover:text-parchment hover:bg-white/5"
+                )}
+                title="Gerenciador de Efeitos Sonoros e Ambiência da Campanha"
+              >
+                <Music size={15} />
+                <span>Efeitos Sonoros</span>
+              </button>
+            </div>
+
+            {/* Quick Action: Anotações Rápidas */}
             <button 
               type="button"
               onClick={() => setIsGmQuickNotesOpen(true)}
-              className="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all glass hover:bg-ember/20 text-ember border border-ember/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
+              className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all glass hover:bg-ember/20 text-ember border border-ember/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-sm"
               title="Anotações Rápidas da Campanha"
             >
-              <Feather size={16} />
-              <span>Anotações Rápidas</span>
+              <Feather size={14} />
+              <span className="hidden sm:inline">Anotações Rápidas</span>
             </button>
 
-            {/* Config Menu Dropdown */}
+            {/* Config & Library Menu Dropdown */}
             <div className="relative" ref={configMenuRef}>
               <button 
                 onClick={() => setShowConfigMenu(!showConfigMenu)}
                 className={cn(
-                  "p-2 rounded-xl transition-all glass hover:bg-white/10 flex items-center justify-center",
-                  showConfigMenu || ['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions', 'sounds'].includes(activeTab) 
-                    ? "bg-arcane text-obsidian" 
-                    : "text-parchment/60"
+                  "px-3 py-1.5 rounded-xl transition-all glass flex items-center gap-1.5 cursor-pointer border",
+                  showConfigMenu || ['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions'].includes(activeTab) 
+                    ? "bg-arcane text-obsidian border-arcane/40 font-semibold shadow-md" 
+                    : "hover:bg-white/10 text-parchment/70 border-white/10"
                 )}
-                title="Atalhos e Ferramentas"
+                title="Biblioteca de Regras, Catálogo e Configurações"
               >
-                <Settings size={20} className={cn(showConfigMenu && "animate-[spin_3s_linear_infinite]")} />
+                <Settings size={15} className={cn(showConfigMenu && "animate-[spin_3s_linear_infinite]")} />
+                <span className="text-xs font-mono hidden sm:inline">Biblioteca & Regras</span>
+                {suggestions.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-ember animate-ping" />
+                )}
               </button>
               
               <AnimatePresence>
@@ -2051,110 +2279,132 @@ export default function GMDashboard() {
                     initial={{ opacity: 0, scale: 0.95, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                    className="absolute right-0 top-full mt-2 w-56 glass-popup bg-obsidian/85 backdrop-blur-xl border border-white/25 rounded-2xl shadow-2xl p-2 z-[100] overflow-hidden"
+                    className="absolute right-0 top-full mt-2 w-64 glass-popup bg-obsidian/95 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl p-2 z-[100] overflow-hidden"
                   >
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-0.5">
+                      {/* Section 1: Regras & Fichas */}
+                      <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-parchment/40 flex items-center gap-1">
+                        <Sword size={11} className="text-arcane" />
+                        <span>Regras & Habilidades</span>
+                      </div>
+
                       <button 
                         onClick={() => { setActiveTab('talents'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'talents' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'talents' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Talentos
+                        <span>Talentos</span>
+                        <span className="text-[10px] font-mono text-parchment/40">{talents.length}</span>
                       </button>
+
                       <button 
                         onClick={() => { setActiveTab('skills'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'skills' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'skills' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Perícias
+                        <span>Perícias</span>
+                        <span className="text-[10px] font-mono text-parchment/40">{skills.length}</span>
                       </button>
+
                       <button 
                         onClick={() => { setActiveTab('powers'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'powers' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'powers' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Poderes
+                        <span>Poderes</span>
+                        <span className="text-[10px] font-mono text-parchment/40">{powers.length}</span>
                       </button>
+
                       <button 
                         onClick={() => { setActiveTab('traits'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'traits' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'traits' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Vantagens/Defeitos
+                        <span>Vantagens & Defeitos</span>
+                        <span className="text-[10px] font-mono text-parchment/40">{traits.length}</span>
                       </button>
                       
                       <div className="h-px bg-white/10 my-1 mx-2" />
                       
-                      <button 
-                        onClick={() => { setActiveTab('vars'); setShowConfigMenu(false); }}
-                        className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'vars' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
-                        )}
-                      >
-                        Variáveis
-                      </button>
-                      <button 
-                        onClick={() => { setActiveTab('categories'); setShowConfigMenu(false); }}
-                        className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'categories' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
-                        )}
-                      >
-                        Categorias
-                      </button>
+                      {/* Section 2: Catálogo & Fórmulas */}
+                      <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-parchment/40 flex items-center gap-1">
+                        <Package size={11} className="text-gold" />
+                        <span>Catálogo & Fórmulas</span>
+                      </div>
+
                       <button 
                         onClick={() => { setActiveTab('catalog'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'catalog' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'catalog' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Catálogo
+                        <span>Catálogo de Itens</span>
+                        <span className="text-[10px] font-mono text-parchment/40">{itemCatalog.length}</span>
                       </button>
+
                       <button 
-                        onClick={() => { setActiveTab('sounds'); setShowConfigMenu(false); }}
+                        onClick={() => { setActiveTab('categories'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left flex items-center justify-between",
-                          activeTab === 'sounds' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left cursor-pointer",
+                          activeTab === 'categories' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        <span>Efeitos Sonoros</span>
-                        <Music size={14} className="text-arcane" />
+                        Categorias de Itens & Habilidades
                       </button>
+
                       <button 
-                        onClick={() => { setActiveTab('baseSettings'); setShowConfigMenu(false); }}
+                        onClick={() => { setActiveTab('vars'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          activeTab === 'baseSettings' ? "bg-amber-400/20 text-amber-400" : "hover:bg-white/5 text-amber-400/60 hover:text-amber-400"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left cursor-pointer",
+                          activeTab === 'vars' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Config. Base
+                        Variáveis & Fórmulas
                       </button>
 
                       <div className="h-px bg-white/10 my-1 mx-2" />
+
+                      {/* Section 3: Moderação & Ajustes */}
+                      <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-parchment/40 flex items-center gap-1">
+                        <Sparkles size={11} className="text-amber-400" />
+                        <span>Aprovações & Sistema</span>
+                      </div>
 
                       <button 
                         onClick={() => { setActiveTab('suggestions'); setShowConfigMenu(false); }}
                         className={cn(
-                          "px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center justify-between",
-                          activeTab === 'suggestions' ? "bg-white/10 text-arcane" : "hover:bg-white/5 text-parchment/60 hover:text-parchment"
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all flex items-center justify-between cursor-pointer",
+                          activeTab === 'suggestions' ? "bg-arcane/20 text-arcane font-bold" : "hover:bg-white/5 text-parchment/70 hover:text-parchment"
                         )}
                       >
-                        Sugestões
-                        {suggestions.length > 0 && (
-                          <span className="w-5 h-5 bg-ember text-white text-[10px] rounded-full flex items-center justify-center shadow-lg shadow-ember/20">
+                        <span>Sugestões de Jogadores</span>
+                        {suggestions.length > 0 ? (
+                          <span className="px-1.5 py-0.2 bg-ember text-white text-[10px] rounded-full font-bold shadow-md shadow-ember/30">
                             {suggestions.length}
                           </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-parchment/40">0</span>
                         )}
+                      </button>
+
+                      <button 
+                        onClick={() => { setActiveTab('baseSettings'); setShowConfigMenu(false); }}
+                        className={cn(
+                          "px-3 py-2 rounded-xl text-xs font-medium transition-all text-left flex items-center justify-between cursor-pointer",
+                          activeTab === 'baseSettings' ? "bg-amber-400/20 text-amber-400 font-bold" : "hover:bg-white/5 text-amber-400/70 hover:text-amber-400"
+                        )}
+                      >
+                        <span>Configurações Base</span>
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20">Global</span>
                       </button>
                     </div>
                   </motion.div>
@@ -2163,6 +2413,33 @@ export default function GMDashboard() {
             </div>
           </div>
         </header>
+
+        {/* Sub-tab Breadcrumb Banner for GM nested tools */}
+        {['talents', 'skills', 'powers', 'traits', 'vars', 'categories', 'catalog', 'baseSettings', 'suggestions'].includes(activeTab) && (
+          <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('characters')}
+                className="px-3 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-mono text-parchment/70 hover:text-parchment flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <ChevronLeft size={13} />
+                <span>Voltar ao Painel</span>
+              </button>
+              <span className="text-white/20">/</span>
+              <span className="text-xs font-mono text-arcane font-semibold uppercase tracking-wider">
+                {activeTab === 'talents' && 'Biblioteca de Talentos'}
+                {activeTab === 'skills' && 'Biblioteca de Perícias'}
+                {activeTab === 'powers' && 'Biblioteca de Poderes'}
+                {activeTab === 'traits' && 'Vantagens & Defeitos'}
+                {activeTab === 'vars' && 'Variáveis e Fórmulas Customizadas'}
+                {activeTab === 'categories' && 'Categorias de Perícias e Poderes'}
+                {activeTab === 'catalog' && 'Catálogo Global de Itens'}
+                {activeTab === 'baseSettings' && 'Configurações Base (Novas Campanhas)'}
+                {activeTab === 'suggestions' && 'Sugestões de Jogadores'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         <AnimatePresence mode="wait">
@@ -2230,12 +2507,13 @@ export default function GMDashboard() {
 
                   <select 
                     value={filterType}
-                    onChange={(e) => setFilterType(e.target.value as 'all' | 'player' | 'npc')}
+                    onChange={(e) => setFilterType(e.target.value as 'all' | 'player' | 'npc' | 'monster')}
                     className="bg-obsidian border border-white/10 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-arcane/50"
                   >
                     <option value="all">Todos os Tipos</option>
                     <option value="player">Personagens Jogadores</option>
-                    <option value="npc">NPCs</option>
+                    <option value="npc">NPCs Aliados/Neutros</option>
+                    <option value="monster">Monstros Hostis</option>
                   </select>
 
                   <div className="flex items-center gap-2 text-parchment/40 ml-auto">
@@ -2286,14 +2564,29 @@ export default function GMDashboard() {
                             referrerPolicy="no-referrer"
                           />
                           {char.isNPC && (
-                            <div className="absolute top-0 right-0 bg-ember text-obsidian p-1 rounded-bl-lg shadow-lg" title="NPC">
-                              <User size={10} />
+                            <div 
+                              className={cn(
+                                "absolute top-0 right-0 p-1 rounded-bl-lg shadow-lg",
+                                char.isMonster ? "bg-rose-600 text-white" : "bg-ember text-obsidian"
+                              )} 
+                              title={char.isMonster ? "Monstro Hostil" : "NPC"}
+                            >
+                              {char.isMonster ? <Skull size={10} /> : <User size={10} />}
                             </div>
                           )}
                         </div>
                         <div>
-                          <h4 className="text-lg sm:text-xl font-serif mb-0.5 sm:mb-1">{char.name}</h4>
-                          <p className="text-[8px] sm:text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Nível {char.level} • {char.class}</p>
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-lg sm:text-xl font-serif mb-0.5 sm:mb-1">{char.name}</h4>
+                            {char.isMonster && (
+                              <span className="text-[8px] font-mono uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                Monstro
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[8px] sm:text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                            Nível {char.level} • {char.class}
+                          </p>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1.5 sm:gap-2">
@@ -2370,6 +2663,47 @@ export default function GMDashboard() {
                           </Link>
                         </div>
                       </div>
+
+                      {/* GM Map Controls for NPCs & Monsters */}
+                      {char.isNPC && (
+                        <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-1.5 relative z-10">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMonsterStatus(char)}
+                            className={cn(
+                              "px-2 py-1 rounded-lg text-[9px] font-mono flex items-center gap-1 transition-all border cursor-pointer",
+                              char.isMonster 
+                                ? "bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30 font-semibold" 
+                                : "bg-white/5 text-parchment/60 border-white/10 hover:text-parchment"
+                            )}
+                            title="Alternar entre Monstro Hostil e NPC"
+                          >
+                            <Skull size={10} className={char.isMonster ? "text-rose-400" : "text-parchment/40"} />
+                            <span>{char.isMonster ? 'Monstro' : 'Tornar Monstro'}</span>
+                          </button>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSpawnTokenToMap(char, 'catacombs', true)}
+                              className="px-2 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-[9px] font-mono flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                              title="Adicionar ao mapa de batalha de forma OCULTA (invisível aos jogadores)"
+                            >
+                              <EyeOff size={10} />
+                              <span>Mapa (Oculto)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSpawnTokenToMap(char, 'catacombs', false)}
+                              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-parchment/70 border border-white/10 text-[9px] font-mono flex items-center gap-1 transition-all cursor-pointer"
+                              title="Adicionar ao mapa de batalha de forma visível"
+                            >
+                              <Eye size={10} />
+                              <span>Visível</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                     {/* Background Decoration */}
                     <div className="absolute -bottom-10 -right-10 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -4150,19 +4484,14 @@ export default function GMDashboard() {
               className="glass p-6 sm:p-8 rounded-[2.5rem] space-y-6"
             >
               <SoundEffectManager
-                currentSettings={{
-                  diceRollSound,
-                  successSound,
-                  failureSound,
-                  criticalSound,
-                  fumbleSound
-                }}
+                currentSettings={campaignSounds}
                 sessionName={sessionName}
                 sessionId={sessionId}
                 isGlobalMode={false}
                 onSaveSession={handleSaveSounds}
                 onSaveGlobal={handleSaveGlobalSounds}
                 onUpdateSound={(key, val) => {
+                  setCampaignSounds(prev => ({ ...prev, [key]: val }));
                   if (key === 'diceRollSound') setDiceRollSound(val);
                   else if (key === 'successSound') setSuccessSound(val);
                   else if (key === 'failureSound') setFailureSound(val);
@@ -4683,19 +5012,14 @@ export default function GMDashboard() {
 
               <div className="pt-8 border-t border-white/10 space-y-6">
                 <SoundEffectManager
-                  currentSettings={{
-                    diceRollSound,
-                    successSound,
-                    failureSound,
-                    criticalSound,
-                    fumbleSound
-                  }}
+                  currentSettings={campaignSounds}
                   sessionName={sessionName}
                   sessionId={sessionId}
                   isGlobalMode={activeTab === 'baseSettings'}
                   onSaveSession={handleSaveSounds}
                   onSaveGlobal={handleSaveGlobalSounds}
                   onUpdateSound={(key, val) => {
+                    setCampaignSounds(prev => ({ ...prev, [key]: val }));
                     if (key === 'diceRollSound') setDiceRollSound(val);
                     else if (key === 'successSound') setSuccessSound(val);
                     else if (key === 'failureSound') setFailureSound(val);
@@ -5357,38 +5681,290 @@ export default function GMDashboard() {
               </button>
               
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-arcane/20 rounded-2xl text-arcane">
-                  <Sparkles size={24} />
+                <div className={cn(
+                  "p-3 rounded-2xl transition-colors",
+                  npcConfig.isMonster ? "bg-rose-500/20 text-rose-300" : "bg-arcane/20 text-arcane"
+                )}>
+                  {npcConfig.isMonster ? <Skull size={24} /> : <Sparkles size={24} />}
                 </div>
-                <h3 className="text-2xl font-serif">Gerador de NPC</h3>
+                <div>
+                  <h3 className="text-2xl font-serif">
+                    {npcConfig.isMonster ? 'Criador de Monstros & Criaturas' : 'Gerador de NPC'}
+                  </h3>
+                  <p className="text-[10px] font-mono text-parchment/50 uppercase tracking-widest">
+                    {npcConfig.isMonster ? 'Configure e oculte criaturas no mapa para emboscadas' : 'Crie aliados e figuras para a campanha'}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-5">
+                {/* 1. Monster Activation Toggle */}
+                <div className={cn(
+                  "p-4 rounded-2xl border transition-all flex items-center justify-between",
+                  npcConfig.isMonster 
+                    ? "bg-rose-500/15 border-rose-500/40 shadow-lg shadow-rose-500/10" 
+                    : "bg-white/5 border-white/10"
+                )}>
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-2.5 rounded-xl transition-colors",
+                      npcConfig.isMonster ? "bg-rose-500/25 text-rose-300" : "bg-white/10 text-parchment/60"
+                    )}>
+                      <Skull size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-serif font-bold text-parchment">
+                          Ativar como Monstro Hostil
+                        </p>
+                        {npcConfig.isMonster && (
+                          <span className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-200 border border-rose-500/40">
+                            Ativado
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-parchment/50 font-mono">
+                        Configura como monstro/criatura de batalha para combates
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNpcConfig(prev => ({ 
+                      ...prev, 
+                      isMonster: !prev.isMonster,
+                      addToMapHidden: !prev.isMonster ? true : prev.addToMapHidden
+                    }))}
+                    className={cn(
+                      "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0",
+                      npcConfig.isMonster ? "bg-rose-500 shadow-md shadow-rose-500/30" : "bg-white/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow",
+                      npcConfig.isMonster ? "left-7" : "left-1"
+                    )} />
+                  </button>
+                </div>
+
+                {/* 2. Hidden Map Placement Toggle */}
+                <div className={cn(
+                  "p-4 rounded-2xl border transition-all space-y-3",
+                  npcConfig.addToMapHidden 
+                    ? "bg-purple-500/15 border-purple-500/40 shadow-lg shadow-purple-500/10" 
+                    : "bg-white/5 border-white/10"
+                )}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "p-2.5 rounded-xl transition-colors",
+                        npcConfig.addToMapHidden ? "bg-purple-500/25 text-purple-300" : "bg-white/10 text-parchment/60"
+                      )}>
+                        <EyeOff size={20} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-serif font-bold text-parchment">
+                            Adicionar ao Mapa de Forma Oculta
+                          </p>
+                          {npcConfig.addToMapHidden && (
+                            <span className="text-[9px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-500/40">
+                              Invisível
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-parchment/50 font-mono">
+                          {npcConfig.addToMapHidden 
+                            ? "Fica 100% invisível aos jogadores na masmorra, pronto para emboscada."
+                            : "Não cria token automático no mapa agora."}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNpcConfig(prev => ({ ...prev, addToMapHidden: !prev.addToMapHidden }))}
+                      className={cn(
+                        "w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0",
+                        npcConfig.addToMapHidden ? "bg-purple-500 shadow-md shadow-purple-500/30" : "bg-white/10"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow",
+                        npcConfig.addToMapHidden ? "left-7" : "left-1"
+                      )} />
+                    </button>
+                  </div>
+
+                  {npcConfig.addToMapHidden && (
+                    <div className="pt-2 border-t border-purple-500/20 space-y-1.5">
+                      <label className="text-[9px] font-mono text-purple-300 uppercase tracking-widest flex items-center gap-1">
+                        <MapPin size={11} />
+                        Masmorra / Mapa Alvo para Emboscada:
+                      </label>
+                      <select
+                        value={npcConfig.targetMapId}
+                        onChange={(e) => setNpcConfig(prev => ({ ...prev, targetMapId: e.target.value }))}
+                        className="w-full bg-black/60 border border-purple-500/30 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-purple-400"
+                      >
+                        <option value="catacombs">Catacumbas de Khardoos (Padrão)</option>
+                        <option value="temple">Templo Subterrâneo Arcano</option>
+                        <option value="cavern">Covil Vulcânico do Dragão</option>
+                        {sessionDungeonMaps.map(m => (
+                          <option key={m.id} value={m.id}>{m.name || 'Masmorra Personalizada'}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Name Input with Random Generation Button */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      Nome {npcConfig.isMonster ? 'do Monstro' : 'do NPC'} (Opcional)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setNpcConfig(prev => ({ 
+                        ...prev, 
+                        customName: npcConfig.isMonster ? generateRandomMonsterName() : generateRandomName() 
+                      }))}
+                      className="text-[10px] font-mono text-arcane hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Dice6 size={11} /> Gerar Aleatório
+                    </button>
+                  </div>
+                  <input 
+                    type="text"
+                    value={npcConfig.customName}
+                    onChange={(e) => setNpcConfig(prev => ({ ...prev, customName: e.target.value }))}
+                    placeholder={npcConfig.isMonster ? "Ex: Basilisco de Obsidiana" : "Ex: Sir Alaric Shadowstep"}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment text-sm focus:outline-none focus:border-arcane/50 font-serif"
+                  />
+                </div>
+
+                {/* 4. Monster Specific Configuration (Category, Size, Threat) */}
+                {npcConfig.isMonster && (
+                  <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/20 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-mono text-rose-300 uppercase tracking-widest">
+                          Tipo de Monstro
+                        </label>
+                        <select
+                          value={npcConfig.monsterType}
+                          onChange={(e) => setNpcConfig(prev => ({ ...prev, monsterType: e.target.value }))}
+                          className="w-full bg-black/60 border border-rose-500/30 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-rose-400"
+                        >
+                          <option value="Morto-vivo">Morto-vivo (Esqueleto, Zumbi, Vampiro)</option>
+                          <option value="Besta / Fera">Besta / Fera (Lobo, Aranha, Basilisco)</option>
+                          <option value="Demônio / Aberração">Demônio / Aberração do Caos</option>
+                          <option value="Humanoide Hostil">Humanoide Hostil (Orc, Goblin, Bandido)</option>
+                          <option value="Construto / Golem">Construto / Golem Rúnico</option>
+                          <option value="Dragão / Draconiano">Dragão / Draconiano Titânico</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-mono text-rose-300 uppercase tracking-widest">
+                          Nível de Ameaça
+                        </label>
+                        <select
+                          value={npcConfig.dangerLevel}
+                          onChange={(e) => setNpcConfig(prev => ({ ...prev, dangerLevel: e.target.value as any }))}
+                          className="w-full bg-black/60 border border-rose-500/30 rounded-xl px-3 py-2 text-xs font-mono text-parchment focus:outline-none focus:border-rose-400"
+                        >
+                          <option value="Fraco">Fraco (Minion / Escolta)</option>
+                          <option value="Moderado">Moderado (Monstro Padrão)</option>
+                          <option value="Perigoso">Perigoso (+30% PV)</option>
+                          <option value="Letal">Letal (+60% PV e Atributos)</option>
+                          <option value="Chefe">Chefe de Masmorra (+120% PV)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-mono text-rose-300 uppercase tracking-widest">
+                        Tamanho do Token no Mapa
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { size: 1, label: '1x1 (Médio)' },
+                          { size: 2, label: '2x2 (Grande)' },
+                          { size: 3, label: '3x3 (Enorme)' }
+                        ].map(s => (
+                          <button
+                            key={s.size}
+                            type="button"
+                            onClick={() => setNpcConfig(prev => ({ ...prev, monsterSize: s.size }))}
+                            className={cn(
+                              "py-1.5 px-2 rounded-xl text-xs font-mono transition-all border text-center cursor-pointer",
+                              npcConfig.monsterSize === s.size
+                                ? "bg-rose-500/30 border-rose-400 text-rose-200 font-bold"
+                                : "bg-black/30 border-white/10 text-parchment/60 hover:text-parchment"
+                            )}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Level & Traits */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Nível do NPC</label>
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      Nível {npcConfig.isMonster ? 'da Criatura' : 'do NPC'}
+                    </label>
                     <input 
                       type="number"
                       value={npcConfig.level}
                       onChange={(e) => setNpcConfig(prev => ({ ...prev, level: parseInt(e.target.value) || 1 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment focus:outline-none focus:border-arcane/50"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Qtd. de Vantagens</label>
+                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                      Qtd. de Vantagens
+                    </label>
                     <input 
                       type="number"
                       value={npcConfig.traitCount}
                       onChange={(e) => setNpcConfig(prev => ({ ...prev, traitCount: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment focus:outline-none focus:border-arcane/50"
                     />
                   </div>
                 </div>
 
+                {/* 6. Archetypes */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Arquétipo do NPC</label>
+                  <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">
+                    Arquétipo de Combate
+                  </label>
                   <div className="grid grid-cols-2 gap-2">
-                    {[
+                    {npcConfig.isMonster ? [
+                      { id: 'brute', label: 'Brutamontes (FOR/CON)', icon: Sword },
+                      { id: 'stalker', label: 'Espreitador (Furtivo)', icon: EyeOff },
+                      { id: 'boss', label: 'Chefe Supremo', icon: Skull },
+                      { id: 'random', label: 'Aleatório', icon: Dice6 },
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        type="button"
+                        onClick={() => setNpcConfig(prev => ({ ...prev, archetype: type.id as any }))}
+                        className={cn(
+                          "flex items-center gap-2 p-2.5 rounded-xl border transition-all text-left cursor-pointer",
+                          npcConfig.archetype === type.id 
+                            ? "bg-rose-500/25 border-rose-500 text-rose-200 font-semibold" 
+                            : "bg-white/5 border-white/10 text-parchment/60 hover:bg-white/10"
+                        )}
+                      >
+                        <type.icon size={15} className={npcConfig.archetype === type.id ? "text-rose-400" : "text-parchment/40"} />
+                        <span className="text-xs">{type.label}</span>
+                      </button>
+                    )) : [
                       { id: 'combat', label: 'Combate', icon: Sword },
                       { id: 'scholar', label: 'Estudioso', icon: Brain },
                       { id: 'common', label: 'Comum', icon: User },
@@ -5396,35 +5972,38 @@ export default function GMDashboard() {
                     ].map(type => (
                       <button
                         key={type.id}
+                        type="button"
                         onClick={() => setNpcConfig(prev => ({ ...prev, archetype: type.id as any }))}
                         className={cn(
-                          "flex items-center gap-2 p-3 rounded-xl border transition-all text-left",
+                          "flex items-center gap-2 p-2.5 rounded-xl border transition-all text-left cursor-pointer",
                           npcConfig.archetype === type.id 
                             ? "bg-arcane/20 border-arcane text-arcane" 
                             : "bg-white/5 border-white/10 text-parchment/40 hover:bg-white/10"
                         )}
                       >
-                        <type.icon size={16} />
+                        <type.icon size={15} />
                         <span className="text-xs font-medium">{type.label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                  <div className="space-y-1">
+                {/* 7. Session Defaults */}
+                <div className="flex items-center justify-between p-3.5 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="space-y-0.5">
                     <p className="text-xs font-medium">Usar Padrões da Campanha</p>
-                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest">Usa pontos iniciais da sessão</p>
+                    <p className="text-[10px] text-parchment/40 font-mono uppercase tracking-widest">Usa pontos da sessão</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setNpcConfig(prev => ({ ...prev, useSessionDefaults: !prev.useSessionDefaults }))}
                     className={cn(
-                      "w-12 h-6 rounded-full transition-colors relative",
+                      "w-12 h-6 rounded-full transition-colors relative cursor-pointer",
                       npcConfig.useSessionDefaults ? "bg-arcane" : "bg-white/10"
                     )}
                   >
                     <div className={cn(
-                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all",
+                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all shadow",
                       npcConfig.useSessionDefaults ? "left-7" : "left-1"
                     )} />
                   </button>
@@ -5438,7 +6017,7 @@ export default function GMDashboard() {
                         type="number"
                         value={npcConfig.attributePoints}
                         onChange={(e) => setNpcConfig(prev => ({ ...prev, attributePoints: parseInt(e.target.value) || 0 }))}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment focus:outline-none focus:border-arcane/50"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -5448,7 +6027,7 @@ export default function GMDashboard() {
                           type="number"
                           value={npcConfig.skillPoints}
                           onChange={(e) => setNpcConfig(prev => ({ ...prev, skillPoints: parseInt(e.target.value) || 0 }))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment focus:outline-none focus:border-arcane/50"
                         />
                       </div>
                       <div className="space-y-2">
@@ -5457,40 +6036,30 @@ export default function GMDashboard() {
                           type="number"
                           value={npcConfig.powerPoints}
                           onChange={(e) => setNpcConfig(prev => ({ ...prev, powerPoints: parseInt(e.target.value) || 0 }))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-parchment focus:outline-none focus:border-arcane/50"
                         />
                       </div>
                     </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Atributo Mínimo</label>
-                    <input 
-                      type="number"
-                      value={npcConfig.minAttrValue}
-                      onChange={(e) => setNpcConfig(prev => ({ ...prev, minAttrValue: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-parchment/40 uppercase tracking-widest">Atributo Máximo</label>
-                    <input 
-                      type="number"
-                      value={npcConfig.maxAttrValue}
-                      onChange={(e) => setNpcConfig(prev => ({ ...prev, maxAttrValue: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-parchment focus:outline-none focus:border-arcane/50"
-                    />
-                  </div>
-                </div>
-
+                {/* 8. Submit Button */}
                 <button 
+                  type="button"
                   onClick={handleGenerateNPC}
-                  className="w-full py-4 bg-arcane text-obsidian rounded-2xl font-bold hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-arcane/20 flex items-center justify-center gap-2"
+                  className={cn(
+                    "w-full py-4 rounded-2xl font-bold transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer",
+                    npcConfig.isMonster
+                      ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 hover:scale-[1.02] active:scale-[0.98]"
+                      : "bg-arcane text-obsidian shadow-arcane/20 hover:scale-[1.02] active:scale-[0.98]"
+                  )}
                 >
-                  <Sparkles size={20} />
-                  Criar NPC Agora
+                  {npcConfig.isMonster ? <Skull size={20} /> : <Sparkles size={20} />}
+                  <span>
+                    {npcConfig.isMonster 
+                      ? (npcConfig.addToMapHidden ? 'Criar Monstro e Inserir Oculto no Mapa' : 'Criar Monstro Hostil Agora')
+                      : (npcConfig.addToMapHidden ? 'Criar NPC e Inserir Oculto no Mapa' : 'Criar NPC Agora')}
+                  </span>
                 </button>
               </div>
             </motion.div>
@@ -5800,13 +6369,6 @@ export default function GMDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-      {sessionId && (
-        <SessionChat 
-          sessionId={sessionId} 
-          isGM={true}
-          senderOverride={{ name: "Mestre", photo: auth.currentUser?.photoURL || "" }}
-        />
-      )}
 
       {/* Campaign Quick Notes (Persistent across all campaign screens/tabs) */}
       {sessionId && (
@@ -5848,6 +6410,14 @@ export default function GMDashboard() {
         confirmText="Definir Imagem"
         initialUrl={catalogItemForm.image}
         maxDimension={600}
+      />
+
+      {/* Persistent DM Audio Controller for Ambient & Sound Effects */}
+      <GMAudioController
+        sessionId={sessionId}
+        sessionName={session?.name || sessionName || 'Campanha'}
+        campaignSounds={campaignSounds}
+        onOpenFullSoundManager={() => setActiveTab('sounds')}
       />
     </div>
   );

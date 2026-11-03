@@ -61,10 +61,30 @@ interface SessionChatProps {
     photo: string;
   };
   isGM?: boolean;
+  isOpen?: boolean;
+  onToggleOpen?: (open: boolean) => void;
+  hideLauncherButton?: boolean;
+  onUnreadCountChange?: (count: number) => void;
+  className?: string;
 }
 
-export default function SessionChat({ sessionId, senderOverride, isGM }: SessionChatProps) {
-  const [isOpen, setIsOpen] = React.useState(false);
+export default function SessionChat({ 
+  sessionId, 
+  senderOverride, 
+  isGM,
+  isOpen: externalIsOpen,
+  onToggleOpen,
+  hideLauncherButton,
+  onUnreadCountChange,
+  className
+}: SessionChatProps) {
+  const [internalIsOpen, setInternalIsOpen] = React.useState(false);
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
+  const setIsOpen = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isOpen) : val;
+    setInternalIsOpen(nextVal);
+    onToggleOpen?.(nextVal);
+  };
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = React.useState('');
@@ -190,6 +210,10 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   }, [isOpen, messages.length]);
 
   const unreadCount = Math.max(0, messages.length - lastReadCount);
+
+  React.useEffect(() => {
+    onUnreadCountChange?.(unreadCount);
+  }, [unreadCount, onUnreadCountChange]);
 
   const [isConfirmingClear, setIsConfirmingClear] = React.useState(false);
   const [isClearing, setIsClearing] = React.useState(false);
@@ -411,7 +435,12 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
   };
 
   return (
-    <div className="fixed bottom-[13.5rem] right-4 lg:bottom-28 lg:right-10 z-[100]">
+    <div className={cn(
+      hideLauncherButton 
+        ? "fixed bottom-24 right-4 sm:right-6 z-[70]" 
+        : "fixed bottom-[13.5rem] right-4 lg:bottom-28 lg:right-10 z-[100]",
+      className
+    )}>
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -419,7 +448,8 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={cn(
-              "absolute bottom-14 right-0 glass-popup bg-obsidian/85 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/25 flex flex-col overflow-hidden transition-all duration-300",
+              "glass-popup bg-obsidian/95 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/25 flex flex-col overflow-hidden transition-all duration-300",
+              hideLauncherButton ? "" : "absolute bottom-14 right-0",
               isExpanded 
                 ? "w-[calc(100vw-2rem)] lg:w-[600px] h-[calc(100vh-12rem)]" 
                 : "w-[calc(100vw-2rem)] sm:w-[400px] h-[500px] max-h-[calc(100vh-10rem)]"
@@ -772,24 +802,26 @@ export default function SessionChat({ sessionId, senderOverride, isGM }: Session
       </AnimatePresence>
 
       {/* Floating Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setIsOpen(!isOpen)}
-        className={cn(
-          "w-12 h-12 rounded-2xl shadow-xl flex items-center justify-center transition-all duration-300 relative border border-white/10",
-          isOpen 
-            ? "bg-white/10 text-parchment backdrop-blur-xl border-white/20" 
-            : "bg-arcane text-obsidian shadow-arcane/20"
-        )}
-      >
-        {isOpen ? <X size={20} /> : <MessageSquare size={20} />}
-        {!isOpen && unreadCount > 0 && (
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-ember text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-obsidian">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </div>
-        )}
-      </motion.button>
+      {!hideLauncherButton && (
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setIsOpen(!isOpen)}
+          className={cn(
+            "w-12 h-12 rounded-2xl shadow-xl flex items-center justify-center transition-all duration-300 relative border border-white/10",
+            isOpen 
+              ? "bg-white/10 text-parchment backdrop-blur-xl border-white/20" 
+              : "bg-arcane text-obsidian shadow-arcane/20"
+          )}
+        >
+          {isOpen ? <X size={20} /> : <MessageSquare size={20} />}
+          {!isOpen && unreadCount > 0 && (
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-ember text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-obsidian">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </div>
+          )}
+        </motion.button>
+      )}
 
       {/* Chat Image Picker Modal */}
       <ImagePickerModal

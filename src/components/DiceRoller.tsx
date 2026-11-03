@@ -35,6 +35,7 @@ import {
   playRollOutcomeSound, 
   stopActiveAudio 
 } from '../lib/soundEngine';
+import DiceAnimationOverlay from './DiceAnimationOverlay';
 
 export type DieType = 4 | 6 | 8 | 10 | 12 | 20 | 100;
 export type AdvantageMode = 'normal' | 'advantage' | 'disadvantage';
@@ -203,13 +204,26 @@ const DICE_CONFIG: {
 const LOCAL_STORAGE_KEY = 'ttrpg_dice_roller_history_v2';
 const SOUND_PREF_KEY = 'ttrpg_dice_sound_enabled';
 
-export default function DiceRoller() {
+export interface DiceRollerProps {
+  isOpen?: boolean;
+  onToggleOpen?: (open: boolean) => void;
+  hideLauncherButton?: boolean;
+  className?: string;
+}
+
+export default function DiceRoller(props: DiceRollerProps = {}) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [globalSettings, setGlobalSettings] = React.useState<any>(null);
   const [sessionSettings, setSessionSettings] = React.useState<any>(null);
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [internalIsOpen, setInternalIsOpen] = React.useState(false);
+  const isOpen = props.isOpen !== undefined ? props.isOpen : internalIsOpen;
+  const setIsOpen = (val: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal = typeof val === 'function' ? val(isOpen) : val;
+    setInternalIsOpen(nextVal);
+    props.onToggleOpen?.(nextVal);
+  };
   const [activeTab, setActiveTab] = React.useState<'roller' | 'history'>('roller');
   const [quantity, setQuantity] = React.useState<number>(1);
   const [modifier, setModifier] = React.useState<number>(0);
@@ -261,11 +275,22 @@ export default function DiceRoller() {
   });
 
   const [isRolling, setIsRolling] = React.useState(false);
+  const [isOverlayOpen, setIsOverlayOpen] = React.useState(false);
+  const autoCloseTimerRef = React.useRef<any>(null);
   const [lastRoll, setLastRoll] = React.useState<RollResult | null>(() => history[0] || null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = React.useState<number | 'all'>('all');
   const [isConfirmingClear, setIsConfirmingClear] = React.useState(false);
   const [recentlyCleared, setRecentlyCleared] = React.useState<RollResult[] | null>(null);
+
+  // Clean up autoClose timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (autoCloseTimerRef.current) {
+        clearTimeout(autoCloseTimerRef.current);
+      }
+    };
+  }, []);
 
   // 1. Listen in real-time to globalSettings/config (where Master saves default sounds)
   React.useEffect(() => {
@@ -397,7 +422,7 @@ export default function DiceRoller() {
     localStorage.setItem(SOUND_PREF_KEY, String(soundEnabled));
   }, [soundEnabled]);
 
-  // Execute Roll
+  // Execute Roll with Visual Animation Overlay
   const rollDice = (
     dieType: DieType = selectedDie, 
     qty: number = quantity, 
@@ -405,6 +430,13 @@ export default function DiceRoller() {
     advMode: AdvantageMode = advantageMode
   ) => {
     if (isRolling) return;
+    if (autoCloseTimerRef.current) {
+      clearTimeout(autoCloseTimerRef.current);
+    }
+    if (!isOpen) {
+      setIsOpen(true);
+    }
+    setIsOverlayOpen(true);
     setIsRolling(true);
 
     // Stop previous rolling audio if still playing
@@ -601,6 +633,12 @@ export default function DiceRoller() {
       setHistory(prev => [result, ...prev].slice(0, 50));
       setIsRolling(false);
 
+      // Auto dismiss overlay after 3.8s if not re-rolled or closed manually
+      if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = setTimeout(() => {
+        setIsOverlayOpen(false);
+      }, 3800);
+
       // Send to active campaign chat session if connected
       if (sessionId && auth.currentUser) {
         addDoc(collection(db, 'chatMessages'), {
@@ -622,8 +660,25 @@ export default function DiceRoller() {
           createdAt: new Date().toISOString()
         }).catch(() => {});
       }
-    }, 450);
+    }, 800);
   };
+
+  // Listen to external dice roll requests (e.g. from Character Sheet skills or Dungeon Map)
+  React.useEffect(() => {
+    const handleTriggerRoll = (e: any) => {
+      if (e.detail) {
+        const { dieType = 20, quantity = 1, modifier = 0, advantageMode = 'normal' } = e.detail;
+        setSelectedDie(dieType as DieType);
+        setQuantity(quantity);
+        setModifier(modifier);
+        setAdvantageMode(advantageMode as AdvantageMode);
+        setIsOpen(true);
+        rollDice(dieType as DieType, quantity, modifier, advantageMode as AdvantageMode);
+      }
+    };
+    window.addEventListener('heroic_trigger_roll', handleTriggerRoll);
+    return () => window.removeEventListener('heroic_trigger_roll', handleTriggerRoll);
+  }, []);
 
   const copyRollResult = (result: RollResult) => {
     const textToCopy = `🎲 ${result.formula} = ${result.total} (${result.details}) - ${result.outcomeLabel}`;
@@ -690,7 +745,12 @@ export default function DiceRoller() {
     : 0;
 
   return (
-    <div className="fixed bottom-[9.5rem] right-4 lg:bottom-10 lg:right-28 z-[60]">
+    <div className={cn(
+      props.hideLauncherButton 
+        ? "fixed bottom-24 right-4 sm:right-6 z-[70]" 
+        : "fixed bottom-[9.5rem] right-4 lg:bottom-10 lg:right-28 z-[60]",
+      props.className
+    )}>
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -698,8 +758,30 @@ export default function DiceRoller() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 25 }}
             transition={{ type: "spring", stiffness: 350, damping: 28 }}
-            className="absolute bottom-14 right-0 w-[calc(100vw-2rem)] sm:w-[27rem] glass-popup bg-obsidian/95 backdrop-blur-2xl rounded-[2.2rem] border border-white/20 shadow-2xl overflow-hidden flex flex-col max-h-[82vh] z-50 text-parchment"
+            className={cn(
+              "glass-popup bg-obsidian/95 backdrop-blur-2xl rounded-[2.2rem] border border-white/20 shadow-2xl overflow-hidden flex flex-col max-h-[82vh] z-50 text-parchment relative",
+              props.hideLauncherButton
+                ? "w-[calc(100vw-2rem)] sm:w-[27rem]"
+                : "absolute bottom-14 right-0 w-[calc(100vw-2rem)] sm:w-[27rem]"
+            )}
           >
+            {/* Visual Animation Overlay with 3D Spinning Die and Reveal */}
+            <DiceAnimationOverlay
+              isOpen={isOverlayOpen}
+              isSpinning={isRolling}
+              dieType={selectedDie}
+              quantity={quantity}
+              modifier={modifier}
+              formula={lastRoll?.formula || `${quantity}d${selectedDie}${modifier ? (modifier > 0 ? ` + ${modifier}` : ` - ${Math.abs(modifier)}`) : ''}`}
+              result={lastRoll}
+              onReroll={() => rollDice(selectedDie, quantity, modifier, advantageMode)}
+              onClose={() => {
+                if (autoCloseTimerRef.current) clearTimeout(autoCloseTimerRef.current);
+                setIsOverlayOpen(false);
+                setIsRolling(false);
+              }}
+            />
+
             {/* Header with Tabs */}
             <div className="p-3.5 border-b border-white/10 flex items-center justify-between bg-white/[0.04]">
               <div className="flex items-center gap-1.5 bg-black/30 p-1 rounded-xl border border-white/10">
@@ -1612,32 +1694,34 @@ export default function DiceRoller() {
       </AnimatePresence>
 
       {/* Floating Toggle Launcher Button */}
-      <motion.button
-        whileHover={{ scale: 1.08 }}
-        whileTap={{ scale: 0.92 }}
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        title="Rolador de Dados TTRPG (d4, d6, d8, d10, d12, d20) com Sons do Mestre"
-        className={cn(
-          "w-13 h-13 rounded-2xl flex items-center justify-center shadow-2xl transition-all border cursor-pointer relative",
-          isOpen 
-            ? "bg-obsidian/90 border-white/30 text-parchment backdrop-blur-xl shadow-cyan-950/50" 
-            : "bg-gradient-to-br from-arcane via-cyan-500 to-blue-600 border-cyan-300/40 text-obsidian shadow-cyan-500/30 hover:shadow-cyan-400/50"
-        )}
-      >
-        {isOpen ? (
-          <X size={22} className="text-parchment" />
-        ) : (
-          <>
-            <D20Icon className="w-6 h-6 text-obsidian" />
-            {history.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-ember border border-obsidian rounded-full text-[9px] font-mono font-bold text-obsidian flex items-center justify-center shadow-md">
-                {history.length > 9 ? '9+' : history.length}
-              </span>
-            )}
-          </>
-        )}
-      </motion.button>
+      {!props.hideLauncherButton && (
+        <motion.button
+          whileHover={{ scale: 1.08 }}
+          whileTap={{ scale: 0.92 }}
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          title="Rolador de Dados TTRPG (d4, d6, d8, d10, d12, d20) com Sons do Mestre"
+          className={cn(
+            "w-13 h-13 rounded-2xl flex items-center justify-center shadow-2xl transition-all border cursor-pointer relative",
+            isOpen 
+              ? "bg-obsidian/90 border-white/30 text-parchment backdrop-blur-xl shadow-cyan-950/50" 
+              : "bg-gradient-to-br from-arcane via-cyan-500 to-blue-600 border-cyan-300/40 text-obsidian shadow-cyan-500/30 hover:shadow-cyan-400/50"
+          )}
+        >
+          {isOpen ? (
+            <X size={22} className="text-parchment" />
+          ) : (
+            <>
+              <D20Icon className="w-6 h-6 text-obsidian" />
+              {history.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-ember border border-obsidian rounded-full text-[9px] font-mono font-bold text-obsidian flex items-center justify-center shadow-md">
+                  {history.length > 9 ? '9+' : history.length}
+                </span>
+              )}
+            </>
+          )}
+        </motion.button>
+      )}
     </div>
   );
 }

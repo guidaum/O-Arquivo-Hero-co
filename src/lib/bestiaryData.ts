@@ -1,0 +1,721 @@
+import { Monster, EnvironmentType } from '../types/bestiary';
+
+export const OFFICIAL_BESTIARY: Monster[] = [
+  // --- ND 1/8 ---
+  {
+    id: 'kobold_scout',
+    name: 'Kobold Emboscador',
+    cr: '1/8',
+    crValue: 0.125,
+    xp: 25,
+    size: 'Pequeno',
+    gridSize: 1,
+    type: 'Humanoide',
+    alignment: 'Leal e Mau',
+    ac: 12,
+    hp: 5,
+    maxHp: 5,
+    hitDice: '2d6 - 2',
+    speed: '9m (6 quad.)',
+    stats: { for: 7, agi: 15, con: 9, int: 8, per: 12, cor: 8 },
+    initiativeBonus: 2,
+    senses: 'Visão no Escuro 18m, Percepção Passiva 11',
+    languages: 'Comum, Dracônico',
+    traits: [
+      { name: 'Táticas de Bando', description: 'O kobold tem vantagem nas jogadas de ataque contra uma criatura se pelo menos um aliado do kobold estiver a até 1,5 metro da criatura.' },
+      { name: 'Sensibilidade à Luz Solar', description: 'Enquanto estiver sob a luz do sol, o kobold tem desvantagem nas jogadas de ataque e percepção.' }
+    ],
+    actions: [
+      { name: 'Adaga Dentada', description: 'Ataque Corpo-a-Corpo com Arma: +4 para atingir, alcance 1,5m, um alvo. Acerto: 4 (1d4 + 2) de dano perfurante.', attackBonus: 4, damage: '1d4+2', damageType: 'perfurante' },
+      { name: 'Funda Pequena', description: 'Ataque à Distância com Arma: +4 para atingir, alcance 9/36m, um alvo. Acerto: 4 (1d4 + 2) de dano de concussão.', attackBonus: 4, damage: '1d4+2', damageType: 'concussão', isRanged: true }
+    ],
+    color: '#ef4444',
+    environments: ['dungeon', 'cavern'],
+    description: 'Criaturas reptilianas covardes que compensam sua fraqueza com armadilhas letais e números esmagadores.'
+  },
+  {
+    id: 'giant_rat',
+    name: 'Rato Gigante Pestilento',
+    cr: '1/8',
+    crValue: 0.125,
+    xp: 25,
+    size: 'Pequeno',
+    gridSize: 1,
+    type: 'Fera',
+    alignment: 'Neutro',
+    ac: 12,
+    hp: 7,
+    maxHp: 7,
+    hitDice: '2d6',
+    speed: '9m (6 quad.)',
+    stats: { for: 7, agi: 15, con: 11, int: 2, per: 10, cor: 8 },
+    initiativeBonus: 2,
+    senses: 'Visão no Escuro 18m, Olfato Apurado',
+    languages: 'Nenhum',
+    traits: [
+      { name: 'Faro Aguçado', description: 'O rato tem vantagem em testes de Percepção baseados em cheiro.' },
+      { name: 'Táticas de Matilha', description: 'Tem vantagem nos ataques quando houver aliados ao lado do alvo.' }
+    ],
+    actions: [
+      { name: 'Mordida Infecciosa', description: 'Ataque Corpo-a-Corpo: +4 para atingir, alcance 1,5m. Acerto: 4 (1d4 + 2) de dano perfurante e o alvo deve passar em teste de Constituição CD 10 ou contrair febre do esgoto.', attackBonus: 4, damage: '1d4+2', damageType: 'perfurante' }
+    ],
+    color: '#a16207',
+    environments: ['dungeon', 'cavern', 'urban'],
+    description: 'Roedores de tamanho assustador que infestam cantos úmidos e túmulos esquecidos.'
+  },
+
+  // --- ND 1/4 ---
+  {
+    id: 'goblin_lurker',
+    name: 'Goblin Espreitador',
+    cr: '1/4',
+    crValue: 0.25,
+    xp: 50,
+    size: 'Pequeno',
+    gridSize: 1,
+    type: 'Humanoide',
+    alignment: 'Neutro e Mau',
+    ac: 15,
+    hp: 7,
+    maxHp: 7,
+    hitDice: '2d6',
+    speed: '9m (6 quad.)',
+    stats: { for: 8, agi: 14, con: 10, int: 10, per: 11, cor: 9 },
+    initiativeBonus: 2,
+    skills: 'Furtividade +6',
+    senses: 'Visão no Escuro 18m, Percepção Passiva 11',
+    languages: 'Comum, Goblinóide',
+    traits: [
+      { name: 'Fuga Ágil', description: 'O goblin pode realizar a ação de Desengajar ou Esconder-se como uma Ação Bônus em cada um dos seus turnos.' }
+    ],
+    actions: [
+      { name: 'Cimitarra Enferrujada', description: 'Ataque Corpo-a-Corpo com Arma: +4 para atingir, alcance 1,5m, um alvo. Acerto: 5 (1d6 + 2) de dano cortante.', attackBonus: 4, damage: '1d6+2', damageType: 'cortante' },
+      { name: 'Arco Curto', description: 'Ataque à Distância com Arma: +4 para atingir, alcance 24/96m, um alvo. Acerto: 5 (1d6 + 2) de dano perfurante.', attackBonus: 4, damage: '1d6+2', damageType: 'perfurante', isRanged: true }
+    ],
+    color: '#10b981',
+    environments: ['dungeon', 'cavern', 'forest'],
+    description: 'Astuto e ardiloso, ataca das sombras e recua antes que a vítima possa reagir.'
+  },
+  {
+    id: 'skeleton_warrior',
+    name: 'Esqueleto Guerreiro',
+    cr: '1/4',
+    crValue: 0.25,
+    xp: 50,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Leal e Mau',
+    ac: 13,
+    hp: 13,
+    maxHp: 13,
+    hitDice: '2d8 + 4',
+    speed: '9m (6 quad.)',
+    stats: { for: 10, agi: 14, con: 15, int: 6, per: 10, cor: 8 },
+    initiativeBonus: 2,
+    damageImmunities: ['Veneno'],
+    conditionImmunities: ['Envenenado', 'Exaustão'],
+    damageResistances: ['Perfurante'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 9',
+    languages: 'Entende os idiomas de seu mestre',
+    traits: [
+      { name: 'Vulnerabilidade Concussão', description: 'O esqueleto é vulnerável a dano de concussão (maças, martelos).' }
+    ],
+    actions: [
+      { name: 'Espada Curta Trincada', description: 'Ataque Corpo-a-Corpo: +4 para atingir, alcance 1,5m. Acerto: 5 (1d6 + 2) de dano perfurante.', attackBonus: 4, damage: '1d6+2', damageType: 'perfurante' },
+      { name: 'Arco Curto Desgastado', description: 'Ataque à Distância: +4 para atingir, alcance 24/96m. Acerto: 5 (1d6 + 2) de dano perfurante.', attackBonus: 4, damage: '1d6+2', damageType: 'perfurante', isRanged: true }
+    ],
+    color: '#a855f7',
+    environments: ['dungeon', 'temple'],
+    description: 'Ossos antigos animados por energia necromântica profana, protegendo catacumbas até o fim dos tempos.'
+  },
+  {
+    id: 'zombie_walker',
+    name: 'Zumbi Pútrido',
+    cr: '1/4',
+    crValue: 0.25,
+    xp: 50,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Neutro e Mau',
+    ac: 8,
+    hp: 22,
+    maxHp: 22,
+    hitDice: '3d8 + 9',
+    speed: '6m (4 quad.)',
+    stats: { for: 13, agi: 6, con: 16, int: 3, per: 8, cor: 6 },
+    initiativeBonus: -2,
+    damageImmunities: ['Veneno'],
+    conditionImmunities: ['Envenenado'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 8',
+    languages: 'Entende os idiomas de seu criador',
+    traits: [
+      { name: 'Fortitude de Morto-Vivo', description: 'Se o dano reduzir o zumbi a 0 PV, ele deve fazer salvaguarda de Constituição CD 5 + o dano sofrido, a menos que seja dano radiante ou acerto crítico. Em um sucesso, o zumbi cai para 1 PV em vez disso.' }
+    ],
+    actions: [
+      { name: 'Pancada Pesada', description: 'Ataque Corpo-a-Corpo com Arma: +3 para atingir, alcance 1,5m. Acerto: 4 (1d6 + 1) de dano de concussão.', attackBonus: 3, damage: '1d6+1', damageType: 'concussão' }
+    ],
+    color: '#475569',
+    environments: ['dungeon', 'temple', 'urban'],
+    description: 'Cadáver ambulante com cheiro fétido de decomposição, que se recusa a sucumbir a golpes comuns.'
+  },
+
+  // --- ND 1/2 ---
+  {
+    id: 'orc_raider',
+    name: 'Orc Saqueador',
+    cr: '1/2',
+    crValue: 0.5,
+    xp: 100,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Humanoide',
+    alignment: 'Caótico e Mau',
+    ac: 13,
+    hp: 15,
+    maxHp: 15,
+    hitDice: '2d8 + 6',
+    speed: '9m (6 quad.)',
+    stats: { for: 16, agi: 12, con: 16, int: 7, per: 11, cor: 10 },
+    initiativeBonus: 1,
+    skills: 'Intimidação +2',
+    senses: 'Visão no Escuro 18m, Percepção Passiva 10',
+    languages: 'Comum, Orc',
+    traits: [
+      { name: 'Agressivo', description: 'Como uma ação bônus, o orc pode mover-se até o seu deslocamento em direção a uma criatura hostil que ele possa ver.' }
+    ],
+    actions: [
+      { name: 'Machado de Batalha', description: 'Ataque Corpo-a-Corpo: +5 para atingir, alcance 1,5m. Acerto: 9 (1d12 + 3) de dano cortante brutal.', attackBonus: 5, damage: '1d12+3', damageType: 'cortante' },
+      { name: 'Azagaia de Arremesso', description: 'Ataque à Distância: +5 para atingir, alcance 9/36m. Acerto: 6 (1d6 + 3) de dano perfurante.', attackBonus: 5, damage: '1d6+3', damageType: 'perfurante', isRanged: true }
+    ],
+    color: '#eab308',
+    environments: ['dungeon', 'cavern', 'forest'],
+    description: 'Guerreiro implacável movido a fúria e sangue que avança de peito aberto contra as defesas do grupo.'
+  },
+  {
+    id: 'shadow_wolf',
+    name: 'Lobo das Sombras',
+    cr: '1/2',
+    crValue: 0.5,
+    xp: 100,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Fera',
+    alignment: 'Neutro e Mau',
+    ac: 13,
+    hp: 18,
+    maxHp: 18,
+    hitDice: '3d8 + 3',
+    speed: '12m (8 quad.)',
+    stats: { for: 13, agi: 16, con: 12, int: 6, per: 13, cor: 10 },
+    initiativeBonus: 3,
+    skills: 'Furtividade +5, Percepção +3',
+    senses: 'Visão no Escuro 24m, Percepção Passiva 13',
+    languages: 'Nenhum',
+    traits: [
+      { name: 'Táticas de Matilha', description: 'Vantagem em ataques se um aliado estiver a até 1,5m do alvo.' },
+      { name: 'Mesclar às Sombras', description: 'Em penumbra ou escuridão, pode se esconder como ação bônus.' }
+    ],
+    actions: [
+      { name: 'Mordida Derrubadora', description: 'Ataque Corpo-a-Corpo: +5 para atingir, alcance 1,5m. Acerto: 7 (2d4 + 2) de dano perfurante e o alvo deve passar em salvaguarda de Força CD 12 ou cair caído (prone).', attackBonus: 5, damage: '2d4+2', damageType: 'perfurante' }
+    ],
+    color: '#38bdf8',
+    environments: ['forest', 'cavern', 'dungeon'],
+    description: 'Predador sobrenatural com pelos fumegantes que salta das sombras para rasgar gargantas.'
+  },
+
+  // --- ND 1 ---
+  {
+    id: 'giant_spider',
+    name: 'Aranha Gigante Venenosa',
+    cr: '1',
+    crValue: 1,
+    xp: 200,
+    size: 'Grande',
+    gridSize: 2,
+    type: 'Fera',
+    alignment: 'Neutro',
+    ac: 14,
+    hp: 26,
+    maxHp: 26,
+    hitDice: '4d10 + 4',
+    speed: '9m (6 quad.), Escalada 9m',
+    stats: { for: 14, agi: 16, con: 12, int: 2, per: 11, cor: 8 },
+    initiativeBonus: 3,
+    skills: 'Furtividade +7',
+    senses: 'Percepção às Cegas 3m, Visão no Escuro 18m, Percepção Passiva 11',
+    languages: 'Nenhum',
+    traits: [
+      { name: 'Andar pelas Teias', description: 'A aranha ignora restrições de movimento causadas por teias.' },
+      { name: 'Escalar Paredes', description: 'Pode escalar superfícies difíceis, incluindo tetos de cabeça para baixo, sem teste de habilidade.' }
+    ],
+    actions: [
+      { name: 'Mordida Paralisante', description: 'Ataque Corpo-a-Corpo: +5 para atingir, alcance 1,5m. Acerto: 7 (1d8 + 3) de dano perfurante + 9 (2d8) de dano de veneno (salvaguarda Con CD 11 para metade).', attackBonus: 5, damage: '1d8+3', damageType: 'perfurante' },
+      { name: 'Teia Aprisionadora', description: 'Ataque à Distância: +5 para atingir, alcance 9/18m. Acerto: O alvo fica Contido por teias pegajosas (escapar exige teste de Força CD 12).', attackBonus: 5, isRanged: true }
+    ],
+    color: '#059669',
+    environments: ['dungeon', 'cavern', 'forest'],
+    description: 'Predadora de oito patas que aguarda no teto das masmorras para envolver aventureiros em casulos de teia.'
+  },
+  {
+    id: 'ghoul_scavenger',
+    name: 'Carniçal Devorador',
+    cr: '1',
+    crValue: 1,
+    xp: 200,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Caótico e Mau',
+    ac: 12,
+    hp: 22,
+    maxHp: 22,
+    hitDice: '5d8',
+    speed: '9m (6 quad.)',
+    stats: { for: 13, agi: 15, con: 10, int: 7, per: 10, cor: 6 },
+    initiativeBonus: 2,
+    damageImmunities: ['Veneno'],
+    conditionImmunities: ['Envenenado', 'Encantado', 'Exaustão'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 10',
+    languages: 'Comum',
+    traits: [
+      { name: 'Fome Insaciável', description: 'Sente o cheiro de carne viva a até 30 metros de distância.' }
+    ],
+    actions: [
+      { name: 'Mordida Sombria', description: 'Ataque Corpo-a-Corpo: +4 para atingir, alcance 1,5m. Acerto: 9 (2d6 + 2) de dano perfurante.', attackBonus: 4, damage: '2d6+2', damageType: 'perfurante' },
+      { name: 'Garras Paralisantes', description: 'Ataque Corpo-a-Corpo: +4 para atingir, alcance 1,5m. Acerto: 7 (2d4 + 2) de dano cortante e se o alvo não for um elfo ou morto-vivo, deve passar em salvaguarda Con CD 10 ou ficar Paralisado por 1 minuto.', attackBonus: 4, damage: '2d4+2', damageType: 'cortante' }
+    ],
+    color: '#64748b',
+    environments: ['dungeon', 'temple'],
+    description: 'Criatura macabra que se alimenta de restos mortais e paralisa viajantes com o toque de suas garras infectadas.'
+  },
+
+  // --- ND 2 ---
+  {
+    id: 'cultist_fanatic',
+    name: 'Cultista Fanático do Caos',
+    cr: '2',
+    crValue: 2,
+    xp: 450,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Humanoide',
+    alignment: 'Caótico e Mau',
+    ac: 13,
+    hp: 33,
+    maxHp: 33,
+    hitDice: '6d8 + 6',
+    speed: '9m (6 quad.)',
+    stats: { for: 11, agi: 14, con: 12, int: 10, per: 13, cor: 14 },
+    initiativeBonus: 2,
+    skills: 'Religião +2, Intuição +3',
+    senses: 'Percepção Passiva 11',
+    languages: 'Comum, Abissal',
+    traits: [
+      { name: 'Devoção Obscura', description: 'O fanático tem vantagem nas salvaguardas contra ser encantado ou amedrontado.' },
+      { name: 'Conjuração Sombria (4º Nível)', description: 'Pode conjurar Raio de Fogo (+4 atingir, 2d10 dano), Infligir Ferimentos (+4 atingir, 3d10 dano necrótico) e Escudo da Fé (+2 CA).' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'O fanático realiza dois ataques corpo-a-corpo com sua adaga cerimonial.' },
+      { name: 'Adaga Cerimonial', description: 'Ataque Corpo-a-Corpo: +4 para atingir, alcance 1,5m. Acerto: 4 (1d4 + 2) de dano perfurante + 5 (1d10) necrótico.', attackBonus: 4, damage: '1d4+2', damageType: 'perfurante' },
+      { name: 'Raio de Fogo Oculto', description: 'Ataque Mágico à Distância: +4 para atingir, alcance 36m. Acerto: 11 (2d10) de dano de fogo.', attackBonus: 4, damage: '2d10', damageType: 'fogo', isRanged: true }
+    ],
+    color: '#f97316',
+    environments: ['temple', 'dungeon'],
+    description: 'Sacerdote herético devotado a deuses proibidos, capaz de canalizar fogo e morte com suas preces corrompidas.'
+  },
+  {
+    id: 'ogre_brute',
+    name: 'Ogro Esmagador de Ossos',
+    cr: '2',
+    crValue: 2,
+    xp: 450,
+    size: 'Grande',
+    gridSize: 2,
+    type: 'Gigante',
+    alignment: 'Caótico e Mau',
+    ac: 11,
+    hp: 59,
+    maxHp: 59,
+    hitDice: '7d10 + 21',
+    speed: '12m (8 quad.)',
+    stats: { for: 19, agi: 8, con: 16, int: 5, per: 7, cor: 7 },
+    initiativeBonus: -1,
+    senses: 'Visão no Escuro 18m, Percepção Passiva 8',
+    languages: 'Comum, Gigante',
+    traits: [
+      { name: 'Esmagamento Brutal', description: 'Em acertos críticos com sua clava, o ogro adiciona um dado extra de dano.' }
+    ],
+    actions: [
+      { name: 'Clava Gigante de Tronco', description: 'Ataque Corpo-a-Corpo com Arma: +6 para atingir, alcance 1,5m, um alvo. Acerto: 13 (2d8 + 4) de dano de concussão violento.', attackBonus: 6, damage: '2d8+4', damageType: 'concussão' },
+      { name: 'Arremesso de Rocha', description: 'Ataque à Distância com Arma: +6 para atingir, alcance 18/36m. Acerto: 11 (2d6 + 4) de dano de concussão.', attackBonus: 6, damage: '2d6+4', damageType: 'concussão', isRanged: true }
+    ],
+    color: '#ca8a04',
+    environments: ['dungeon', 'cavern'],
+    description: 'Bruto gigantesco de 3 metros de altura armado com uma clava feita de um tronco de carvalho arrancado.'
+  },
+
+  // --- ND 3 ---
+  {
+    id: 'black_knight',
+    name: 'Cavaleiro Negro da Cripta',
+    cr: '3',
+    crValue: 3,
+    xp: 700,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Leal e Mau',
+    ac: 18,
+    hp: 58,
+    maxHp: 58,
+    hitDice: '9d8 + 18',
+    speed: '9m (6 quad.)',
+    stats: { for: 16, agi: 11, con: 14, int: 11, per: 11, cor: 15 },
+    initiativeBonus: 0,
+    savingThrows: 'Con +4, Sab +3',
+    damageResistances: ['Necrótico', 'Cortante e Perfurante não-mágico'],
+    damageImmunities: ['Veneno'],
+    conditionImmunities: ['Envenenado', 'Amedrontado'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 10',
+    languages: 'Comum Antigo',
+    traits: [
+      { name: 'Aura Aterrorizante', description: 'Qualquer criatura que comece seu turno a até 3m do cavaleiro deve passar em salvaguarda de Sabedoria CD 12 ou ficar amedrontada por 1 rodada.' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'O cavaleiro realiza dois ataques com sua espada longa amaldiçoada.' },
+      { name: 'Espada Longa Profana', description: 'Ataque Corpo-a-Corpo: +5 para atingir, alcance 1,5m. Acerto: 8 (1d8 + 3) de dano cortante + 4 (1d8) de dano necrótico.', attackBonus: 5, damage: '1d8+3', damageType: 'cortante' },
+      { name: 'Olhar da Morte (Recarga 5-6)', description: 'Mira uma criatura a até 9m. O alvo sofre 18 (4d8) de dano necrótico (salvaguarda Con CD 13 para metade).', attackBonus: 5, damage: '4d8', damageType: 'necrótico' }
+    ],
+    color: '#4c1d95',
+    environments: ['dungeon', 'temple'],
+    description: 'Antigo paladino caído que violou seus votos e foi condenado a guardar os salões mortuários para sempre.'
+  },
+  {
+    id: 'minotaur_maze',
+    name: 'Minotauro do Labirinto',
+    cr: '3',
+    crValue: 3,
+    xp: 700,
+    size: 'Grande',
+    gridSize: 2,
+    type: 'Monstruosidade',
+    alignment: 'Caótico e Mau',
+    ac: 14,
+    hp: 76,
+    maxHp: 76,
+    hitDice: '9d10 + 27',
+    speed: '12m (8 quad.)',
+    stats: { for: 18, agi: 11, con: 16, int: 6, per: 16, cor: 9 },
+    initiativeBonus: 0,
+    skills: 'Percepção +7',
+    senses: 'Visão no Escuro 18m, Percepção Passiva 17',
+    languages: 'Abissal',
+    traits: [
+      { name: 'Investida com Chifres', description: 'Se o minotauro se mover pelo menos 3m em linha reta em direção a um alvo e o atingir com um ataque de chifres no mesmo turno, o alvo sofre 9 (2d8) extras de dano perfurante e deve passar em salvaguarda de Força CD 14 ou ser empurrado até 3 metros e derrubado.' },
+      { name: 'Memória Labiríntica', description: 'O minotauro nunca se perde e sabe exatamente a direção de todas as saídas da masmorra.' }
+    ],
+    actions: [
+      { name: 'Machado Grande Duplo', description: 'Ataque Corpo-a-Corpo: +6 para atingir, alcance 1,5m. Acerto: 17 (2d12 + 4) de dano cortante maciço.', attackBonus: 6, damage: '2d12+4', damageType: 'cortante' },
+      { name: 'Chifres Afiados', description: 'Ataque Corpo-a-Corpo: +6 para atingir, alcance 1,5m. Acerto: 13 (2d8 + 4) de dano perfurante.', attackBonus: 6, damage: '2d8+4', damageType: 'perfurante' }
+    ],
+    color: '#b45309',
+    environments: ['dungeon', 'cavern'],
+    description: 'Fera colossal com cabeça de touro e corpo humanoide musculoso, empunhando um machado colossal manchado de sangue.'
+  },
+
+  // --- ND 5 ---
+  {
+    id: 'fire_elemental',
+    name: 'Elemental do Fogo Vivo',
+    cr: '5',
+    crValue: 5,
+    xp: 1800,
+    size: 'Grande',
+    gridSize: 2,
+    type: 'Elemental',
+    alignment: 'Neutro',
+    ac: 13,
+    hp: 102,
+    maxHp: 102,
+    hitDice: '12d10 + 36',
+    speed: '15m (10 quad.)',
+    stats: { for: 10, agi: 17, con: 16, int: 6, per: 10, cor: 7 },
+    initiativeBonus: 3,
+    damageImmunities: ['Fogo', 'Veneno'],
+    conditionImmunities: ['Agarrado', 'Caído', 'Contido', 'Envenenado', 'Exaustão', 'Paralisado'],
+    damageResistances: ['Contundente, Cortante e Perfurante não-mágicos'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 10',
+    languages: 'Ígneo',
+    traits: [
+      { name: 'Forma Ígnea', description: 'O elemental pode entrar no espaço de uma criatura hostil e parar lá. Qualquer criatura que toque o elemental ou o atinja com ataque corpo a corpo sofre 5 (1d10) de dano de fogo.' },
+      { name: 'Iluminação', description: 'O elemental emite luz plena em um raio de 9 metros e penumbra por mais 9 metros.' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'O elemental realiza dois ataques de toque flamejante.' },
+      { name: 'Toque Incandescente', description: 'Ataque Corpo-a-Corpo: +6 para atingir, alcance 1,5m. Acerto: 10 (2d6 + 3) de dano de fogo. O alvo entra em combustão, sofrendo 5 (1d10) de dano de fogo no início de cada um dos seus turnos até que gaste uma ação para apagar as chamas.', attackBonus: 6, damage: '2d6+3', damageType: 'fogo' }
+    ],
+    color: '#ea580c',
+    environments: ['volcano', 'dungeon', 'temple'],
+    description: 'Pilar rodopiante de chamas crepitantes que incinera tudo o que toca e consome o oxigênio ao redor.'
+  },
+  {
+    id: 'wraith_specter',
+    name: 'Aparição Espectral das Trevas',
+    cr: '5',
+    crValue: 5,
+    xp: 1800,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Neutro e Mau',
+    ac: 13,
+    hp: 67,
+    maxHp: 67,
+    hitDice: '9d8 + 27',
+    speed: '0m, Voo 18m (Pairar)',
+    stats: { for: 6, agi: 16, con: 16, int: 12, per: 14, cor: 15 },
+    initiativeBonus: 3,
+    damageImmunities: ['Necrótico', 'Veneno'],
+    conditionImmunities: ['Agarrado', 'Caído', 'Contido', 'Envenenado', 'Exaustão', 'Paralisado'],
+    damageResistances: ['Ácido', 'Frio', 'Fogo', 'Elétrico', 'Concussão, Cortante e Perfurante não-mágico'],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 12',
+    languages: 'Comum, Abissal',
+    traits: [
+      { name: 'Movimento Incorpóreo', description: 'A aparição pode mover-se através de outras criaturas e objetos como se fossem terreno difícil. Ela sofre 5 (1d10) de dano de força se terminar o turno dentro de um objeto.' }
+    ],
+    actions: [
+      { name: 'Dreno de Vida', description: 'Ataque Corpo-a-Corpo Mágico: +6 para atingir, alcance 1,5m. Acerto: 21 (4d8 + 3) de dano necrótico. O alvo deve ter sucesso em uma salvaguarda de Constituição CD 14 ou seu máximo de pontos de vida será reduzido pelo montante de dano sofrido.', attackBonus: 6, damage: '4d8+3', damageType: 'necrótico' },
+      { name: 'Criar Espectro (1/Dia)', description: 'Transforma a alma de um humanoide morto recentemente em um espectro sob seu comando.' }
+    ],
+    color: '#06b6d4',
+    environments: ['dungeon', 'temple'],
+    description: 'Sombra vingativa incorpórea que atravessa paredes e drena a própria essência vital de suas vítimas com um toque gélido.'
+  },
+
+  // --- ND 8 ---
+  {
+    id: 'hydra_cavern',
+    name: 'Hidra Voraz das Profundezas',
+    cr: '8',
+    crValue: 8,
+    xp: 3900,
+    size: 'Enorme',
+    gridSize: 3,
+    type: 'Monstruosidade',
+    alignment: 'Neutro',
+    ac: 15,
+    hp: 172,
+    maxHp: 172,
+    hitDice: '15d12 + 75',
+    speed: '9m (6 quad.), Natação 9m',
+    stats: { for: 20, agi: 12, con: 20, int: 2, per: 10, cor: 7 },
+    initiativeBonus: 1,
+    skills: 'Percepção +6',
+    senses: 'Visão no Escuro 18m, Percepção Passiva 16',
+    languages: 'Nenhum',
+    traits: [
+      { name: 'Cabeças Múltiplas', description: 'A hidra começa com cinco cabeças. Enquanto tiver mais de uma cabeça, tem vantagem nas salvaguardas contra ser atordoada, cega, encantada ou adormecida.' },
+      { name: 'Regeneração de Cabeças', description: 'Sempre que sofre 25 ou mais de dano em um único turno, uma cabeça morre. No final do seu turno, duas cabeças nascem no lugar de cada cabeça morta, a menos que tenha sofrido dano de fogo durante a rodada.' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo (Mordidas das Cabeças)', description: 'A hidra realiza tantos ataques de mordida quantas cabeças tiver (inicialmente 5 ataques!).' },
+      { name: 'Mordida Devoradora', description: 'Ataque Corpo-a-Corpo: +8 para atingir, alcance 3m, um alvo. Acerto: 10 (1d10 + 5) de dano perfurante.', attackBonus: 8, damage: '1d10+5', damageType: 'perfurante' }
+    ],
+    color: '#0284c7',
+    environments: ['cavern', 'dungeon'],
+    description: 'Serpente titânica de múltiplas cabeças que se regenera rapidamente em pântanos e lagos subterrâneos.'
+  },
+
+  // --- ND 10 ---
+  {
+    id: 'stone_golem',
+    name: 'Golem de Pedra Ancestral',
+    cr: '10',
+    crValue: 10,
+    xp: 5900,
+    size: 'Grande',
+    gridSize: 2,
+    type: 'Construto',
+    alignment: 'Neutro',
+    ac: 17,
+    hp: 178,
+    maxHp: 178,
+    hitDice: '17d10 + 85',
+    speed: '9m (6 quad.)',
+    stats: { for: 22, agi: 9, con: 20, int: 3, per: 11, cor: 1 },
+    initiativeBonus: -1,
+    damageImmunities: ['Veneno', 'Psíquico', 'Concussão, Cortante e Perfurante de armas não-adamantinas'],
+    conditionImmunities: ['Amedrontado', 'Atordoado', 'Caído', 'Encantado', 'Envenenado', 'Exaustão', 'Paralisado', 'Petrificado'],
+    senses: 'Visão no Escuro 36m, Percepção Passiva 10',
+    languages: 'Entende os idiomas de seu criador',
+    traits: [
+      { name: 'Imunidade à Magia', description: 'O golem tem vantagem em testes de resistência contra todas as magias e outros efeitos mágicos.' },
+      { name: 'Armas Imbricadas', description: 'Os ataques corporais do golem são mágicos.' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'O golem realiza dois ataques de pancada esmagadora.' },
+      { name: 'Pancada Esmagadora de Granito', description: 'Ataque Corpo-a-Corpo: +10 para atingir, alcance 1,5m. Acerto: 19 (3d8 + 6) de dano de concussão maciço.', attackBonus: 10, damage: '3d8+6', damageType: 'concussão' },
+      { name: 'Lentidão Temporal (Recarga 5-6)', description: 'O golem mira em até três criaturas a até 3 metros. Cada alvo deve passar em salvaguarda de Sabedoria CD 15 ou ficar sob o efeito da magia Lentidão por 1 minuto.', attackBonus: 0 }
+    ],
+    color: '#78716c',
+    environments: ['dungeon', 'temple'],
+    description: 'Estátua monumental esculpida em granito maciço animada por runas arcanas antigas para proteger segredos invioláveis.'
+  },
+
+  // --- ND 15 ---
+  {
+    id: 'mummy_lord',
+    name: 'Múmia Soberana das Catacumbas',
+    cr: '15',
+    crValue: 15,
+    xp: 13000,
+    size: 'Médio',
+    gridSize: 1,
+    type: 'Morto-vivo',
+    alignment: 'Leal e Mau',
+    ac: 17,
+    hp: 135,
+    maxHp: 135,
+    hitDice: '18d8 + 54',
+    speed: '6m (4 quad.)',
+    stats: { for: 18, agi: 10, con: 17, int: 16, per: 18, cor: 16 },
+    initiativeBonus: 0,
+    savingThrows: 'Con +8, Int +8, Sab +9, Car +8',
+    skills: 'História +8, Religião +8',
+    damageImmunities: ['Necrótico', 'Veneno', 'Concussão, Cortante e Perfurante não-mágico'],
+    conditionImmunities: ['Amedrontado', 'Atordoado', 'Caído', 'Encantado', 'Envenenado', 'Exaustão', 'Paralisado'],
+    traits: [
+      { name: 'Vulnerabilidade a Fogo', description: 'A múmia é extremamente vulnerável a dano de fogo (recebe o dobro de dano).' },
+      { name: 'Rejuvenescimento Mágico', description: 'Se for destruída, a múmia ganha um novo corpo em 24 horas, ressurgindo em seu sarcófago.' }
+    ],
+    senses: 'Visão no Escuro 18m, Percepção Passiva 14',
+    languages: 'Comum Antigo',
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'A múmia utiliza seu Olhar Pavoroso e ataca com seu Punho Apodrecente.' },
+      { name: 'Punho Apodrecente', description: 'Ataque Corpo-a-Corpo: +9 para atingir, alcance 1,5m. Acerto: 14 (3d6 + 4) de concussão + 21 (6d6) necrótico. O alvo contrai a Maldição da Múmia (não recupera PV).', attackBonus: 9, damage: '3d6+4', damageType: 'necrótico' },
+      { name: 'Olhar Pavoroso', description: 'Uma criatura a até 18m deve passar em Sabedoria CD 16 ou ficar Paralisada de medo por 1 minuto.' },
+      { name: 'Tempestade de Areia & Ossos (Recarga 5-6)', description: 'Nuvem espiral de 12 metros de raio centrada na múmia. Cada criatura na área sofre 28 (8d6) de dano cortante e perfurante (Con CD 16 metade).', attackBonus: 9, damage: '8d6', damageType: 'cortante' }
+    ],
+    color: '#d97706',
+    environments: ['dungeon', 'temple'],
+    description: 'Faraó ou sumo sacerdote mumificado imbuído com poderes divinos sombrios e pragas terríveis.'
+  },
+
+  // --- ND 20 ---
+  {
+    id: 'ancient_red_dragon',
+    name: 'Dragão Vermelho Ancião (Igniscar)',
+    cr: '20',
+    crValue: 20,
+    xp: 25000,
+    size: 'Imenso',
+    gridSize: 3,
+    type: 'Dragão',
+    alignment: 'Caótico e Mau',
+    ac: 22,
+    hp: 444,
+    maxHp: 444,
+    hitDice: '28d20 + 252',
+    speed: '12m (8 quad.), Voo 24m',
+    stats: { for: 30, agi: 10, con: 29, int: 18, per: 15, cor: 23 },
+    initiativeBonus: 0,
+    savingThrows: 'Des +7, Con +16, Sab +9, Car +13',
+    skills: 'Percepção +16, Furtividade +7',
+    damageImmunities: ['Fogo'],
+    conditionImmunities: ['Amedrontado', 'Paralisado'],
+    senses: 'Percepção às Cegas 18m, Visão no Escuro 36m, Percepção Passiva 26',
+    languages: 'Comum, Dracônico',
+    traits: [
+      { name: 'Resistência Lendária (3/Dia)', description: 'Se o dragão falhar em um teste de resistência, ele pode optar por ter sucesso em vez disso.' },
+      { name: 'Presença Aterradora', description: 'Criaturas à escolha do dragão a até 36m devem passar em salvaguarda de Sabedoria CD 21 ou ficarem Amedrontadas por 1 minuto.' }
+    ],
+    actions: [
+      { name: 'Ataque Múltiplo', description: 'O dragão pode usar sua Presença Aterradora e realiza três ataques: uma Mordida e duas Garras.' },
+      { name: 'Mordida Ígnea Devastadora', description: 'Ataque Corpo-a-Corpo: +17 para atingir, alcance 3m. Acerto: 21 (2d10 + 10) de dano perfurante + 14 (4d6) de dano de fogo.', attackBonus: 17, damage: '2d10+10', damageType: 'perfurante' },
+      { name: 'Garras Cortantes', description: 'Ataque Corpo-a-Corpo: +17 para atingir, alcance 1,5m. Acerto: 17 (2d6 + 10) de dano cortante.', attackBonus: 17, damage: '2d6+10', damageType: 'cortante' },
+      { name: 'Sopro de Fogo Infernal (Recarga 5-6)', description: 'O dragão expele chamas em um cone de 27 metros. Cada criatura na área deve fazer uma salvaguarda de Destreza CD 24, sofrendo 77 (22d6) de dano de fogo em uma falha ou metade em sucesso.', attackBonus: 17, damage: '22d6', damageType: 'fogo' }
+    ],
+    color: '#dc2626',
+    environments: ['volcano', 'cavern', 'dungeon'],
+    description: 'A encarnação viva da fúria e ganância vulcânica, uma força da natureza capaz de incinerar reinos inteiros.'
+  }
+];
+
+// XP Thresholds per Character Level for Encounter Building (Standard 5e TTRPG rules)
+export const XP_THRESHOLDS_PER_LEVEL: Record<number, { facil: number; medio: number; dificil: number; mortal: number }> = {
+  1: { facil: 25, medio: 50, dificil: 75, mortal: 100 },
+  2: { facil: 50, medio: 100, dificil: 150, mortal: 200 },
+  3: { facil: 75, medio: 150, dificil: 225, mortal: 400 },
+  4: { facil: 125, medio: 250, dificil: 375, mortal: 500 },
+  5: { facil: 250, medio: 500, dificil: 750, mortal: 1100 },
+  6: { facil: 300, medio: 600, dificil: 900, mortal: 1400 },
+  7: { facil: 350, medio: 750, dificil: 1100, mortal: 1700 },
+  8: { facil: 450, medio: 900, dificil: 1400, mortal: 2100 },
+  9: { facil: 550, medio: 1100, dificil: 1600, mortal: 2400 },
+  10: { facil: 600, medio: 1200, dificil: 1900, mortal: 2800 },
+  11: { facil: 800, medio: 1600, dificil: 2400, mortal: 3600 },
+  12: { facil: 1000, medio: 2000, dificil: 3000, mortal: 4500 },
+  13: { facil: 1100, medio: 2200, dificil: 3400, mortal: 5100 },
+  14: { facil: 1250, medio: 2500, dificil: 3800, mortal: 5700 },
+  15: { facil: 1400, medio: 2800, dificil: 4300, mortal: 6400 },
+  16: { facil: 1600, medio: 3200, dificil: 4800, mortal: 7200 },
+  17: { facil: 2000, medio: 3900, dificil: 5900, mortal: 8800 },
+  18: { facil: 2100, medio: 4200, dificil: 6300, mortal: 9500 },
+  19: { facil: 2400, medio: 4900, dificil: 7300, mortal: 10900 },
+  20: { facil: 2800, medio: 5700, dificil: 8500, mortal: 12700 }
+};
+
+// Multipliers based on number of monsters in the encounter
+export function getMonsterCountMultiplier(count: number): number {
+  if (count === 1) return 1;
+  if (count === 2) return 1.5;
+  if (count >= 3 && count <= 6) return 2;
+  if (count >= 7 && count <= 10) return 2.5;
+  if (count >= 11 && count <= 14) return 3;
+  return 4;
+}
+
+/**
+ * Calculates party XP budget for an array of player characters.
+ */
+export function calculatePartyXpBudgets(characters: Array<{ level?: number }>): {
+  facil: number;
+  medio: number;
+  dificil: number;
+  mortal: number;
+  partySize: number;
+  avgLevel: number;
+} {
+  const partySize = Math.max(1, characters.length || 4);
+  let facil = 0;
+  let medio = 0;
+  let dificil = 0;
+  let mortal = 0;
+  let totalLevel = 0;
+
+  if (characters.length === 0) {
+    // Default fallback: party of 4 level 1 characters
+    for (let i = 0; i < 4; i++) {
+      facil += XP_THRESHOLDS_PER_LEVEL[1].facil;
+      medio += XP_THRESHOLDS_PER_LEVEL[1].medio;
+      dificil += XP_THRESHOLDS_PER_LEVEL[1].dificil;
+      mortal += XP_THRESHOLDS_PER_LEVEL[1].mortal;
+    }
+    return { facil, medio, dificil, mortal, partySize: 4, avgLevel: 1 };
+  }
+
+  characters.forEach(c => {
+    const lvl = Math.max(1, Math.min(20, Number(c.level || 1)));
+    totalLevel += lvl;
+    const thresh = XP_THRESHOLDS_PER_LEVEL[lvl] || XP_THRESHOLDS_PER_LEVEL[1];
+    facil += thresh.facil;
+    medio += thresh.medio;
+    dificil += thresh.dificil;
+    mortal += thresh.mortal;
+  });
+
+  const avgLevel = Math.max(1, Math.round(totalLevel / partySize));
+  return { facil, medio, dificil, mortal, partySize, avgLevel };
+}
