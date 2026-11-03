@@ -1,22 +1,48 @@
-/* Tokens globais do tema. O layout completo é definido na fase 4. */
+/*
+ * Estilos globais: tokens do tema, base, layout e componentes de formulário.
+ * Tema escuro por padrão; a classe .light no <html> ativa o tema claro
+ * (mesmo comportamento do sistema antigo).
+ */
+
 :root {
-    --color-bg: #f4ecd8;
-    --color-surface: #fbf6ea;
-    --color-text: #2b2118;
-    --color-muted: #6b5a48;
-    --color-accent: #8b2e1f;
-    --font-body: Georgia, "Times New Roman", serif;
+    --bg-primary: #161311;
+    --bg-secondary: #2a2624;
+    --text-primary: #d9d2c7;
+    --text-secondary: #8c8479;
+    --accent-primary: #47d6ff;
+    --accent-secondary: #ffb59c;
+    --accent-tertiary: #eac34a;
+    --danger: #ff8a7a;
+    --success: #7fd6a3;
+    --surface-low: rgba(255, 255, 255, 0.05);
+    --surface-high: rgba(255, 255, 255, 0.11);
+    --border: rgba(255, 255, 255, 0.14);
+
+    --font-serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --font-sans: "Manrope", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Space Grotesk", ui-monospace, Consolas, monospace;
+
+    --radius: 0.75rem;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --color-bg: #15110d;
-        --color-surface: #211a14;
-        --color-text: #ede3cf;
-        --color-muted: #a8957c;
-        --color-accent: #d4694f;
-    }
+.light {
+    --bg-primary: #f8f6f2;
+    --bg-secondary: #ffffff;
+    --text-primary: #2a2624;
+    --text-secondary: #5e544d;
+    --accent-primary: #0088aa;
+    --accent-secondary: #d15d3d;
+    --accent-tertiary: #b38f00;
+    --danger: #c0392b;
+    --success: #1e8a4c;
+    --surface-low: rgba(42, 38, 36, 0.07);
+    --surface-high: rgba(42, 38, 36, 0.14);
+    --border: rgba(42, 38, 36, 0.14);
+    --shadow: 0 10px 30px rgba(42, 38, 36, 0.12);
 }
+
+/* Base */
 
 *,
 *::before,
@@ -27,29 +53,282 @@
 body {
     margin: 0;
     min-height: 100vh;
-    background: var(--color-bg);
-    color: var(--color-text);
-    font-family: var(--font-body);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
     line-height: 1.5;
 }
 
-.welcome {
+h1,
+h2,
+h3 {
+    margin: 0 0 0.75rem;
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+a {
+    color: var(--accent-primary);
+}
+
+img {
+    max-width: 100%;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* Layout da aplicação */
+
+.app-header {
     display: flex;
-    min-height: 100vh;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+}
+
+.app-header__brand {
+    color: var(--accent-tertiary);
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.app-nav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.app-nav a {
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.app-nav a:hover,
+.app-nav a[aria-current="page"] {
+    color: var(--accent-primary);
+}
+
+.app-main {
+    width: 100%;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+.app-footer {
     padding: 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
     text-align: center;
 }
 
-.welcome__title {
-    margin: 0 0 0.5rem;
-    color: var(--color-accent);
-    font-size: 2.25rem;
+/* Cartões */
+
+.card {
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow);
 }
 
-.welcome__text {
+.card + .card {
+    margin-top: 1.5rem;
+}
+
+.card__title {
+    font-size: 1.35rem;
+}
+
+.card__text {
+    margin: 0 0 1rem;
+    color: var(--text-secondary);
+}
+
+.grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.list {
     margin: 0;
-    color: var(--color-muted);
+    padding: 0;
+    list-style: none;
+}
+
+.list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.list li:last-child {
+    border-bottom: 0;
+}
+
+.muted {
+    color: var(--text-secondary);
+}
+
+/* Formulários */
+
+.form {
+    display: grid;
+    gap: 1rem;
+}
+
+.field {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.field__label {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.field__input {
+    width: 100%;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) / 1.5);
+    background: var(--surface-low);
+    color: var(--text-primary);
+    font: inherit;
+}
+
+.field__input:focus {
+    border-color: var(--accent-primary);
+    outline: 2px solid transparent;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 30%, transparent);
+}
+
+.field__input[aria-invalid="true"] {
+    border-color: var(--danger);
+}
+
+.field__error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.85rem;
+}
+
+.field__hint {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+/* Botões */
+
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.2rem;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) / 1.5);
+    background: var(--accent-primary);
+    color: var(--bg-primary);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.button:hover {
+    filter: brightness(1.1);
+}
+
+.button--secondary {
+    border-color: var(--border);
+    background: var(--surface-low);
+    color: var(--text-primary);
+}
+
+.button--link {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.button--block {
+    width: 100%;
+}
+
+/* Alertas */
+
+.alert {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) / 1.5);
+    background: var(--surface-low);
+}
+
+.alert--success {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.alert--error {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Avatar */
+
+.avatar {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.avatar--large {
+    width: 5rem;
+    height: 5rem;
+}
+
+@media (max-width: 640px) {
+    .app-header {
+        flex-wrap: wrap;
+        padding: 0.75rem 1rem;
+    }
+
+    .app-main {
+        padding: 1.25rem 1rem;
+    }
 }

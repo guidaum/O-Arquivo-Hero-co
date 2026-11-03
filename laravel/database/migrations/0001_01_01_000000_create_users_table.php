@@ -15,10 +15,18 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->string('firestore_id', 64)->nullable()->unique();
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
-            $table->string('password');
+            // Nulo para usuários importados do Firebase até definirem a senha no primeiro acesso.
+            $table->string('password')->nullable();
+            $table->string('role', 16)->default('user')->index();
+            $table->string('photo_path')->nullable();
+            $table->text('bio')->nullable();
+            $table->string('location')->nullable();
+            $table->string('phone_number', 32)->nullable();
+            $table->timestamp('last_active_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
