@@ -1,0 +1,555 @@
+/* Battlemap da masmorra. A estrutura (barra, palco, lista lateral, controles)
+   vem de world-map.css; aqui ficam tokens, névoa, áreas e painéis próprios. */
+
+.tool-toggle--accent {
+    border-color: var(--arcane);
+    background: var(--arcane);
+    color: var(--bg-primary);
+}
+
+.tool-toggle[hidden] {
+    display: none;
+}
+
+.dungeon[data-mode="ruler"] .world-map__viewport,
+.dungeon[data-mode="aoe"] .world-map__viewport,
+.dungeon[data-mode="marker"] .world-map__viewport,
+.dungeon[data-mode="ping"] .world-map__viewport,
+.dungeon[data-mode="fog"] .world-map__viewport {
+    cursor: crosshair;
+}
+
+/* Ferramentas */
+
+.dungeon-tools {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.3rem;
+    border-radius: var(--radius-lg);
+}
+
+.dungeon-tools [aria-pressed="true"] {
+    background: color-mix(in srgb, var(--arcane) 20%, transparent);
+    color: var(--arcane);
+}
+
+.dungeon-options {
+    position: absolute;
+    top: 0.75rem;
+    left: 4rem;
+    z-index: 6;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: calc(100% - 5rem);
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-lg);
+    font-size: 0.8rem;
+}
+
+.dungeon-options[hidden] {
+    display: none;
+}
+
+.dungeon-options .chip,
+.dungeon-options .segmented__option {
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.dungeon-options__field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.dungeon-options__field .field__input {
+    width: 4.75rem;
+    padding: 0.35rem 0.5rem;
+    font-family: var(--font-mono);
+}
+
+/* Camadas do palco */
+
+.dungeon__grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(to right, rgba(0, 0, 0, 0.55) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.55) 1px, transparent 1px);
+    background-size: calc(100% / var(--cols)) calc(100% / var(--rows));
+    pointer-events: none;
+}
+
+.dungeon__aoes,
+.dungeon__ruler,
+.dungeon__fog {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+
+.dungeon__fog {
+    z-index: 1;
+}
+
+.dungeon__ruler {
+    z-index: 5;
+}
+
+.dungeon__markers,
+.dungeon__tokens {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.dungeon__tokens {
+    z-index: 2;
+}
+
+/* Para o mestre a névoa fica abaixo dos tokens; para jogadores, acima (esconde o que não foi revelado). */
+.dungeon:not([data-gm]) .dungeon__fog {
+    z-index: 4;
+}
+
+/* Áreas de efeito */
+
+.aoe circle:first-child,
+.aoe rect,
+.aoe polygon {
+    fill: color-mix(in srgb, var(--aoe-color) 28%, transparent);
+    stroke: var(--aoe-color);
+    stroke-width: 2;
+}
+
+.aoe.can-edit {
+    pointer-events: auto;
+    cursor: grab;
+}
+
+.aoe.is-selected rect,
+.aoe.is-selected polygon,
+.aoe.is-selected circle:first-child {
+    stroke-width: 3;
+    stroke-dasharray: 8 4;
+}
+
+.aoe__origin {
+    fill: #fff;
+    stroke: var(--aoe-color);
+    stroke-width: 2;
+}
+
+.aoe__label {
+    fill: #fff;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 800;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.75);
+    stroke-width: 3;
+}
+
+/* Marcadores */
+
+.dungeon-marker {
+    position: absolute;
+    display: inline-flex;
+    width: 1.9rem;
+    height: 1.9rem;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--marker-color);
+    border-radius: 0.5rem;
+    background: rgba(12, 10, 9, 0.85);
+    color: var(--marker-color);
+    cursor: pointer;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) scale(var(--inverse-scale)) rotate(45deg);
+}
+
+.dungeon-marker .icon {
+    transform: rotate(-45deg);
+}
+
+/* Tokens */
+
+.token {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 3px solid var(--token-color);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--token-color) 35%, #0b0a09);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    transform: translate(-50%, -50%);
+    transition: left 0.25s ease, top 0.25s ease, box-shadow 0.15s;
+}
+
+.token.can-control {
+    cursor: grab;
+}
+
+.token img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    pointer-events: none;
+}
+
+.token__initial {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-shadow: 0 1px 2px #000;
+}
+
+.token--monster {
+    border-radius: 30%;
+}
+
+.token--monster img {
+    border-radius: 26%;
+}
+
+.token.is-selected {
+    box-shadow: 0 0 0 3px #fff, 0 0 18px var(--token-color);
+}
+
+.token.is-active-turn {
+    animation: token-turn 1.4s ease-in-out infinite;
+}
+
+.token.is-hidden {
+    opacity: 0.45;
+    border-style: dashed;
+}
+
+.token.is-faded {
+    opacity: 0.25;
+}
+
+.token.is-down {
+    filter: grayscale(1);
+}
+
+.token__hp {
+    position: absolute;
+    bottom: -0.45rem;
+    left: 8%;
+    width: 84%;
+    height: 0.3rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.token__hp span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444, #f59e0b 50%, #22c55e);
+    background-size: 300% 100%;
+    background-position: right;
+}
+
+.token__hp--wide {
+    position: static;
+    display: block;
+    width: 100%;
+    height: 0.35rem;
+}
+
+.token__conditions {
+    position: absolute;
+    top: -0.6rem;
+    right: -0.6rem;
+    padding: 0 0.2rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.8);
+    font-size: 0.7rem;
+    line-height: 1.2rem;
+}
+
+.token__name {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 50%;
+    max-width: 8rem;
+    overflow: hidden;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: rgba(10, 9, 8, 0.85);
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transform: translateX(-50%) scale(var(--inverse-scale));
+    transform-origin: top center;
+}
+
+@keyframes token-turn {
+    50% { box-shadow: 0 0 0 4px var(--gold), 0 0 22px var(--gold); }
+}
+
+/* Régua */
+
+.ruler__line {
+    stroke: #f59e0b;
+    stroke-width: 3;
+    stroke-dasharray: 8 5;
+    stroke-linecap: round;
+}
+
+.ruler__dot {
+    fill: #f59e0b;
+    stroke: #0b0a09;
+    stroke-width: 2;
+}
+
+.ruler__label {
+    fill: #0b0a09;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 800;
+    paint-order: stroke;
+    stroke: #f59e0b;
+    stroke-width: 6;
+}
+
+/* Painel lateral */
+
+.dungeon__sidebar {
+    gap: 0.75rem;
+}
+
+.dungeon__tabs {
+    width: 100%;
+    margin: 0;
+}
+
+.dungeon__tabs .tabs__link {
+    flex: 1;
+    justify-content: center;
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.dungeon__tabs .tabs__link:not([aria-current]) {
+    background: transparent;
+}
+
+.dungeon__sidebar [data-panel][hidden] {
+    display: none;
+}
+
+.dungeon-selected {
+    display: grid;
+    gap: 0.6rem;
+    padding: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-low);
+}
+
+.dungeon-selected[hidden] {
+    display: none;
+}
+
+.dungeon-selected p {
+    margin: 0;
+}
+
+.dungeon-selected__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dungeon-selected__head strong {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dungeon-selected__swatch {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--token-color);
+    border-radius: 50%;
+    color: var(--token-color);
+    font-weight: 800;
+}
+
+.dungeon-selected__hp {
+    display: grid;
+    gap: 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.dungeon-selected__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.dungeon-selected__row .button {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+}
+
+.dungeon-selected__delta {
+    flex: 1;
+}
+
+.dungeon-selected__note {
+    font-size: 0.7rem;
+}
+
+.dungeon-condition {
+    border-color: color-mix(in srgb, var(--condition-color) 50%, transparent);
+    font-size: 0.65rem;
+    cursor: pointer;
+}
+
+.dungeon-condition.is-active {
+    border-color: var(--condition-color);
+    background: color-mix(in srgb, var(--condition-color) 25%, transparent);
+    color: var(--text-primary);
+}
+
+.dungeon-condition:disabled {
+    cursor: default;
+}
+
+.dungeon-round {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+}
+
+.dungeon-combat-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.5rem 0;
+}
+
+.dungeon-combat-actions .button {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+}
+
+.pin-list__item.is-active-turn {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+}
+
+.dungeon-turn-index {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--gold);
+}
+
+/* Criaturas (mestre) */
+
+.spawn-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.spawn-grid section {
+    display: grid;
+    align-content: start;
+    gap: 0.6rem;
+}
+
+.spawn-grid .eyebrow {
+    margin: 0;
+}
+
+.spawn-grid .chip {
+    cursor: pointer;
+}
+
+/* Modo TV: só o mapa. */
+
+.dungeon--tv .world-map__bar,
+.dungeon--tv .world-map__sidebar,
+.dungeon--tv .dungeon-tools,
+.dungeon--tv .dungeon-options,
+.dungeon--tv .world-map__coords {
+    display: none;
+}
+
+.dungeon--tv {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    height: 100dvh;
+    background: var(--bg-primary);
+}
+
+@media (max-width: 760px) {
+    .spawn-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Clima (fase 9c): partículas na tela, por cima do mapa e abaixo das ferramentas. */
+
+.dungeon__weather {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.dungeon__weather[hidden] {
+    display: none;
+}
+
+.dungeon-weather {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-secondary);
+}
+
+.dungeon-weather .select {
+    min-width: 0;
+    max-width: 11rem;
+}
