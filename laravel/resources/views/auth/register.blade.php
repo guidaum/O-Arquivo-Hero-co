@@ -16,7 +16,7 @@
         />
         <x-form.field name="password_confirmation" label="Confirme a senha" type="password" required autocomplete="new-password" />
 
-        <button type="submit" class="button button--block">Criar conta</button>
+        <button type="submit" class="button button--parchment button--block button--large">Criar conta</button>
     </form>
 
     <div class="auth__links">

@@ -16,7 +16,7 @@
             <a href="{{ route('password.request') }}">Esqueci minha senha</a>
         </div>
 
-        <button type="submit" class="button button--block">Entrar</button>
+        <button type="submit" class="button button--parchment button--block button--large">Entrar com Senha</button>
     </form>
 
     <div class="auth__links">

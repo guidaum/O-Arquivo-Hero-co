@@ -1,23 +1,131 @@
-/* Telas de login, cadastro e definição de senha. */
+/* Telas de entrada (login, cadastro, senha) e Política de Privacidade. */
 
 .auth {
+    position: relative;
     display: flex;
     min-height: 100vh;
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
-    background:
-        radial-gradient(circle at top, color-mix(in srgb, var(--accent-tertiary) 12%, transparent), transparent 60%),
-        var(--bg-primary);
+    overflow: hidden;
+}
+
+/* Brilhos de fundo do sistema antigo */
+.auth__glow {
+    position: absolute;
+    width: 40%;
+    height: 40%;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+}
+
+.auth__glow--arcane {
+    top: -10%;
+    left: -10%;
+    background: color-mix(in srgb, var(--arcane) 20%, transparent);
+}
+
+.auth__glow--ember {
+    right: -10%;
+    bottom: -10%;
+    background: color-mix(in srgb, var(--ember) 20%, transparent);
 }
 
 .auth__panel {
+    position: relative;
+    z-index: 1;
     width: 100%;
-    max-width: 26rem;
+    max-width: 28rem;
 }
 
 .auth__panel--wide {
     max-width: 48rem;
+}
+
+.auth__card {
+    padding: 2.5rem;
+    border-radius: var(--radius-2xl);
+}
+
+.auth__brand {
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.auth__marks {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.auth__title {
+    margin: 0 0 0.75rem;
+    font-family: var(--font-serif);
+    font-size: 2.25rem;
+    line-height: 1.1;
+}
+
+.auth__subtitle {
+    margin: 0;
+    color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.auth__divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    color: color-mix(in srgb, var(--text-primary) 30%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.auth__divider::before,
+.auth__divider::after {
+    flex: 1;
+    height: 1px;
+    background: var(--surface-low);
+    content: "";
+}
+
+.auth__links {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.auth__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.875rem;
+}
+
+.auth__signature {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 2rem 0 0;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--surface-low);
+    color: color-mix(in srgb, var(--text-primary) 40%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 
 .auth__footer {
@@ -26,60 +134,27 @@
     text-align: center;
 }
 
-.auth__brand {
-    margin-bottom: 1.5rem;
-    text-align: center;
+.google-button {
+    border-color: var(--border);
+    background: #ffffff;
+    box-shadow: none;
+    color: #1f1f1f;
 }
 
-.auth__title {
-    margin: 0;
-    color: var(--accent-tertiary);
-    font-family: var(--font-serif);
-    font-size: 2rem;
-}
-
-.auth__subtitle {
-    margin: 0.25rem 0 0;
-    color: var(--text-secondary);
-}
-
-.auth__divider {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin: 1.25rem 0;
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-}
-
-.auth__divider::before,
-.auth__divider::after {
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-    content: "";
-}
-
-.auth__links {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1.25rem;
-    font-size: 0.9rem;
-    text-align: center;
-}
-
-.auth__row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+.google-button__icon {
+    width: 1.1rem;
+    height: 1.1rem;
 }
 
 /* Textos longos (Política de Privacidade). */
 
+.legal {
+    text-align: left;
+}
+
 .legal h2 {
     margin: 2rem 0 0.5rem;
-    color: var(--accent-tertiary);
+    color: var(--gold);
     font-family: var(--font-serif);
     font-size: 1.3rem;
 }
@@ -102,13 +177,17 @@
     margin-top: 0.25rem;
 }
 
-.google-button {
-    border-color: var(--border);
-    background: #ffffff;
-    color: #1f1f1f;
-}
+@media (max-width: 639px) {
+    .auth {
+        padding: 1rem;
+    }
 
-.google-button__icon {
-    width: 1.1rem;
-    height: 1.1rem;
+    .auth__card {
+        padding: 2rem 1.25rem;
+        border-radius: var(--radius-xl);
+    }
+
+    .auth__title {
+        font-size: 1.875rem;
+    }
 }

@@ -1,11 +1,22 @@
 // Alternância entre tema escuro (padrão) e claro.
 // Uso: <button type="button" data-theme-toggle>…</button>
+// O ícone (sol/lua) é trocado pelo CSS conforme a classe .light do <html>.
 
 const STORAGE_KEY = 'theme';
 const root = document.documentElement;
 
 function currentTheme() {
     return root.classList.contains('light') ? 'light' : 'dark';
+}
+
+function updateButtons(theme) {
+    const label = theme === 'light' ? 'Ativar modo escuro' : 'Ativar modo claro';
+
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.setAttribute('aria-pressed', String(theme === 'light'));
+        button.setAttribute('aria-label', label);
+        button.title = label;
+    });
 }
 
 function applyTheme(theme) {
@@ -17,10 +28,7 @@ function applyTheme(theme) {
         // Armazenamento indisponível: o tema vale só para esta página.
     }
 
-    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-        button.setAttribute('aria-pressed', String(theme === 'light'));
-        button.textContent = theme === 'light' ? 'Tema escuro' : 'Tema claro';
-    });
+    updateButtons(theme);
 }
 
 document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
@@ -29,4 +37,4 @@ document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
     });
 });
 
-applyTheme(currentTheme());
+updateButtons(currentTheme());

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPublicFiles;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Hidden(['firestore_id'])]
 class JournalEntry extends Model
 {
+    use HasPublicFiles;
+
+    /**
+     * Endereço da imagem de um NPC do registro.
+     *
+     * @param  array<string, mixed>  $npc
+     */
+    public function npcImageUrl(array $npc): ?string
+    {
+        return $this->publicFileUrl(is_string($npc['image_path'] ?? null) ? $npc['image_path'] : null);
+    }
+
     /**
      * @return array<string, string>
      */

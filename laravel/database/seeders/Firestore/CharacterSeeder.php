@@ -50,8 +50,9 @@ class CharacterSeeder extends Seeder
                 'temp_pv' => $this->integer($data['tempPV'] ?? null),
                 'current_atp' => $this->integer($data['currentATP'] ?? null),
                 'protection' => $this->integer($data['protecao'] ?? null),
-                'awakening' => $this->integer($data['despertar'] ?? null),
-                'sanity' => $this->integer($data['sanidade'] ?? null),
+                'awakening' => min(7, $this->integer($data['despertar'] ?? null)),
+                // Na ficha antiga, sanidade ausente vale 7 (o máximo).
+                'sanity' => min(7, $this->integer($data['sanidade'] ?? null, 7)),
                 'money' => $this->integer($data['money'] ?? null),
                 'base_stats' => $this->numericMap($data['baseStats'] ?? null),
                 'stats' => $this->numericMap($data['stats'] ?? null),
@@ -172,16 +173,20 @@ class CharacterSeeder extends Seeder
             }
 
             $character->items()->forceCreate([
-                'catalog_item_id' => $this->localId(CatalogItem::class, $item['id'] ?? null),
+                // O vínculo com o catálogo é catalogId; o id do item era aleatório.
+                'catalog_item_id' => $this->localId(CatalogItem::class, $item['catalogId'] ?? null),
                 'name' => $this->nullableString($item['name'] ?? null) ?? 'Item',
                 'category' => $this->nullableString($item['category'] ?? null, 64),
                 'rarity' => $this->nullableString($item['rarity'] ?? null, 32),
                 'description' => $this->nullableString($item['description'] ?? null, 10000),
                 'damage' => $this->nullableString($item['damage'] ?? null, 64),
                 'defense' => $this->integer($item['defense'] ?? null),
+                'weight' => max(0, $this->number($item['weight'] ?? null)),
+                'value' => max(0, $this->integer($item['value'] ?? null)),
                 'ammo' => $this->nullableString($item['ammo'] ?? null, 64),
                 'quantity' => max(1, $this->integer($item['quantity'] ?? null, 1)),
                 'equipped' => (bool) ($item['equipped'] ?? false),
+                'position' => (int) $index,
                 'stats' => is_array($item['stats'] ?? null) && $item['stats'] !== [] ? $item['stats'] : null,
                 'image_path' => $this->storeImage($item['image'] ?? null, 'character-items', $character->id.'_'.$index),
             ]);

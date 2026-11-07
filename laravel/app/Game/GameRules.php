@@ -26,6 +26,14 @@ final class GameRules
         return new self(RuleSet::forSession($session));
     }
 
+    /**
+     * Regras globais (usadas pelos catálogos, que valem para todas as campanhas).
+     */
+    public static function global(): self
+    {
+        return new self(RuleSet::query()->global()->first());
+    }
+
     public function ruleSet(): ?RuleSet
     {
         return $this->ruleSet;
@@ -62,6 +70,24 @@ final class GameRules
         return trim($formula) === self::IGNORED_POWER_COST_FORMULA
             ? (string) config('arquivo.rules.formulas.power_cost')
             : $formula;
+    }
+
+    /**
+     * Pontos e dinheiro iniciais da criação de personagem. Sem regras
+     * gravadas, valem os padrões do sistema antigo.
+     *
+     * @return array{max_attribute_points: int, max_single_attribute_value: int, initial_skill_points: int, initial_power_points: int, initial_money: int}
+     */
+    public function points(): array
+    {
+        $points = [];
+
+        foreach ((array) config('arquivo.rules.points') as $column => $default) {
+            $value = $this->ruleSet?->getAttribute($column);
+            $points[$column] = is_numeric($value) ? (int) $value : (int) $default;
+        }
+
+        return $points;
     }
 
     public function easyModifier(): float
@@ -131,6 +157,28 @@ final class GameRules
     }
 
     /**
+     * Tipos de poder configurados.
+     *
+     * @return list<string>
+     */
+    public function powerTypes(): array
+    {
+        return array_map('strval', array_keys($this->powerTypeVars()));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function talentCategories(): array
+    {
+        $categories = $this->ruleSet?->talent_categories;
+
+        return is_array($categories)
+            ? array_values(array_filter(array_map('strval', $categories), static fn (string $name): bool => trim($name) !== ''))
+            : [];
+    }
+
+    /**
      * @return array<string, string>
      */
     public function calculationVars(): array
@@ -163,6 +211,7 @@ final class GameRules
                 'extreme_div' => $this->extremeDivisor(),
             ],
             'attributes' => $this->attributes(),
+            'points' => $this->points(),
             'skill_categories' => $this->skillCategories(),
             'skill_type_vars' => (object) $this->skillTypeVars(),
             'power_type_vars' => (object) $this->powerTypeVars(),

@@ -1,0 +1,11 @@
+Fontes usadas pelo O Arquivo Heroico (subconjunto latino), as mesmas do sistema antigo.
+Todas são distribuídas sob a SIL Open Font License 1.1 (https://openfontlicense.org).
+
+- Newsreader (newsreader-latin.woff2, newsreader-italic-latin.woff2)
+  Copyright 2020 The Newsreader Project Authors (https://github.com/productiontype/Newsreader)
+
+- Manrope (manrope-latin.woff2)
+  Copyright 2018 The Manrope Project Authors (https://github.com/sharanda/manrope)
+
+- Space Grotesk (space-grotesk-latin.woff2)
+  Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)

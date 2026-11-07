@@ -28,6 +28,7 @@ class GameSession extends Model
         return [
             'active' => 'boolean',
             'shop_enabled' => 'boolean',
+            'chat_cleared_at' => 'datetime',
         ];
     }
 
@@ -47,6 +48,69 @@ class GameSession extends Model
     public function hasPlayer(User $user): bool
     {
         return $this->players()->whereKey($user->id)->exists();
+    }
+
+    /**
+     * Quem pode ser mencionado no chat (SessionChat.tsx): o mestre (também
+     * como "@GM" e "@Mestre"), os jogadores e os personagens da campanha,
+     * cada um apontando para o usuário dono. A "handle" é o nome sem espaços.
+     *
+     * @return list<array{user_id: int, name: string, handle: string, gm: bool}>
+     */
+    public function chatParticipants(): array
+    {
+        $entries = [];
+        $add = static function (int $userId, string $name, bool $gm) use (&$entries): void {
+            $handle = self::mentionHandle($name);
+
+            if ($handle !== '' && ! isset($entries[$handle])) {
+                $entries[$handle] = ['user_id' => $userId, 'name' => $name, 'handle' => $handle, 'gm' => $gm];
+            }
+        };
+
+        $gm = $this->gm()->first(['id', 'name']);
+
+        if ($gm !== null) {
+            $add($gm->id, 'GM', true);
+            $add($gm->id, 'Mestre', true);
+            $add($gm->id, $gm->name, true);
+        }
+
+        foreach ($this->characters()->whereNotNull('user_id')->orderBy('name')->get(['id', 'name', 'user_id']) as $character) {
+            $add($character->user_id, $character->name, $character->user_id === $this->gm_id);
+        }
+
+        foreach ($this->players()->orderBy('name')->get(['users.id', 'users.name']) as $player) {
+            $add($player->id, $player->name, false);
+        }
+
+        return array_values($entries);
+    }
+
+    /**
+     * Usuários citados com @nome no texto (sem repetição).
+     *
+     * @return list<int>
+     */
+    public function mentionedUserIds(string $text): array
+    {
+        if (! preg_match_all('/@([\p{L}\p{N}_]+)/u', $text, $matches)) {
+            return [];
+        }
+
+        $byHandle = collect($this->chatParticipants())->keyBy('handle');
+
+        return collect($matches[1])
+            ->map(static fn (string $mention): ?int => $byHandle->get(self::mentionHandle($mention))['user_id'] ?? null)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public static function mentionHandle(string $name): string
+    {
+        return mb_strtolower((string) preg_replace('/\s+/u', '', $name));
     }
 
     /**
@@ -95,6 +159,16 @@ class GameSession extends Model
     public function chatMessages(): HasMany
     {
         return $this->hasMany(ChatMessage::class);
+    }
+
+    /**
+     * Anotações rápidas do mestre.
+     *
+     * @return HasMany<GameSessionNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(GameSessionNote::class);
     }
 
     /**

@@ -40,8 +40,23 @@ class RegistrationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_registration_stays_open_while_google_login_is_off(): void
+    {
+        $settings = new RuleSet;
+        $settings->forceFill(['enable_email_password_auth' => false])->save();
+
+        $this->get('/cadastro')->assertOk();
+    }
+
     public function test_registration_can_be_disabled_in_global_settings(): void
     {
+        config([
+            'services.google.enabled' => true,
+            'services.google.client_id' => 'CLIENT_ID',
+            'services.google.client_secret' => 'CLIENT_SECRET',
+            'services.google.redirect' => 'http://localhost/auth/google/callback',
+        ]);
+
         $settings = new RuleSet;
         $settings->forceFill(['enable_email_password_auth' => false])->save();
 

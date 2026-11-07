@@ -24,9 +24,13 @@ class GoogleAuthController extends Controller
 {
     private const STATE_KEY = 'google_oauth_state';
 
+    /**
+     * Ligado (GOOGLE_LOGIN_ENABLED) e com as credenciais preenchidas.
+     */
     public static function isConfigured(): bool
     {
-        return filled(config('services.google.client_id'))
+        return (bool) config('services.google.enabled')
+            && filled(config('services.google.client_id'))
             && filled(config('services.google.client_secret'))
             && filled(config('services.google.redirect'));
     }

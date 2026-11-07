@@ -35,7 +35,8 @@ class GameSessionSeeder extends Seeder
                 'image_path' => $this->storeImage($data['image'] ?? null, 'sessions', $document['id']),
                 'gm_notes' => $this->nullableString($data['gmNotes'] ?? null, 65535),
                 'active' => (bool) ($data['active'] ?? true),
-                'shop_enabled' => (bool) ($data['shopEnabled'] ?? false),
+                // No sistema antigo a loja só ficava fechada com shopEnabled === false.
+                'shop_enabled' => ($data['shopEnabled'] ?? true) !== false,
                 'created_at' => $createdAt,
                 'updated_at' => $this->timestamp($data['updatedAt'] ?? null) ?? $createdAt,
             ]);
@@ -47,7 +48,7 @@ class GameSessionSeeder extends Seeder
             if (RuleSetSeeder::hasRules($data)) {
                 RuleSet::query()
                     ->firstOrNew(['game_session_id' => $session->id])
-                    ->forceFill(RuleSetSeeder::attributesFrom($data))
+                    ->forceFill(RuleSetSeeder::sessionAttributesFrom($data))
                     ->save();
             }
 

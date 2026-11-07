@@ -1,0 +1,207 @@
+/* Painel Admin (tom dourado do sistema antigo). */
+
+.admin-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--surface-low);
+}
+
+.admin-header__brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.admin-header__title {
+    margin: 0;
+    font-size: 1.875rem;
+    text-shadow: 0 0 10px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+.admin-panel {
+    display: grid;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+    padding: 1.5rem;
+    border-radius: 1.5rem;
+}
+
+.admin-panel__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.admin-panel__title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.admin-panel__title h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.admin-panel__title p,
+.admin-panel__hint {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+}
+
+.admin-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Seleção de perfil */
+
+.role-cards {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.role-card {
+    --role-color: var(--ember);
+
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-low);
+    color: color-mix(in srgb, var(--text-primary) 70%, transparent);
+    text-decoration: none;
+    transition: border-color var(--transition), background-color var(--transition);
+}
+
+.role-card--arcane {
+    --role-color: var(--arcane);
+}
+
+.role-card--gold {
+    --role-color: var(--gold);
+}
+
+.role-card:hover {
+    border-color: var(--surface-high);
+}
+
+.role-card[aria-current="page"] {
+    border-color: var(--role-color);
+    background: color-mix(in srgb, var(--role-color) 10%, transparent);
+    color: var(--text-primary);
+}
+
+.role-card__icon {
+    display: flex;
+    padding: 0.625rem;
+    border: 1px solid color-mix(in srgb, var(--role-color) 30%, transparent);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--role-color) 10%, transparent);
+    color: var(--role-color);
+}
+
+.role-card__text {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+}
+
+.role-card__text strong {
+    font-family: var(--font-serif);
+}
+
+.role-card small {
+    color: color-mix(in srgb, var(--text-primary) 45%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+}
+
+.role-card__count {
+    display: grid;
+    text-align: right;
+}
+
+.role-card__count strong {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.role-card__count small {
+    text-transform: uppercase;
+}
+
+/* Lista de funcionalidades com chave */
+
+.feature-list {
+    display: grid;
+    gap: 0.875rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-low);
+    cursor: pointer;
+    transition: border-color var(--transition), opacity var(--transition);
+}
+
+.feature-item:has(input:not(:checked)) {
+    opacity: 0.6;
+}
+
+.feature-item:has(input:checked) {
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+}
+
+.feature-item__text {
+    display: grid;
+    min-width: 0;
+    gap: 0.25rem;
+}
+
+.feature-item__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.feature-item__title strong {
+    font-family: var(--font-serif);
+}
+
+.feature-item__title small {
+    color: color-mix(in srgb, var(--text-primary) 40%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+}
+
+.feature-item__description {
+    color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    font-size: 0.8rem;
+}
+
+@media (max-width: 1023px) {
+    .role-cards,
+    .feature-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

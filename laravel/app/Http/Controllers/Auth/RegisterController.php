@@ -61,8 +61,16 @@ class RegisterController extends Controller
      * Cadastro com e-mail e senha, controlado pela configuração global
      * (enable_email_password_auth). Sem configuração, fica liberado.
      */
+    /**
+     * Sem o login com Google, o cadastro por e-mail é a única forma de
+     * entrar no sistema, então fica sempre aberto.
+     */
     public static function isEnabled(): bool
     {
+        if (! GoogleAuthController::isConfigured()) {
+            return true;
+        }
+
         return RuleSet::query()->global()->value('enable_email_password_auth') ?? true;
     }
 }

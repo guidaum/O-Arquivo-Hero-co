@@ -99,6 +99,18 @@ return [
         ],
 
         'skill_type_vars' => ['Luta' => '1', 'Mística' => '1'],
+
+        // Pontos iniciais da criação de personagem (padrões do sistema antigo).
+        'points' => [
+            'max_attribute_points' => 28,
+            'max_single_attribute_value' => 10,
+            'initial_skill_points' => 10,
+            'initial_power_points' => 5,
+            'initial_money' => 500,
+        ],
+
+        // Carga máxima do inventário, em kg (fixa no sistema antigo).
+        'carry_capacity' => 150,
     ],
 
 ];

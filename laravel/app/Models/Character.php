@@ -45,6 +45,7 @@ class Character extends Model
             'stats_mods' => 'array',
             'talent_mods' => 'array',
             'model_sheet_3d' => 'array',
+            'gm_modifiers' => 'array',
         ];
     }
 
@@ -54,6 +55,24 @@ class Character extends Model
     protected function imageUrl(): Attribute
     {
         return Attribute::get(fn (): ?string => $this->publicFileUrl($this->image_path));
+    }
+
+    /**
+     * Variáveis das rolagens livres (dano de itens, "/r" no chat): valor
+     * base + modificador de cada atributo, em maiúsculas, como no sistema antigo.
+     *
+     * @return array<string, int|float>
+     */
+    public function rollStats(): array
+    {
+        $stats = [];
+        $mods = (array) ($this->stats_mods ?? []);
+
+        foreach ((array) ($this->stats ?? []) as $attribute => $value) {
+            $stats[strtoupper((string) $attribute)] = (is_numeric($value) ? $value + 0 : 0) + (is_numeric($mods[$attribute] ?? null) ? $mods[$attribute] + 0 : 0);
+        }
+
+        return $stats;
     }
 
     /**

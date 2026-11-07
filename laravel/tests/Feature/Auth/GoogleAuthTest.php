@@ -19,6 +19,7 @@ class GoogleAuthTest extends TestCase
         parent::setUp();
 
         config([
+            'services.google.enabled' => true,
             'services.google.client_id' => 'CLIENT_ID',
             'services.google.client_secret' => 'CLIENT_SECRET',
             'services.google.redirect' => 'http://localhost/auth/google/callback',
@@ -103,5 +104,14 @@ class GoogleAuthTest extends TestCase
 
         $this->get('/auth/google')->assertRedirect('/login')->assertSessionHasErrors('email');
         $this->get('/login')->assertDontSee('Entrar com Google');
+    }
+
+    public function test_google_login_can_be_switched_off(): void
+    {
+        config(['services.google.enabled' => false]);
+        $this->fakeGoogle(['sub' => 'google-123', 'email' => 'novo@example.com', 'email_verified' => true]);
+
+        $this->get('/login')->assertDontSee('Entrar com Google');
+        $this->get('/auth/google')->assertRedirect('/login')->assertSessionHasErrors(['email' => __('auth.google_unavailable')]);
     }
 }

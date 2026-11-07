@@ -5,7 +5,10 @@
     'value' => null,
     'bag' => 'default',
     'hint' => null,
+    'options' => [],
 ])
+
+{{-- type="select" usa $options (valor => rótulo); type="textarea" vira área de texto. --}}
 
 @php
     $id = $attributes->get('id', 'field-'.$name);
@@ -15,7 +18,18 @@
 <div class="field">
     <label class="field__label" for="{{ $id }}">{{ $label }}</label>
 
-    @if ($type === 'textarea')
+    @if ($type === 'select')
+        <select
+            id="{{ $id }}"
+            name="{{ $name }}"
+            @if ($error) aria-invalid="true" aria-describedby="{{ $id }}-error" @endif
+            {{ $attributes->except('id')->merge(['class' => 'field__input']) }}
+        >
+            @foreach ($options as $optionValue => $optionLabel)
+                <option value="{{ $optionValue }}" @selected((string) old($name, $value) === (string) $optionValue)>{{ $optionLabel }}</option>
+            @endforeach
+        </select>
+    @elseif ($type === 'textarea')
         <textarea
             id="{{ $id }}"
             name="{{ $name }}"

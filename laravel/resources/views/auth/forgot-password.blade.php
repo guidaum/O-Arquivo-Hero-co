@@ -3,7 +3,11 @@
         <p class="card__text">
             O sistema mudou de endereço e as senhas antigas não foram transferidas.
             Informe o e-mail da sua conta para receber o link de definição de senha.
-            Se você entrava com o Google, pode continuar usando o botão "Entrar com Google".
+            @if (\App\Http\Controllers\Auth\GoogleAuthController::isConfigured())
+                Se você entrava com o Google, pode continuar usando o botão "Entrar com Google".
+            @else
+                Isso vale também para quem entrava com o Google: use o mesmo e-mail da conta Google.
+            @endif
         </p>
     @else
         <p class="card__text">Informe o e-mail da sua conta para receber o link de definição de uma nova senha.</p>

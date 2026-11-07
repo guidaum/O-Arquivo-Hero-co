@@ -98,6 +98,25 @@ final class FormulaEvaluator
     }
 
     /**
+     * Indica se a fórmula tem sintaxe válida, valendo 1 para toda variável
+     * (assim "FOR / VAR" não é recusada por divisão por zero).
+     */
+    public function isValid(string $formula): bool
+    {
+        if (trim($formula) === '') {
+            return false;
+        }
+
+        try {
+            $this->calculate((string) preg_replace(self::IDENTIFIER, '1', self::normalize($formula)));
+
+            return true;
+        } catch (InvalidFormulaException) {
+            return false;
+        }
+    }
+
+    /**
      * Forma canônica de um nome de variável: sem acentos e em maiúsculas.
      */
     public static function variableName(string $name): string

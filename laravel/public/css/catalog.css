@@ -1,0 +1,149 @@
+/* Bibliotecas do Mestre (catálogos, sugestões) e editor de regras. */
+
+.catalog-header {
+    display: grid;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--surface-low);
+}
+
+.catalog-header .tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+}
+
+.catalog-header__brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.catalog-header__title {
+    margin: 0;
+    font-size: 1.875rem;
+}
+
+.catalog-form {
+    display: grid;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+    padding: 2rem;
+    border-radius: var(--radius-2xl);
+}
+
+.catalog-form__title {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.catalog-form > .muted {
+    margin: -0.75rem 0 0;
+    font-size: 0.85rem;
+}
+
+/* Custo calculado de vantagem/defeito */
+
+.trait-cost {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+    border-radius: var(--radius-lg);
+}
+
+.trait-cost__total {
+    color: var(--gold);
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+}
+
+/* Itens */
+
+.stat-inputs {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+}
+
+.stat-input {
+    display: grid;
+    gap: 0.25rem;
+    color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-align: center;
+}
+
+.stat-input .field__input {
+    text-align: center;
+}
+
+.item-preview {
+    width: 8rem;
+    height: 8rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    object-fit: cover;
+}
+
+.check-list {
+    display: grid;
+    max-height: 14rem;
+    gap: 0.5rem;
+    overflow-y: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    background: var(--surface-low);
+}
+
+/* Sugestões */
+
+.suggestion-text {
+    max-width: 48rem;
+    margin: 0.5rem 0 0;
+    color: color-mix(in srgb, var(--text-primary) 70%, transparent);
+    font-size: 0.875rem;
+}
+
+/* Editor de regras */
+
+.rules-columns {
+    display: grid;
+    gap: 0 1.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rules-short {
+    max-width: 9rem;
+}
+
+.form-actions--sticky {
+    position: sticky;
+    bottom: 1rem;
+    z-index: 5;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-strong);
+}
+
+@media (max-width: 1023px) {
+    .rules-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .form-actions--sticky {
+        bottom: 6.5rem;
+    }
+}
+
+@media (max-width: 639px) {
+    .catalog-form {
+        padding: 1.5rem 1.25rem;
+        border-radius: var(--radius-xl);
+    }
+}

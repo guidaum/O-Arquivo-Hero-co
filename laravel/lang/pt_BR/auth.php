@@ -12,6 +12,6 @@ return [
     'registration_disabled' => 'O cadastro com e-mail e senha está desativado. Entre com o Google.',
     'google_failed' => 'Não foi possível entrar com o Google. Tente novamente.',
     'google_unverified' => 'O e-mail da sua conta Google não está verificado.',
-    'google_unavailable' => 'O login com Google não está configurado.',
+    'google_unavailable' => 'O login com Google está desativado no momento. Entre com e-mail e senha.',
 
 ];

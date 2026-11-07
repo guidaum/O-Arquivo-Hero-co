@@ -21,6 +21,57 @@ class CatalogItem extends Model
 {
     use HasPublicFiles;
 
+    /** Categorias do sistema antigo (valor gravado => rótulo). */
+    public const CATEGORIES = [
+        'weapons' => 'Armas',
+        'armor' => 'Armaduras',
+        'ammo' => 'Munição',
+        'consumables' => 'Consumíveis',
+        'misc' => 'Diversos',
+        'Geral' => 'Geral',
+    ];
+
+    /** Raridades do sistema antigo (valor gravado => rótulo). */
+    public const RARITIES = [
+        'Common' => 'Comum',
+        'Uncommon' => 'Incomum',
+        'Rare' => 'Raro',
+        'Epic' => 'Épico',
+        'Legendary' => 'Lendário',
+    ];
+
+    /** Categorias que se acumulam em pilha (quantidade) no inventário. */
+    public const STACKABLE_CATEGORIES = ['ammo', 'consumables'];
+
+    /**
+     * Raridade gravada em inglês (catálogo) ou em português (inventário
+     * antigo) convertida para a chave de RARITIES.
+     */
+    public static function normalizeRarity(?string $rarity): string
+    {
+        if ($rarity === null || $rarity === '') {
+            return 'Common';
+        }
+
+        if (array_key_exists($rarity, self::RARITIES)) {
+            return $rarity;
+        }
+
+        $key = array_search(mb_strtolower($rarity), array_map('mb_strtolower', self::RARITIES), true);
+
+        return is_string($key) ? $key : 'Common';
+    }
+
+    public function categoryLabel(): string
+    {
+        return self::CATEGORIES[$this->category] ?? (string) $this->category;
+    }
+
+    public function rarityLabel(): string
+    {
+        return self::RARITIES[$this->rarity] ?? (string) ($this->rarity ?: 'Comum');
+    }
+
     /**
      * @return array<string, string>
      */

@@ -82,8 +82,43 @@ class RuleSetSeeder extends Seeder
      */
     public static function hasRules(array $data): bool
     {
-        return isset($data['pvFormula']) || isset($data['maxSingleAttributeValue']);
+        foreach (self::RULE_KEYS as $key) {
+            if (isset($data[$key])) {
+                return true;
+            }
+        }
+
+        return false;
     }
+
+    /**
+     * Regras de uma campanha: as globais com os campos da campanha por cima,
+     * como o sistema antigo fazia ({...globais, ...campanha}).
+     *
+     * @param  array<string, mixed>  $sessionData
+     * @return array<string, mixed>
+     */
+    public static function sessionAttributesFrom(array $sessionData): array
+    {
+        $global = FirestoreDump::document('globalSettings', 'config') ?? [];
+
+        return self::attributesFrom([
+            ...array_intersect_key($global, array_flip(self::RULE_KEYS)),
+            ...array_intersect_key($sessionData, array_flip(self::RULE_KEYS)),
+        ]);
+    }
+
+    /** Campos de regra que uma campanha pode sobrescrever. */
+    private const RULE_KEYS = [
+        'maxAttributePoints', 'maxSingleAttributeValue', 'initialSkillPoints', 'initialPowerPoints', 'initialMoney',
+        'attrPointsPerLevel', 'skillPointsPerLevel', 'powerPointsPerLevel',
+        'npcDefaultMinAttr', 'npcDefaultMaxAttr', 'npcDefaultAttrPoints', 'npcDefaultSkillPoints', 'npcDefaultPowerPoints',
+        'diffEasyMod', 'diffHardDiv', 'diffExtremeDiv',
+        'pvFormula', 'atpFormula', 'socoFormula', 'chuteFormula', 'defesaFormula', 'esquivaFormula', 'enFormula', 'dmFormula',
+        'skillCostFormula', 'powerCostFormula',
+        'skillTypeVars', 'powerTypeVars', 'calculationVars', 'attributes', 'talentCategories',
+        'diceRollSound', 'criticalSound', 'fumbleSound', 'successSound', 'failureSound',
+    ];
 
     public function run(): void
     {

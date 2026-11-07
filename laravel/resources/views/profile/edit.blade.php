@@ -6,9 +6,8 @@
             @csrf
             @method('PUT')
 
-            @if ($user->photo_url)
-                <img class="avatar avatar--large" src="{{ $user->photo_url }}" alt="Foto atual">
-            @endif
+            <x-avatar :user="$user" large />
+
 
             <x-form.field name="photo" label="Foto" type="file" accept="image/jpeg,image/png,image/webp" hint="JPG, PNG ou WEBP, até 2 MB." />
             <x-form.field name="name" label="Nome" :value="$user->name" required autocomplete="name" />
