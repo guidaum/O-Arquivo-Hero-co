@@ -29,6 +29,7 @@ use App\Http\Controllers\MapPinController;
 use App\Http\Controllers\MapPingController;
 use App\Http\Controllers\WorldMapController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PublicStorageController;
 use App\Http\Controllers\Catalog\PowerController;
 use App\Http\Controllers\Catalog\SkillController;
 use App\Http\Controllers\Catalog\SuggestionController;
@@ -322,3 +323,10 @@ Route::middleware('auth')->group(function (): void {
 
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 });
+
+// Arquivos do disco "public" sem o link public/storage (hospedagens que bloqueiam symlink).
+// Sem sessão nem cookies, para a CDN poder guardar a resposta.
+Route::get('/storage/{path}', PublicStorageController::class)
+    ->where('path', '.*')
+    ->withoutMiddleware('web')
+    ->name('storage.public');

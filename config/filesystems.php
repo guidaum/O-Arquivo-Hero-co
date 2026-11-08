@@ -35,7 +35,8 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // Desligado: /storage/... é do disco "public" (PublicStorageController).
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],

@@ -462,6 +462,7 @@ Organization:
 * JavaScript in `public/js/` as ES modules (`<script type="module">`), with shared helpers in `public/js/core/` (HTTP/CSRF, real-time transport, formulas, UI helpers) and one entry module per screen;
 * data needed by a script is passed from Blade with `@json` or `data-*` attributes, never by concatenating values into inline scripts;
 * CSS, JS and the icon sprite are referenced with the Blade directive `@asset('css/app.css')` (`App\Support\Assets::url()`: `asset()` plus `?v=<file mtime>`), because the hosting CDN caches static files for 7 days; both layouts publish an import map (`Assets::importMap()`) so relative imports between ES modules are versioned too; fonts and images keep plain `asset()`;
+* the hosting blocks `symlink()` and `exec()`, so `storage:link` fails there: `/storage/{path}` is served by `PublicStorageController` (route `storage.public`, without the `web` middleware, only image/audio extensions, 7-day cache); the `local` disk has `serve` off so it does not take `/storage`; keep public-disk URLs as `Storage::disk('public')->url()`;
 
 Layout conventions (phase 4):
 
