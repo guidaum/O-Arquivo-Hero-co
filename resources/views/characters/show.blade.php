@@ -486,7 +486,7 @@
     @if ($campaignMaps->isNotEmpty())
         <x-section title="Mapas da Campanha" icon="map">
             <x-slot:action>
-                @if ($isGm && auth()->user()->can('use-feature', 'mapManager'))
+                @if ($mapsAsGm && auth()->user()->can('use-feature', 'mapManager'))
                     <a class="button button--link" href="{{ route('map-manager.index', ['campanha' => $character->game_session_id]) }}">Gerenciar mapas</a>
                 @endif
             </x-slot:action>
@@ -499,10 +499,10 @@
                             : (auth()->user()->can('use-feature', 'dungeon') ? route('dungeon.index', ['campanha' => $character->game_session_id, 'mapa' => $map->id]) : null);
                     @endphp
                     <{{ $mapUrl ? 'a' : 'div' }} class="campaign-map glass" @if ($mapUrl) href="{{ $mapUrl }}" @endif>
-                        <img src="{{ $map->thumbnailUrl($isGm) }}" alt="" loading="lazy">
+                        <img src="{{ $map->thumbnailUrl($mapsAsGm) }}" alt="" loading="lazy">
                         <span>
                             <strong>{{ $map->name }}</strong>
-                            <small>{{ $isWorld ? 'Mapa do mundo' : 'Masmorra' }}@unless ($map->active_in_session) · oculto dos jogadores @endunless</small>
+                            <small>{{ $isWorld ? 'Mapa do mundo' : 'Masmorra' }}@if ($mapsAsGm && ! $map->active_in_session) · oculto dos jogadores @endif</small>
                         </span>
                     </{{ $mapUrl ? 'a' : 'div' }}>
                 @endforeach

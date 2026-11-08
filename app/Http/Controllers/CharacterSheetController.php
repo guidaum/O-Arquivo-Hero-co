@@ -17,6 +17,7 @@ use App\Models\GameSession;
 use App\Models\Power;
 use App\Models\Skill;
 use App\Models\Talent;
+use App\Support\Navigation;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -63,16 +64,20 @@ class CharacterSheetController extends Controller
         $canEdit = $user->can('update', $character);
         $isGm = $user->can('unlockStats', $character);
 
-        // Mapas da campanha: o mestre vê todos; o jogador, só os ativos.
+        // Mapas da campanha do personagem: o mestre vê todos, com a imagem real; o jogador,
+        // só os ativos, com a miniatura genérica (a real revelaria o terreno). Como nas telas
+        // de mapa (AuthorizesMapAccess), o mestre ou admin no modo Jogador vê como jogador.
         $session = $character->gameSession;
+        $mapsAsGm = $session !== null && $user->can('update', $session) && Navigation::for($request)->isGmView();
         $campaignMaps = $session !== null && $user->can('view', $session)
             ? $session->mapsOfType(MapType::World)->concat($session->mapsOfType(MapType::Dungeon))
-                ->filter(static fn (CampaignMap $map): bool => $isGm || $map->active_in_session)
+                ->filter(static fn (CampaignMap $map): bool => $mapsAsGm || $map->active_in_session)
                 ->values()
             : collect();
 
         return view('characters.show', [
             'campaignMaps' => $campaignMaps,
+            'mapsAsGm' => $mapsAsGm,
             'character' => $character,
             'sheet' => $sheet->data,
             'rules' => $rules,

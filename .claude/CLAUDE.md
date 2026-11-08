@@ -548,7 +548,7 @@ Map manager (phase 8b, reference: `MapManagerController`, `resources/views/map-m
 * layer settings live in `game_session_maps.layer_settings`, always read through `GameSessionMap::normalizeLayers()` (accepts the imported camelCase format; units `ft`, `m`, `squares`, `km`, `mi`, `leagues`); fog of war lives only in `dungeon_fogs` (`enabled`, `revealed_cells` as row * cols + col), read through `CampaignMap::fogIn()` (falls back to imported `fogEnabled`/`revealedCells`), so the dungeon (phase 9) reads the same source;
 * the layers inspector (`/mapas/{campanha}/{mapa}/camadas`) edits layers, paints fog cell by cell (brush 1/3×3/5×5, reveal all, hide all, entrance, invert) and measures with the ruler; it saves everything in one `PUT` JSON; maps without their own grid use `CampaignMap::DEFAULT_GRID` (24×14);
 * `public/js/core/maps.js` has `gridDistance()` and `cellsInRadius()` (legacy `calculateGridDistance`), shared with the dungeon;
-* the character sheet lists the campaign maps (players: active maps with generic thumbnails from `CampaignMap::thumbnailUrl()`).
+* the character sheet lists the maps of the character campaign (players: active maps with generic thumbnails from `CampaignMap::thumbnailUrl()`); real thumbnails and hidden maps only for the campaign GM/admin **in the Mestre view mode** (`mapsAsGm`, same rule as `authorizeMap()`), never for a GM playing in Jogador mode.
 
 Sketch studio and map rendering (phase 8c, reference: `MapStudioController`, `App\Support\AiHordeMapRenderer`, `resources/views/map-manager/studio.blade.php`, `public/js/sketch-studio/`):
 

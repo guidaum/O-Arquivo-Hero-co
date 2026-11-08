@@ -205,4 +205,34 @@ class MapManagerTest extends TestCase
             ->assertDontSee('<strong>Covil Secreto</strong>', false)
             ->assertSee('generic-dungeon-thumb.jpg', false);
     }
+
+    public function test_sheet_hides_real_map_thumbnails_when_the_gm_plays_as_player(): void
+    {
+        $map = $this->createMap(['name' => 'Covil Revelado']);
+        $hidden = $this->createMap(['name' => 'Covil Secreto']);
+        $this->session->setMapActive($hidden, false);
+
+        // Personagem do próprio mestre na campanha, aberto no modo Jogador.
+        $character = new Character(['name' => 'Mestre Jogando']);
+        $character->user_id = $this->gm->id;
+        $character->game_session_id = $this->session->id;
+        $character->save();
+
+        $this->actingAs($this->gm)->withSession([Navigation::SESSION_KEY => ViewMode::Player->value])
+            ->get(route('characters.show', $character))
+            ->assertOk()
+            ->assertSee('<strong>Covil Revelado</strong>', false)
+            ->assertDontSee('<strong>Covil Secreto</strong>', false)
+            ->assertDontSee($map->image_path, false)
+            ->assertDontSee('oculto dos jogadores')
+            ->assertSee('generic-dungeon-thumb.jpg', false);
+
+        // No modo Mestre, a mesma ficha mostra a imagem real e os mapas ocultos.
+        $this->actingAs($this->gm)->withSession([Navigation::SESSION_KEY => ViewMode::Gm->value])
+            ->get(route('characters.show', $character))
+            ->assertOk()
+            ->assertSee($map->image_path, false)
+            ->assertSee('<strong>Covil Secreto</strong>', false)
+            ->assertSee('oculto dos jogadores');
+    }
 }
