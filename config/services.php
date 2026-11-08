@@ -55,7 +55,7 @@ return [
     'ai_horde' => [
         'enabled' => (bool) env('AI_HORDE_ENABLED', true),
         'url' => env('AI_HORDE_URL', 'https://aihorde.net/api/v2'),
-        'api_key' => env('AI_HORDE_API_KEY', '_0iWZeorAVVLJgUQptuUbg'),
+        'api_key' => env('AI_HORDE_API_KEY', '00000000'),
         // Modelos separados por vírgula (vazio = a rede escolhe um disponível).
         'models' => array_values(array_filter(array_map('trim', explode(',', (string) env('AI_HORDE_MODELS', ''))))),
         'timeout' => (int) env('AI_HORDE_TIMEOUT', 20),
