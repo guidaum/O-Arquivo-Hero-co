@@ -66,16 +66,16 @@
 
 @once
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/tools.css') }}">
+        <link rel="stylesheet" href="@asset('css/tools.css')">
     @endpush
     @push('scripts')
-        <script type="module" src="{{ asset('js/tools/action-menu.js') }}"></script>
-        <script type="module" src="{{ asset('js/tools/dice-roller.js') }}"></script>
+        <script type="module" src="@asset('js/tools/action-menu.js')"></script>
+        <script type="module" src="@asset('js/tools/dice-roller.js')"></script>
         @if ($noteScopes !== [])
-            <script type="module" src="{{ asset('js/tools/quick-notes.js') }}"></script>
+            <script type="module" src="@asset('js/tools/quick-notes.js')"></script>
         @endif
         @if ($showAmbience)
-            <script type="module" src="{{ asset('js/tools/ambience.js') }}"></script>
+            <script type="module" src="@asset('js/tools/ambience.js')"></script>
         @endif
     @endpush
 @endonce

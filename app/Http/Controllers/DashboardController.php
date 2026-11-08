@@ -27,7 +27,7 @@ class DashboardController extends Controller
             ? $user->gmSessions()->withCount(['players', 'journalEntries'])->latest()->get()
             : $user->playerSessions()->with('gm:id,name')->withCount(['players', 'journalEntries'])->latest()->get();
 
-        $characters = $user->characters()->latest()->get();
+        $characters = $user->characters()->with('gameSession:id,name')->latest()->get();
 
         return view('dashboard', [
             'user' => $user,

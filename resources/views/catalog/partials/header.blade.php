@@ -1,6 +1,6 @@
 {{-- Cabeçalho das bibliotecas do Mestre com as abas (cada aba é uma rota). --}}
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/catalog.css') }}">
+    <link rel="stylesheet" href="@asset('css/catalog.css')">
 @endpush
 
 @php

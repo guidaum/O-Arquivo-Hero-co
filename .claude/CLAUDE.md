@@ -461,13 +461,13 @@ Organization:
 * CSS in `public/css/` (global tokens and base styles shared by all pages, plus one file per module when needed);
 * JavaScript in `public/js/` as ES modules (`<script type="module">`), with shared helpers in `public/js/core/` (HTTP/CSRF, real-time transport, formulas, UI helpers) and one entry module per screen;
 * data needed by a script is passed from Blade with `@json` or `data-*` attributes, never by concatenating values into inline scripts;
-* files are referenced with `asset()`; cache busting, when needed, uses a version query string.
+* CSS, JS and the icon sprite are referenced with the Blade directive `@asset('css/app.css')` (`App\Support\Assets::url()`: `asset()` plus `?v=<file mtime>`), because the hosting CDN caches static files for 7 days; both layouts publish an import map (`Assets::importMap()`) so relative imports between ES modules are versioned too; fonts and images keep plain `asset()`;
 
 Layout conventions (phase 4):
 
 * authenticated pages use `<x-layouts.app title="...">` (prop `full` for map screens); guest pages use `<x-layouts.guest>`;
 * the menu and the Mestre/Jogador view mode live in `app/Support/Navigation.php` (rules from the legacy `Layout.tsx`), shared with the layout by a view composer in `AppServiceProvider`;
-* shared components: `x-icon` (sprite `public/images/icons.svg`; add new icons there), `x-page-header`, `x-section`, `x-empty-state`, `x-modal` (native `<dialog>`), `x-view-mode-toggle`, `x-role-badge`, `x-avatar`, `x-character-card`, `x-campaign-card`, `x-form.field`, `x-alert`;
+* shared components: `x-icon` (sprite `public/images/icons.svg`; add new icons there), `x-page-header`, `x-section`, `x-empty-state` (optional `icon`, `hint` and `action` slot with the next step), `x-modal` (native `<dialog>`), `x-view-mode-toggle`, `x-role-badge`, `x-avatar`, `x-character-card`, `x-campaign-card`, `x-form.field`, `x-alert`;
 * every legacy module now has its own controller (the last `coming-soon` route, `/dungeon`, was replaced in phase 9a); the `coming-soon` view remains available for future modules, protected by `can:use-feature,'<feature>'`;
 * fonts are self-hosted in `public/fonts/` (no Google Fonts); `public/js/core/layout.js` handles the sidebar, dropdowns (`<details data-dropdown>`), modals (`data-modal-open` / `data-modal-close`) and copy buttons (`data-copy="<text>"`).
 

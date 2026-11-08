@@ -5,7 +5,7 @@
 --}}
 <x-layouts.app :title="'Camadas · '.$map->name">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/map-manager.css') }}">
+        <link rel="stylesheet" href="@asset('css/map-manager.css')">
     @endpush
 
     <x-page-header :title="$map->name" :subtitle="'Camadas, Névoa & Régua · '.$session->name">
@@ -144,6 +144,6 @@
     </div>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/map-manager/layers.js') }}"></script>
+        <script type="module" src="@asset('js/map-manager/layers.js')"></script>
     @endpush
 </x-layouts.app>

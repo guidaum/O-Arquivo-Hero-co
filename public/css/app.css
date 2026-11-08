@@ -748,6 +748,7 @@ button {
 
 .section__header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
@@ -760,6 +761,13 @@ button {
     gap: 0.75rem;
     margin: 0;
     font-size: 1.5rem;
+}
+
+.section__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
 }
 
 .section__title .icon {
@@ -846,6 +854,40 @@ button {
     margin: 0;
 }
 
+/* Estado vazio com o próximo passo: ícone, dica e botão. */
+.empty-state--guided {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    padding: 2.5rem 1.5rem;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-style: normal;
+}
+
+.empty-state--guided > p:first-of-type {
+    color: var(--text-primary);
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+}
+
+.empty-state__icon {
+    display: inline-flex;
+    padding: 0.875rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--section-color, var(--arcane)) 12%, transparent);
+    color: var(--section-color, var(--arcane));
+}
+
+.empty-state__hint {
+    max-width: 32rem;
+    font-size: 0.875rem;
+}
+
+.empty-state__action {
+    margin-top: 0.5rem;
+}
+
 /* Cartão de personagem ("lenda") */
 
 .character-card {
@@ -853,7 +895,7 @@ button {
 
     position: relative;
     display: block;
-    height: 28rem;
+    height: 22rem;
     overflow: hidden;
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-xl);
@@ -865,6 +907,78 @@ button {
 
 .character-card--arcane {
     --card-accent: var(--arcane);
+}
+
+/* Campanha do personagem (canto superior esquerdo do cartão). */
+.character-card__campaign {
+    position: absolute;
+    top: 0.875rem;
+    left: 0.875rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    max-width: calc(100% - 5rem);
+    overflow: hidden;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.character-card__campaign .icon {
+    flex: none;
+    color: var(--card-accent);
+}
+
+.character-card__campaign--none {
+    color: var(--text-secondary);
+}
+
+/* Atalho "Nova Lenda" no fim da lista de personagens. */
+.character-card-new {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.5rem;
+    min-height: 22rem;
+    border: 1px dashed var(--glass-border);
+    border-radius: var(--radius-xl);
+    background: var(--glass-bg);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: border-color var(--transition), color var(--transition), background-color var(--transition);
+}
+
+.character-card-new:hover,
+.character-card-new:focus-visible {
+    border-color: color-mix(in srgb, var(--arcane) 60%, transparent);
+    background: color-mix(in srgb, var(--arcane) 6%, var(--glass-bg));
+    color: var(--text-primary);
+}
+
+.character-card-new__icon {
+    display: inline-flex;
+    padding: 1rem;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--arcane) 12%, transparent);
+    color: var(--arcane);
+}
+
+.character-card-new__title {
+    font-family: var(--font-serif);
+    font-size: 1.375rem;
+}
+
+.character-card-new__hint {
+    font-size: 0.8125rem;
 }
 
 /* Lixeira do dono: aparece ao passar o mouse (sempre visível em telas de toque). */
@@ -1324,6 +1438,11 @@ fieldset.field .radio-group {
 .button--danger {
     --button-bg: var(--danger-strong);
     --button-fg: #ffffff;
+}
+
+.button--small {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
 }
 
 .button--pill {

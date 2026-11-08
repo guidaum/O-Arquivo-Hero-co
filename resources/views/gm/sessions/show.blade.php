@@ -15,7 +15,7 @@
 
 <x-layouts.app :title="$session->name">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/gm-session.css') }}">
+        <link rel="stylesheet" href="@asset('css/gm-session.css')">
     @endpush
 
     <x-page-header :title="$session->name" subtitle="Painel do Mestre">
@@ -64,6 +64,6 @@
     <x-action-menu :session="$session" notes="campaign" />
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/gm/index.js') }}"></script>
+        <script type="module" src="@asset('js/gm/index.js')"></script>
     @endpush
 </x-layouts.app>

@@ -1,7 +1,7 @@
 <x-layouts.app :title="'Loja · '.$character->name">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/catalog.css') }}">
-        <link rel="stylesheet" href="{{ asset('css/inventory.css') }}">
+        <link rel="stylesheet" href="@asset('css/catalog.css')">
+        <link rel="stylesheet" href="@asset('css/inventory.css')">
     @endpush
 
     <x-page-header title="Loja do Mercador" :subtitle="'Comprando para '.$character->name">

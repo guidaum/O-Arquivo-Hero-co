@@ -13,7 +13,7 @@
 
 <x-layouts.app :title="'Ficha · '.$character->name">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/sheet.css') }}">
+        <link rel="stylesheet" href="@asset('css/sheet.css')">
     @endpush
 
     {{-- Cabeçalho --}}
@@ -534,7 +534,7 @@
     @endif
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/sheet/vitals.js') }}"></script>
+        <script type="module" src="@asset('js/sheet/vitals.js')"></script>
     @endpush
     {{-- Menu de ações: dados, chat da campanha (as rolagens também aparecem nele) e anotações. --}}
     <x-action-menu :session="$character->gameSession" :character="$character" />

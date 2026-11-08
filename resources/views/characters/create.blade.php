@@ -4,7 +4,7 @@
 
 <x-layouts.app title="Criação de Personagem">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/creation.css') }}">
+        <link rel="stylesheet" href="@asset('css/creation.css')">
     @endpush
 
     <x-page-header title="Forjar uma Nova Lenda" subtitle="Criação de Personagem" />
@@ -256,7 +256,7 @@
 
         <script type="application/json" id="creation-config">@json($config)</script>
         @push('scripts')
-            <script type="module" src="{{ asset('js/creation/wizard.js') }}"></script>
+            <script type="module" src="@asset('js/creation/wizard.js')"></script>
         @endpush
     @endif
 </x-layouts.app>

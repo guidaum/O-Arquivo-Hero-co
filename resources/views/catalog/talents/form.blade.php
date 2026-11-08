@@ -72,6 +72,6 @@
     </form>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/core/repeater.js') }}"></script>
+        <script type="module" src="@asset('js/core/repeater.js')"></script>
     @endpush
 </x-layouts.app>

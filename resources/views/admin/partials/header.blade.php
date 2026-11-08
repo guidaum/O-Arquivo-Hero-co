@@ -1,6 +1,6 @@
 {{-- Cabeçalho do Painel Admin com as abas (cada aba é uma rota). --}}
 @push('styles')
-    <link rel="stylesheet" href="{{ asset('css/admin.css') }}">
+    <link rel="stylesheet" href="@asset('css/admin.css')">
 @endpush
 
 <header class="admin-header">

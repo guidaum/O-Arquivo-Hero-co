@@ -4,7 +4,7 @@
 --}}
 <x-layouts.app title="Mapa do Mundo" full>
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/world-map.css') }}">
+        <link rel="stylesheet" href="@asset('css/world-map.css')">
     @endpush
 
     @if ($session === null)
@@ -234,7 +234,7 @@
         </x-modal>
 
         @push('scripts')
-            <script type="module" src="{{ asset('js/world-map/index.js') }}"></script>
+            <script type="module" src="@asset('js/world-map/index.js')"></script>
         @endpush
     @endif
 </x-layouts.app>

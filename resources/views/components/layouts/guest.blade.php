@@ -9,10 +9,12 @@
 
         <title>{{ $title }} · {{ config('app.name') }}</title>
 
-        <script src="{{ asset('js/core/theme-init.js') }}"></script>
+        {{-- Versiona também os imports relativos entre módulos (App\Support\Assets). --}}
+        <script type="importmap">@json(['imports' => \App\Support\Assets::importMap()])</script>
+        <script src="@asset('js/core/theme-init.js')"></script>
         <link rel="preload" href="{{ asset('fonts/newsreader-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
-        <link rel="stylesheet" href="{{ asset('css/app.css') }}">
-        <link rel="stylesheet" href="{{ asset('css/auth.css') }}">
+        <link rel="stylesheet" href="@asset('css/app.css')">
+        <link rel="stylesheet" href="@asset('css/auth.css')">
     </head>
     <body>
         <main class="auth">
@@ -49,6 +51,6 @@
             </div>
         </main>
 
-        <script type="module" src="{{ asset('js/core/theme.js') }}"></script>
+        <script type="module" src="@asset('js/core/theme.js')"></script>
     </body>
 </html>

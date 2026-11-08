@@ -16,14 +16,16 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
-        <meta name="icon-sprite" content="{{ asset('images/icons.svg') }}">
+        <meta name="icon-sprite" content="@asset('images/icons.svg')">
 
         <title>{{ $title }} · {{ config('app.name') }}</title>
 
-        <script src="{{ asset('js/core/theme-init.js') }}"></script>
+        {{-- Versiona também os imports relativos entre módulos (App\Support\Assets). --}}
+        <script type="importmap">@json(['imports' => \App\Support\Assets::importMap()])</script>
+        <script src="@asset('js/core/theme-init.js')"></script>
         <link rel="preload" href="{{ asset('fonts/manrope-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
         <link rel="preload" href="{{ asset('fonts/newsreader-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
-        <link rel="stylesheet" href="{{ asset('css/app.css') }}">
+        <link rel="stylesheet" href="@asset('css/app.css')">
         @stack('styles')
     </head>
     <body>
@@ -158,9 +160,9 @@
             </div>
         </div>
 
-        <script type="module" src="{{ asset('js/core/theme.js') }}"></script>
-        <script type="module" src="{{ asset('js/core/layout.js') }}"></script>
-        <script type="module" src="{{ asset('js/notifications/bell.js') }}"></script>
+        <script type="module" src="@asset('js/core/theme.js')"></script>
+        <script type="module" src="@asset('js/core/layout.js')"></script>
+        <script type="module" src="@asset('js/notifications/bell.js')"></script>
         @stack('scripts')
     </body>
 </html>

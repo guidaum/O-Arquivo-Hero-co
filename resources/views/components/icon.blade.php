@@ -12,4 +12,4 @@
     stroke-linejoin="round"
     aria-hidden="true"
     focusable="false"
-><use href="{{ asset('images/icons.svg') }}#{{ $name }}"></use></svg>
+><use href="@asset('images/icons.svg')#{{ $name }}"></use></svg>

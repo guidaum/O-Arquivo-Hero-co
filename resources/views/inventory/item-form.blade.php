@@ -6,7 +6,7 @@
 
 <x-layouts.app :title="($editing ? 'Editar' : 'Novo').' Item · Inventário'">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/catalog.css') }}">
+        <link rel="stylesheet" href="@asset('css/catalog.css')">
     @endpush
 
     <x-page-header :title="$editing ? 'Editar Item' : 'Adicionar Item Personalizado'" :subtitle="'Inventário de '.$character->name">

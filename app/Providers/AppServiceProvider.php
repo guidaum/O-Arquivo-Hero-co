@@ -12,10 +12,12 @@ use App\Models\Skill;
 use App\Models\Talent;
 use App\Models\User;
 use App\Policies\GameContentPolicy;
+use App\Support\Assets;
 use App\Support\Navigation;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
@@ -45,6 +47,9 @@ class AppServiceProvider extends ServiceProvider
     private function configureViews(): void
     {
         Paginator::defaultView('partials.pagination');
+
+        // @asset('css/app.css'): endereço de public/ com ?v=<data do arquivo> (App\Support\Assets).
+        Blade::directive('asset', static fn (string $expression): string => '<?php echo e(\\'.Assets::class.'::url('.$expression.')); ?>');
 
         // URLs em português nas rotas de recurso: /talentos/criar, /talentos/1/editar.
         Route::resourceVerbs(['create' => 'criar', 'edit' => 'editar']);

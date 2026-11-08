@@ -11,7 +11,7 @@
 
 <x-layouts.app title="Diário de Sessão">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/journal.css') }}">
+        <link rel="stylesheet" href="@asset('css/journal.css')">
     @endpush
 
     <header class="journal-header">

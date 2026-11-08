@@ -20,10 +20,10 @@
 
 @once
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/chat.css') }}">
+        <link rel="stylesheet" href="@asset('css/chat.css')">
     @endpush
     @push('scripts')
-        <script type="module" src="{{ asset('js/chat/session-chat.js') }}"></script>
+        <script type="module" src="@asset('js/chat/session-chat.js')"></script>
     @endpush
 @endonce
 

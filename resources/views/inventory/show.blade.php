@@ -12,7 +12,7 @@
 
 <x-layouts.app :title="'Inventário de '.$character->name">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/inventory.css') }}">
+        <link rel="stylesheet" href="@asset('css/inventory.css')">
     @endpush
 
     <header class="inventory-header">

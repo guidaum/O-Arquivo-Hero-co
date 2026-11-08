@@ -26,6 +26,14 @@
             <img class="character-card__image" src="{{ $character->image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">
         @endif
 
+        @if ($character->relationLoaded('gameSession'))
+            {{-- Contexto rápido: em qual campanha o personagem joga. --}}
+            <span @class(['character-card__campaign', 'character-card__campaign--none' => ! $character->gameSession])>
+                <x-icon :name="$character->gameSession ? 'history' : 'compass'" :size="12" />
+                {{ $character->gameSession?->name ?? 'Sem campanha' }}
+            </span>
+        @endif
+
         <div class="character-card__content">
             <div class="character-card__heading">
                 <div>

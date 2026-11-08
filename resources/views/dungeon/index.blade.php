@@ -5,8 +5,8 @@
 --}}
 <x-layouts.app title="Dungeons & Tokens" full>
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/world-map.css') }}">
-        <link rel="stylesheet" href="{{ asset('css/dungeon.css') }}">
+        <link rel="stylesheet" href="@asset('css/world-map.css')">
+        <link rel="stylesheet" href="@asset('css/dungeon.css')">
     @endpush
 
     @if ($session === null)
@@ -259,7 +259,7 @@
         <x-action-menu :session="$session" :character="$actionCharacter" :notes="$isGm ? 'campaign' : 'character'" />
 
         @push('scripts')
-            <script type="module" src="{{ asset('js/dungeon/index.js') }}"></script>
+            <script type="module" src="@asset('js/dungeon/index.js')"></script>
         @endpush
     @endif
 </x-layouts.app>

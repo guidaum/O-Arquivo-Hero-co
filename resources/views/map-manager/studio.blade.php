@@ -5,7 +5,7 @@
 --}}
 <x-layouts.app title="Estúdio de Esboços">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/sketch-studio.css') }}">
+        <link rel="stylesheet" href="@asset('css/sketch-studio.css')">
     @endpush
 
     <x-page-header title="Estúdio de Esboços" :subtitle="'Forja de mapas · '.$session->name">
@@ -156,6 +156,6 @@
     </div>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/sketch-studio/index.js') }}"></script>
+        <script type="module" src="@asset('js/sketch-studio/index.js')"></script>
     @endpush
 </x-layouts.app>

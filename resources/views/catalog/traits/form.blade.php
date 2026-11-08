@@ -47,6 +47,6 @@
     </form>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/catalog/trait-form.js') }}"></script>
+        <script type="module" src="@asset('js/catalog/trait-form.js')"></script>
     @endpush
 </x-layouts.app>

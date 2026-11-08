@@ -13,7 +13,7 @@
 
 <x-layouts.app title="Gerenciador de Mapas">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/map-manager.css') }}">
+        <link rel="stylesheet" href="@asset('css/map-manager.css')">
     @endpush
 
     <x-page-header title="Forja Cartográfica" subtitle="Gerenciador de Mapas da Campanha">
@@ -208,7 +208,7 @@
         <x-catalog.delete-modal type="mapa" warning="Os marcadores, desenhos, tokens e a névoa deste mapa também serão apagados." />
 
         @push('scripts')
-            <script type="module" src="{{ asset('js/map-manager/index.js') }}"></script>
+            <script type="module" src="@asset('js/map-manager/index.js')"></script>
         @endpush
     @endif
 </x-layouts.app>

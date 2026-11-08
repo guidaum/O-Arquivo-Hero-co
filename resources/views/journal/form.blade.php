@@ -11,8 +11,8 @@
 
 <x-layouts.app :title="($editing ? 'Editar' : 'Novo').' Registro · Diário'">
     @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/catalog.css') }}">
-        <link rel="stylesheet" href="{{ asset('css/journal.css') }}">
+        <link rel="stylesheet" href="@asset('css/catalog.css')">
+        <link rel="stylesheet" href="@asset('css/journal.css')">
     @endpush
 
     <x-page-header :title="$editing ? 'Editar Registro' : 'Novo Registro'" subtitle="Diário de Sessão">
@@ -86,6 +86,6 @@
     </form>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/core/repeater.js') }}"></script>
+        <script type="module" src="@asset('js/core/repeater.js')"></script>
     @endpush
 </x-layouts.app>

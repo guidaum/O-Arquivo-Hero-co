@@ -31,7 +31,7 @@
         @include('catalog.partials.header', ['title' => 'Configurações Base', 'subtitle' => 'Regras globais, usadas pelas campanhas sem regras próprias'])
     @else
         @push('styles')
-            <link rel="stylesheet" href="{{ asset('css/catalog.css') }}">
+            <link rel="stylesheet" href="@asset('css/catalog.css')">
         @endpush
 
         <x-page-header :title="'Regras da Campanha'" :subtitle="$session->name">
@@ -217,6 +217,6 @@
     </form>
 
     @push('scripts')
-        <script type="module" src="{{ asset('js/core/repeater.js') }}"></script>
+        <script type="module" src="@asset('js/core/repeater.js')"></script>
     @endpush
 </x-layouts.app>
