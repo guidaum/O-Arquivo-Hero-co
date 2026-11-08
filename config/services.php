@@ -39,8 +39,9 @@ return [
 
     // Login com Google (OAuth 2.0 / OpenID Connect), sem pacotes externos.
     'google' => [
-        // Desligado por padrão: o login é só por e-mail e senha até ativar.
-        'enabled' => (bool) env('GOOGLE_LOGIN_ENABLED', false),
+        // Ligado por padrão; o botão só aparece com GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET.
+        // Sem GOOGLE_REDIRECT_URI, o retorno é APP_URL/auth/google/callback.
+        'enabled' => (bool) env('GOOGLE_LOGIN_ENABLED', true),
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_REDIRECT_URI'),

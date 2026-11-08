@@ -42,6 +42,8 @@ class RegistrationTest extends TestCase
 
     public function test_registration_stays_open_while_google_login_is_off(): void
     {
+        config(['services.google.enabled' => false]);
+
         $settings = new RuleSet;
         $settings->forceFill(['enable_email_password_auth' => false])->save();
 

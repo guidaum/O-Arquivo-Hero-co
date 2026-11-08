@@ -25,14 +25,22 @@ class GoogleAuthController extends Controller
     private const STATE_KEY = 'google_oauth_state';
 
     /**
-     * Ligado (GOOGLE_LOGIN_ENABLED) e com as credenciais preenchidas.
+     * Ligado (padrão) e com o client id e o segredo preenchidos.
      */
     public static function isConfigured(): bool
     {
         return (bool) config('services.google.enabled')
             && filled(config('services.google.client_id'))
-            && filled(config('services.google.client_secret'))
-            && filled(config('services.google.redirect'));
+            && filled(config('services.google.client_secret'));
+    }
+
+    /**
+     * Endereço de retorno cadastrado no Google: o configurado ou, sem ele,
+     * a rota de callback do próprio sistema (APP_URL/auth/google/callback).
+     */
+    private static function redirectUri(): string
+    {
+        return (string) (config('services.google.redirect') ?: route('auth.google.callback'));
     }
 
     public function redirect(Request $request): RedirectResponse
@@ -46,7 +54,7 @@ class GoogleAuthController extends Controller
 
         $query = http_build_query([
             'client_id' => config('services.google.client_id'),
-            'redirect_uri' => config('services.google.redirect'),
+            'redirect_uri' => self::redirectUri(),
             'response_type' => 'code',
             'scope' => 'openid email profile',
             'state' => $state,
@@ -102,7 +110,7 @@ class GoogleAuthController extends Controller
                 'code' => $code,
                 'client_id' => config('services.google.client_id'),
                 'client_secret' => config('services.google.client_secret'),
-                'redirect_uri' => config('services.google.redirect'),
+                'redirect_uri' => self::redirectUri(),
                 'grant_type' => 'authorization_code',
             ]);
 

@@ -52,6 +52,16 @@ class GoogleAuthTest extends TestCase
         $this->assertStringContainsString('state='.session('google_oauth_state'), $response->headers->get('Location'));
     }
 
+    public function test_callback_route_is_used_when_redirect_is_not_configured(): void
+    {
+        config(['services.google.redirect' => null]);
+
+        $this->get('/login')->assertSee('Entrar com Google');
+
+        $location = (string) $this->get('/auth/google')->headers->get('Location');
+        $this->assertStringContainsString('redirect_uri='.urlencode(route('auth.google.callback')), $location);
+    }
+
     public function test_new_google_user_is_created_as_player(): void
     {
         $this->fakeGoogle(['sub' => 'google-123', 'email' => 'Novo@Example.com', 'email_verified' => true, 'name' => 'Novo Jogador']);
