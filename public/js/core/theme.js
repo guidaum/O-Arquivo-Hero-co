@@ -19,8 +19,19 @@ function updateButtons(theme) {
     });
 }
 
+// Cor da barra do navegador no celular acompanha o fundo do tema.
+function syncThemeColor() {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const color = getComputedStyle(root).getPropertyValue('--bg-primary').trim();
+
+    if (meta && color) {
+        meta.setAttribute('content', color);
+    }
+}
+
 function applyTheme(theme) {
     root.classList.toggle('light', theme === 'light');
+    syncThemeColor();
 
     try {
         window.localStorage.setItem(STORAGE_KEY, theme);
@@ -38,3 +49,4 @@ document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
 });
 
 updateButtons(currentTheme());
+syncThemeColor();

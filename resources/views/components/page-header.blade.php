@@ -1,8 +1,20 @@
-@props(['title', 'subtitle' => null])
+@props(['title', 'subtitle' => null, 'back' => null, 'backLabel' => 'Voltar'])
 
-{{-- Cabeçalho de página: selos (slot "badges"), título, subtítulo e ações (slot "actions"). --}}
+{{--
+    Cabeçalho de página: link de volta (back + backLabel), selos (slot
+    "badges"), título, subtítulo e ações (slot "actions"). O link de volta
+    fica sempre no mesmo lugar, acima do título, e libera as ações para o
+    que a página faz.
+--}}
 <header {{ $attributes->class(['page-header']) }}>
-    <div>
+    <div class="page-header__main">
+        @if ($back)
+            <a class="page-header__back" href="{{ $back }}">
+                <x-icon name="arrow-left" :size="16" />
+                <span>{{ $backLabel }}</span>
+            </a>
+        @endif
+
         @isset($badges)
             <div class="page-header__badges">{{ $badges }}</div>
         @endisset

@@ -92,7 +92,7 @@
 .gm-encounter__budgets,
 .gm-encounter__xp {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(4.5rem, 100%), 1fr));
     gap: 0.5rem;
     margin: 0;
 }
@@ -157,7 +157,7 @@
 
 .gm-roster {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
     gap: 1rem;
 }
 
@@ -451,7 +451,7 @@
 
 .gm-bestiary__grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
     gap: 1rem;
     margin-top: 1rem;
 }
@@ -778,7 +778,7 @@
 
 .gm-settings__shop {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
     gap: 0.4rem;
     max-height: 26rem;
     overflow-y: auto;
@@ -982,9 +982,29 @@
         grid-column: auto;
         grid-row: auto;
     }
+
+    /* Na mesa, os personagens vêm antes do convite e da forja (secundários). */
+    .gm-session__main {
+        order: -1;
+    }
+}
+
+@media (max-width: 639px) {
+    .gm-sound {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.5rem;
+    }
+
+    .gm-settings__cover {
+        flex-wrap: wrap;
+    }
 }
 
 @media (max-width: 480px) {
+    .gm-character__points {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .gm-roster,
     .gm-bestiary__grid {
         grid-template-columns: 1fr;

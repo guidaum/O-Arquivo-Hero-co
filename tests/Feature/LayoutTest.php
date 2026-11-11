@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\UserRole;
+use App\Enums\ViewMode;
 use App\Models\Character;
 use App\Models\GameSession;
 use App\Models\RoleFeature;
@@ -174,6 +175,73 @@ class LayoutTest extends TestCase
         // Sem campanhas mestradas, o modo Mestre salvo não vale para um jogador.
         $this->actingAs(User::factory()->create())->withSession([Navigation::SESSION_KEY => 'gm'])->get('/')
             ->assertSee('Interface do Jogador');
+    }
+
+    public function test_menu_is_grouped_by_context(): void
+    {
+        $this->actingAs(User::factory()->create())->get('/')
+            ->assertOk()
+            ->assertSeeInOrder(['Personagens', 'Minhas Lendas', 'Ficha Geral', 'Mesa de Jogo', 'Diário de Sessão'], false)
+            ->assertDontSee('Ferramentas do Mestre');
+
+        $this->actingAs(User::factory()->gm()->create())->get('/')
+            ->assertSee('Ferramentas do Mestre');
+    }
+
+    public function test_bottom_bar_shortcuts_follow_view_mode_and_current_page(): void
+    {
+        $none = static fn (array $item): bool => false;
+
+        $player = new Navigation(User::factory()->create(), ViewMode::Player);
+        $this->assertSame(
+            ['legends', 'characterSheet', 'inventory', 'journal'],
+            array_column($player->shortcuts($none), 'feature'),
+        );
+
+        // A tela atual sempre aparece na barra, no lugar do último atalho.
+        $onDungeon = static fn (array $item): bool => $item['feature'] === 'dungeon';
+        $this->assertSame(
+            ['legends', 'characterSheet', 'inventory', 'dungeon'],
+            array_column($player->shortcuts($onDungeon), 'feature'),
+        );
+
+        $gm = new Navigation(User::factory()->gm()->create(), ViewMode::Gm);
+        $this->assertSame(
+            ['legends', 'journal', 'dungeon', 'mapManager'],
+            array_column($gm->shortcuts($none), 'feature'),
+        );
+    }
+
+    public function test_disabled_shortcut_is_replaced_by_the_next_item(): void
+    {
+        RoleFeature::query()->create(['role' => UserRole::User, 'feature' => 'inventory', 'enabled' => false]);
+
+        $player = new Navigation(User::factory()->create(), ViewMode::Player);
+
+        $this->assertSame(
+            ['legends', 'characterSheet', 'journal', 'dungeon'],
+            array_column($player->shortcuts(static fn (array $item): bool => false), 'feature'),
+        );
+    }
+
+    public function test_drawer_has_account_actions_for_small_screens(): void
+    {
+        $this->actingAs(User::factory()->create())->get('/')
+            ->assertOk()
+            ->assertSee('Pular para o conteúdo')
+            ->assertSee('sidebar__account', false)
+            ->assertSee('Sair da Sessão')
+            ->assertSee('data-sidebar-toggle aria-controls="sidebar"', false);
+    }
+
+    public function test_page_header_back_link(): void
+    {
+        $this->blade('<x-page-header title="Loja" back="/inventario/1" back-label="Voltar ao Inventário" />')
+            ->assertSee('href="/inventario/1"', false)
+            ->assertSee('Voltar ao Inventário')
+            ->assertSee('page-header__back', false);
+
+        $this->blade('<x-page-header title="Loja" />')->assertDontSee('page-header__back', false);
     }
 
     public function test_modal_component(): void

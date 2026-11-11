@@ -535,16 +535,19 @@
     text-align: center;
 }
 
-/* No celular, o chat fica acima da navegação inferior. */
+/* Tablet e celular: o chat fica acima da barra inferior (--bottom-nav-space,
+   app.css) e o painel ocupa a largura da tela até logo abaixo do cabeçalho. */
 @media (max-width: 1023px) {
     .chat {
-        right: 1rem;
-        bottom: 6.25rem;
+        right: max(1rem, var(--safe-right));
+        bottom: calc(var(--bottom-nav-space) + 0.75rem);
     }
 
     .chat-panel,
     .chat-panel--expanded {
-        width: calc(100vw - 2rem);
-        height: calc(100dvh - 11rem);
+        width: calc(100vw - 2rem - var(--safe-left) - var(--safe-right));
+        max-width: 38rem;
+        height: calc(100dvh - var(--header-height) - var(--safe-top) - var(--bottom-nav-space) - 1.5rem);
+        border-radius: var(--radius-lg);
     }
 }

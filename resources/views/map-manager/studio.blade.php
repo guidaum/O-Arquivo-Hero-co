@@ -8,11 +8,7 @@
         <link rel="stylesheet" href="@asset('css/sketch-studio.css')">
     @endpush
 
-    <x-page-header title="Estúdio de Esboços" :subtitle="'Forja de mapas · '.$session->name">
-        <x-slot:actions>
-            <a class="button button--secondary button--pill" href="{{ route('map-manager.index', ['campanha' => $session->id]) }}"><x-icon name="arrow-right" /> Voltar aos mapas</a>
-        </x-slot:actions>
-    </x-page-header>
+    <x-page-header title="Estúdio de Esboços" :subtitle="'Forja de mapas · '.$session->name" :back="route('map-manager.index', ['campanha' => $session->id])" back-label="Voltar aos mapas" />
 
     <div class="studio" data-studio data-config="{{ json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}">
         <section class="studio__board glass">

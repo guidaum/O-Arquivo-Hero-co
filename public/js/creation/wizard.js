@@ -8,7 +8,7 @@
 
 import { abilityCost, derivedStats, formulaStats } from '../core/formula.js';
 import { attributeModifiers, effectiveModifier, isDisadvantage, targetDisplayName, traitBalance, traitCost } from '../core/traits.js';
-import { el, icon, replace } from '../core/dom.js';
+import { el, icon, replace, scrollIntoBar } from '../core/dom.js';
 import { postJson } from '../core/http.js';
 
 const form = document.querySelector('[data-creation]');
@@ -513,6 +513,10 @@ if (form) {
 
         render();
         form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // No celular a barra de passos rola na horizontal: mantém o passo atual à vista.
+        const stepper = form.querySelector('.stepper');
+        scrollIntoBar(stepper, stepper?.querySelector('.is-current'), 'smooth');
     }
 
     form.querySelectorAll('[data-go-step]').forEach((button) => button.addEventListener('click', () => goTo(Number(button.dataset.goStep))));

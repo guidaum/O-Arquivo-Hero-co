@@ -1,7 +1,7 @@
 @props(['mode', 'large' => false])
 
 {{-- Alternador "Modo Mestre / Modo Jogador". $mode é App\Enums\ViewMode. --}}
-<div @class(['segmented', 'segmented--large' => $large]) role="group" aria-label="Modo de visão">
+<div {{ $attributes->class(['segmented', 'segmented--large' => $large]) }} role="group" aria-label="Modo de visão">
     @foreach ([\App\Enums\ViewMode::Gm, \App\Enums\ViewMode::Player] as $option)
         <form method="POST" action="{{ route('view-mode.update') }}">
             @csrf

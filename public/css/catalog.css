@@ -65,7 +65,7 @@
 .stat-inputs {
     display: grid;
     gap: 0.75rem;
-    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(6.5rem, 100%), 1fr));
 }
 
 .stat-input {
@@ -136,8 +136,31 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
+    /* Acima da barra inferior do tablet/celular (app.css). */
     .form-actions--sticky {
-        bottom: 6.5rem;
+        bottom: calc(var(--bottom-nav-space) + 0.75rem);
+    }
+}
+
+@media (max-width: 767px) {
+    /* Abas das bibliotecas em uma linha rolável, em vez de várias linhas. */
+    .catalog-header .tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+    }
+
+    .catalog-header {
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.5rem;
+    }
+
+    .catalog-header__title {
+        font-size: 1.5rem;
+    }
+
+    .form-actions--sticky {
+        padding: 0.75rem 1rem;
     }
 }
 

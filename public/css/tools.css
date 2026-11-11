@@ -790,33 +790,32 @@
     background: var(--danger-strong);
 }
 
-/* Celular: acima da navegação inferior. */
+/* Tablet e celular: botão acima da barra inferior (--bottom-nav-space,
+   app.css); painéis acima do botão, até logo abaixo do cabeçalho. */
 @media (max-width: 1023px) {
     .action-menu__fab {
-        right: 1rem;
-        bottom: 6.25rem;
+        right: max(1rem, var(--safe-right));
+        bottom: calc(var(--bottom-nav-space) + 0.75rem);
     }
 
     .tool-panel,
-    .chat.chat--embedded {
-        right: 1rem;
-        bottom: 10.5rem;
+    .chat.chat--embedded,
+    .action-menu__toast {
+        right: max(1rem, var(--safe-right));
+        bottom: calc(var(--bottom-nav-space) + 5rem);
     }
 
     .tool-panel,
     .chat--embedded .chat-panel,
     .chat--embedded .chat-panel--expanded {
-        width: calc(100vw - 2rem);
-        max-height: calc(100dvh - 15rem);
+        width: calc(100vw - 2rem - var(--safe-left) - var(--safe-right));
+        max-width: 38rem;
+        max-height: calc(100dvh - var(--header-height) - var(--safe-top) - var(--bottom-nav-space) - 5.75rem);
+        border-radius: var(--radius-lg);
     }
 
     .chat--embedded .chat-panel {
-        height: calc(100dvh - 15rem);
-    }
-
-    .action-menu__toast {
-        right: 1rem;
-        bottom: 10.5rem;
+        height: calc(100dvh - var(--header-height) - var(--safe-top) - var(--bottom-nav-space) - 5.75rem);
     }
 }
 

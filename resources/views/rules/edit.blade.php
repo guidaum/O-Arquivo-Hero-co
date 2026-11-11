@@ -34,11 +34,7 @@
             <link rel="stylesheet" href="@asset('css/catalog.css')">
         @endpush
 
-        <x-page-header :title="'Regras da Campanha'" :subtitle="$session->name">
-            <x-slot:actions>
-                <a class="button button--secondary button--pill" href="{{ route('gm.sessions.show', $session) }}">Voltar ao Painel do Mestre</a>
-            </x-slot:actions>
-        </x-page-header>
+        <x-page-header title="Regras da Campanha" :subtitle="$session->name" :back="route('gm.sessions.show', $session)" back-label="Voltar ao Painel do Mestre" />
 
         @unless ($ruleSet->exists)
             <p class="alert">Esta campanha ainda usa as regras globais. Os valores abaixo são uma cópia delas: ao salvar, a campanha passa a ter regras próprias.</p>

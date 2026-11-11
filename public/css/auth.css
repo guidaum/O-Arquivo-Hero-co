@@ -4,9 +4,10 @@
     position: relative;
     display: flex;
     min-height: 100vh;
+    min-height: 100dvh;
     align-items: center;
     justify-content: center;
-    padding: 1.5rem;
+    padding: max(1.5rem, var(--safe-top)) max(1.5rem, var(--safe-right)) max(1.5rem, var(--safe-bottom)) max(1.5rem, var(--safe-left));
     overflow: hidden;
 }
 

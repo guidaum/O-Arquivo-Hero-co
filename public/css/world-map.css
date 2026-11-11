@@ -758,7 +758,7 @@
 
 .pin-form__categories {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(8.5rem, 100%), 1fr));
     gap: 0.4rem;
 }
 
@@ -823,8 +823,23 @@
 
 /* Celular: a lista vira uma faixa inferior recolhível. */
 @media (max-width: 1023px) {
+    /* Tela de mapa usa toda a altura abaixo do cabeçalho (sem barra inferior). */
     .world-map {
-        height: calc(100dvh - var(--header-height) - 6rem);
+        height: calc(100dvh - var(--header-height) - var(--safe-top));
+    }
+
+    .world-map__sidebar {
+        padding-bottom: calc(1rem + var(--safe-bottom));
+    }
+
+    /* Masmorra: o botão do menu de ações fica no canto inferior direito;
+       a lista ganha folga para ele e o zoom sobe acima dele. */
+    .dungeon .world-map__sidebar {
+        padding-bottom: calc(5rem + var(--safe-bottom));
+    }
+
+    .dungeon.world-map--sidebar-closed .world-map__controls {
+        bottom: calc(5rem + var(--safe-bottom));
     }
 
     .world-map__tools .tool-toggle span {
@@ -854,5 +869,54 @@
     .world-map--sidebar-closed .world-map__controls,
     .world-map--sidebar-closed .world-map__coords {
         bottom: 0.75rem;
+    }
+}
+
+/* Celular: barra superior em duas linhas fixas (mapa e campanha; abaixo as
+   ferramentas, roláveis na horizontal) em vez de várias linhas sobre o mapa. */
+@media (max-width: 639px) {
+    .world-map__bar {
+        gap: 0.4rem 0.5rem;
+        padding: 0.5rem 0.75rem;
+        padding-left: max(0.75rem, var(--safe-left));
+    }
+
+    .world-map__selector,
+    .world-map__session {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .world-map__session .select {
+        width: 100%;
+        min-width: 0;
+        max-width: 11rem;
+    }
+
+    .world-map__identity small {
+        max-width: 8rem;
+    }
+
+    .world-map__tools {
+        min-width: 0;
+        flex: 1 1 100%;
+        margin-left: 0;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .world-map__tools::-webkit-scrollbar {
+        display: none;
+    }
+
+    .world-map__tools > * {
+        flex-shrink: 0;
+    }
+
+    .tool-toggle {
+        min-height: var(--touch-target);
+        padding-inline: 0.65rem;
     }
 }

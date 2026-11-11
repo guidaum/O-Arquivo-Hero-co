@@ -18,7 +18,7 @@
         <link rel="stylesheet" href="@asset('css/gm-session.css')">
     @endpush
 
-    <x-page-header :title="$session->name" subtitle="Painel do Mestre">
+    <x-page-header :title="$session->name" subtitle="Painel do Mestre" :back="route('dashboard')" back-label="Minhas Campanhas">
         <x-slot:badges>
             <span class="badge badge--pill badge--gm"><x-icon name="shield" :size="12" /> Mestre da campanha</span>
             @unless ($session->active)

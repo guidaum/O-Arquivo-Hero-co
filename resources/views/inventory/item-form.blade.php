@@ -9,11 +9,7 @@
         <link rel="stylesheet" href="@asset('css/catalog.css')">
     @endpush
 
-    <x-page-header :title="$editing ? 'Editar Item' : 'Adicionar Item Personalizado'" :subtitle="'Inventário de '.$character->name">
-        <x-slot:actions>
-            <a class="button button--secondary button--pill" href="{{ route('inventory.show', [$character, 'categoria' => $item->categoryKey()]) }}">Voltar ao Inventário</a>
-        </x-slot:actions>
-    </x-page-header>
+    <x-page-header :title="$editing ? 'Editar Item' : 'Adicionar Item Personalizado'" :subtitle="'Inventário de '.$character->name" :back="route('inventory.show', [$character, 'categoria' => $item->categoryKey()])" back-label="Voltar ao Inventário" />
 
     <form class="catalog-form glass" method="POST" enctype="multipart/form-data" action="{{ $editing ? route('inventory.items.update', [$character, $item]) : route('inventory.items.store', $character) }}">
         @csrf

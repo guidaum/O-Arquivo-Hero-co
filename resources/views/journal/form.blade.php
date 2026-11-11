@@ -15,11 +15,7 @@
         <link rel="stylesheet" href="@asset('css/journal.css')">
     @endpush
 
-    <x-page-header :title="$editing ? 'Editar Registro' : 'Novo Registro'" subtitle="Diário de Sessão">
-        <x-slot:actions>
-            <a class="button button--secondary button--pill" href="{{ $editing ? route('journal.index', ['registro' => $entry->id]) : route('journal.index') }}">Voltar ao Diário</a>
-        </x-slot:actions>
-    </x-page-header>
+    <x-page-header :title="$editing ? 'Editar Registro' : 'Novo Registro'" subtitle="Diário de Sessão" :back="$editing ? route('journal.index', ['registro' => $entry->id]) : route('journal.index')" back-label="Voltar ao Diário" />
 
     @if ($errors->any())
         <div class="alert alert--error" role="alert">Verifique os campos destacados. {{ $errors->first() }}</div>

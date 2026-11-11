@@ -132,7 +132,7 @@
 
 .pick-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
     gap: 0.75rem;
     max-height: 32rem;
     overflow-y: auto;
@@ -349,7 +349,7 @@
 
 .derived-preview {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(6.5rem, 100%), 1fr));
     gap: 0.6rem;
     margin: 0;
 }
@@ -390,7 +390,7 @@
 
 .review {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr));
     gap: 1rem;
 }
 
@@ -475,6 +475,41 @@
 }
 
 @media (max-width: 560px) {
+    /* Passos compactos: só o número, com o nome apenas no passo atual. */
+    .stepper__step:not(.is-current) .stepper__label {
+        display: none;
+    }
+
+    .stepper li {
+        flex: 0 0 auto;
+    }
+
+    .stepper li:has(.is-current) {
+        flex: 1 0 auto;
+    }
+
+    /* Voltar/Avançar ficam ao alcance do polegar, acima da barra inferior. */
+    .creation-nav {
+        position: sticky;
+        bottom: calc(var(--bottom-nav-space) + 0.5rem);
+        z-index: 5;
+        padding: 0.625rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--radius-lg);
+        background: var(--glass-modal-bg);
+        box-shadow: var(--shadow-strong);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+    }
+
+    .creation-nav .button {
+        flex: 1;
+    }
+
+    .creation-nav [data-prev] {
+        margin-right: 0;
+    }
+
     .creation-step {
         padding: 1.1rem;
     }

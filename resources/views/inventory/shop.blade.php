@@ -4,7 +4,7 @@
         <link rel="stylesheet" href="@asset('css/inventory.css')">
     @endpush
 
-    <x-page-header title="Loja do Mercador" :subtitle="'Comprando para '.$character->name">
+    <x-page-header title="Loja do Mercador" :subtitle="'Comprando para '.$character->name" :back="route('inventory.show', $character)" back-label="Voltar ao Inventário">
         <x-slot:actions>
             <span class="inventory-stat glass">
                 <span class="inventory-stat__icon inventory-stat__icon--gold"><x-icon name="coins" :size="20" /></span>
@@ -13,7 +13,6 @@
                     <span class="inventory-stat__value">{{ number_format($character->money, 0, ',', '.') }} <small>MO</small></span>
                 </span>
             </span>
-            <a class="button button--secondary button--pill" href="{{ route('inventory.show', $character) }}">Voltar ao Inventário</a>
         </x-slot:actions>
     </x-page-header>
 

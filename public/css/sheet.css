@@ -167,6 +167,28 @@
     font-size: 1.5rem;
 }
 
+/* Atalhos das seções: ficam presos abaixo do cabeçalho ao rolar. */
+
+.sheet-sections {
+    position: sticky;
+    top: calc(var(--header-height) + var(--safe-top) + 0.5rem);
+    z-index: 20;
+    margin-bottom: 1.5rem;
+    background: var(--glass-modal-bg);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.sheet-sections .tabs__link {
+    padding: 0.5rem 1rem;
+}
+
+.sheet-sections .tabs__link[aria-current="location"] {
+    background: var(--tab-color);
+    color: var(--bg-primary);
+}
+
 /* Colunas */
 
 .sheet-grid {
@@ -187,7 +209,8 @@
     gap: 1rem;
     padding: 1.75rem;
     border-radius: var(--radius-2xl);
-    scroll-margin-top: calc(var(--header-height) + 1rem);
+    /* Soma ao scroll-padding-top do html (app.css): espaço dos atalhos fixos. */
+    scroll-margin-top: 3.75rem;
 }
 
 .sheet-card__title {
@@ -425,7 +448,7 @@ details > .attribute__summary {
 .talent-grid {
     display: grid;
     gap: 0.75rem;
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
 }
 
 .talent {
@@ -512,6 +535,19 @@ details > .attribute__summary {
 
     .vitals {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 639px) {
+    .sheet-card {
+        padding: 1.25rem;
+        border-radius: var(--radius-xl);
+    }
+
+    .sheet-grid,
+    .sheet-grid__side,
+    .sheet-grid__main {
+        gap: 1.25rem;
     }
 }
 
@@ -659,7 +695,7 @@ details > .attribute__summary {
 
 .campaign-maps {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
     gap: 1rem;
 }
 

@@ -4,17 +4,27 @@
     Layout das páginas autenticadas. $navigation (App\Support\Navigation) vem
     do view composer registrado no AppServiceProvider.
     Use full para telas que ocupam toda a área (mapas), sem margens nem rodapé.
+
+    Navegação responsiva (public/js/core/layout.js):
+    - computador (>= 1024px): menu lateral fixo, recolhível só com ícones;
+    - tablet e celular: menu lateral vira gaveta (botão do cabeçalho ou "Mais")
+      e a barra inferior mostra os atalhos do modo de visão; a gaveta também
+      traz a conta (perfil, modo Mestre/Jogador, sair), que no celular não
+      cabe no cabeçalho.
 --}}
 @php
     $user = $navigation->user();
-    $items = $navigation->items();
+    $isActive = static fn (array $item): bool => request()->routeIs(...$item['active']);
+    $groups = $navigation->groups();
+    $shortcuts = $navigation->shortcuts($isActive);
 @endphp
 
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
     <head>
         <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+        <meta name="theme-color" content="#161311">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="icon-sprite" content="@asset('images/icons.svg')">
 
@@ -28,7 +38,9 @@
         <link rel="stylesheet" href="@asset('css/app.css')">
         @stack('styles')
     </head>
-    <body>
+    <body @class(['has-full-main' => $full])>
+        <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
         <div class="shell">
             <header class="topbar glass">
                 <div class="topbar__start">
@@ -36,7 +48,7 @@
                         <x-icon name="menu" />
                     </button>
 
-                    <a class="brand" href="{{ route('dashboard') }}">
+                    <a class="brand" href="{{ route('dashboard') }}" aria-label="{{ config('app.name') }}: página inicial">
                         <span class="icon-tile"><x-icon name="scroll-text" :size="18" /></span>
                         <span class="brand__title text-glow-arcane">{{ config('app.name') }}</span>
                     </a>
@@ -44,17 +56,17 @@
 
                 <div class="topbar__end">
                     @if ($navigation->canBeGm())
-                        <x-view-mode-toggle :mode="$navigation->viewMode()" />
+                        <x-view-mode-toggle :mode="$navigation->viewMode()" class="hide-mobile" />
                     @endif
 
-                    <button type="button" class="icon-button icon-button--bordered" data-theme-toggle aria-label="Alternar tema">
+                    <button type="button" class="icon-button icon-button--bordered" data-theme-toggle aria-label="Alternar tema" title="Alternar tema claro/escuro">
                         <x-icon name="sun" class="theme-toggle__sun" />
                         <x-icon name="moon" class="theme-toggle__moon" />
                     </button>
 
                     {{-- Menções no chat (NotificationBell.tsx), consultadas por polling. --}}
                     <details class="dropdown notifications" data-dropdown data-notifications data-url="{{ route('notifications.index') }}" data-read-url="{{ route('notifications.read') }}">
-                        <summary class="icon-button" aria-label="Notificações" aria-expanded="false" aria-haspopup="menu">
+                        <summary class="icon-button" aria-label="Notificações" title="Notificações" aria-expanded="false" aria-haspopup="menu">
                             <x-icon name="bell" />
                             <span class="notifications__dot" data-notifications-dot hidden></span>
                         </summary>
@@ -69,8 +81,8 @@
                         </div>
                     </details>
 
-                    <details class="dropdown hide-mobile" data-dropdown>
-                        <summary class="icon-button" aria-label="Preferências" aria-expanded="false" aria-haspopup="menu">
+                    <details class="dropdown hide-touch-nav" data-dropdown>
+                        <summary class="icon-button" aria-label="Preferências" title="Preferências" aria-expanded="false" aria-haspopup="menu">
                             <x-icon name="settings" />
                         </summary>
 
@@ -98,7 +110,7 @@
                         </div>
                     </details>
 
-                    <a class="user-chip" href="{{ route('profile.edit') }}" title="Meu perfil">
+                    <a class="user-chip" href="{{ route('profile.edit') }}" title="Meu perfil" @if (request()->routeIs('profile.*')) aria-current="page" @endif>
                         <span class="user-chip__text hide-mobile">
                             <span class="user-chip__name">
                                 {{ $user->name }}
@@ -116,21 +128,51 @@
 
                 <aside class="sidebar glass" id="sidebar">
                     <nav class="sidebar__nav" aria-label="Menu principal">
-                        @foreach ($items as $item)
-                            <a
-                                class="sidebar__link"
-                                href="{{ route($item['route']) }}"
-                                title="{{ $item['label'] }}"
-                                @if (request()->routeIs($item['active'])) aria-current="page" @endif
-                            >
-                                <x-icon :name="$item['icon']" />
-                                <span class="sidebar__label">{{ $item['label'] }}</span>
-                            </a>
+                        @foreach ($groups as $group)
+                            <div class="sidebar__group" role="group" aria-labelledby="sidebar-group-{{ $loop->index }}">
+                                <p class="sidebar__heading" id="sidebar-group-{{ $loop->index }}">{{ $group['label'] }}</p>
+
+                                @foreach ($group['items'] as $item)
+                                    <a
+                                        class="sidebar__link"
+                                        href="{{ route($item['route']) }}"
+                                        title="{{ $item['label'] }}"
+                                        @if ($isActive($item)) aria-current="page" @endif
+                                    >
+                                        <x-icon :name="$item['icon']" />
+                                        <span class="sidebar__label">{{ $item['label'] }}</span>
+                                    </a>
+                                @endforeach
+                            </div>
                         @endforeach
                     </nav>
+
+                    {{-- Conta: só na gaveta (tablet e celular), onde o cabeçalho não tem espaço. --}}
+                    <div class="sidebar__account">
+                        <a class="sidebar__profile" href="{{ route('profile.edit') }}">
+                            <x-avatar :user="$user" />
+                            <span class="sidebar__profile-text">
+                                <strong>{{ $user->name }}</strong>
+                                <small>Nível {{ $navigation->level() }} · Ver meu perfil</small>
+                            </span>
+                            <x-role-badge :role="$user->role" />
+                        </a>
+
+                        @if ($navigation->canBeGm())
+                            <x-view-mode-toggle :mode="$navigation->viewMode()" large class="sidebar__mode" />
+                        @endif
+
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <button type="submit" class="sidebar__link sidebar__link--danger">
+                                <x-icon name="log-out" />
+                                <span class="sidebar__label">Sair da Sessão</span>
+                            </button>
+                        </form>
+                    </div>
                 </aside>
 
-                <main @class(['main', 'main--full' => $full])>
+                <main id="conteudo" tabindex="-1" @class(['main', 'main--full' => $full])>
                     <div class="main__inner">
                         <x-alert />
 
@@ -144,18 +186,27 @@
                     @endunless
                 </main>
 
-                {{-- Navegação inferior no celular, com os 5 primeiros itens (oculta nas telas de mapa). --}}
+                {{--
+                    Barra inferior (tablet e celular): até 4 atalhos do modo de visão
+                    (a tela atual sempre aparece) e "Mais", que abre o menu completo.
+                    Fica oculta nas telas de mapa, que usam toda a altura.
+                --}}
                 <nav class="bottom-nav glass" aria-label="Atalhos">
-                    @foreach (array_slice($items, 0, 5) as $item)
+                    @foreach ($shortcuts as $item)
                         <a
                             class="bottom-nav__link"
                             href="{{ route($item['route']) }}"
-                            @if (request()->routeIs($item['active'])) aria-current="page" @endif
+                            @if ($isActive($item)) aria-current="page" @endif
                         >
                             <x-icon :name="$item['icon']" />
-                            <span class="bottom-nav__label">{{ strtok($item['label'], ' ') }}</span>
+                            <span class="bottom-nav__label">{{ $item['short'] }}</span>
                         </a>
                     @endforeach
+
+                    <button type="button" class="bottom-nav__link" data-sidebar-toggle aria-controls="sidebar" aria-expanded="false">
+                        <x-icon name="menu" />
+                        <span class="bottom-nav__label">Mais</span>
+                    </button>
                 </nav>
             </div>
         </div>

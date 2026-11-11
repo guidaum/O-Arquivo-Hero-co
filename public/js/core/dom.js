@@ -59,3 +59,15 @@ export function replace(parent, ...children) {
     parent.replaceChildren();
     append(parent, children);
 }
+
+// Centraliza um item dentro de uma barra com rolagem horizontal (abas,
+// passos), sem mover a página. Nada acontece se a barra não rolar.
+export function scrollIntoBar(bar, item, behavior = 'auto') {
+    if (!bar || !item || bar.scrollWidth <= bar.clientWidth) {
+        return;
+    }
+
+    const offset = item.getBoundingClientRect().left - bar.getBoundingClientRect().left + bar.scrollLeft;
+
+    bar.scrollTo({ left: offset - (bar.clientWidth - item.offsetWidth) / 2, behavior });
+}

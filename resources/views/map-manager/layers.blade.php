@@ -8,9 +8,8 @@
         <link rel="stylesheet" href="@asset('css/map-manager.css')">
     @endpush
 
-    <x-page-header :title="$map->name" :subtitle="'Camadas, Névoa & Régua · '.$session->name">
+    <x-page-header :title="$map->name" :subtitle="'Camadas, Névoa & Régua · '.$session->name" :back="$config['backUrl']" back-label="Voltar aos mapas">
         <x-slot:actions>
-            <a class="button button--secondary button--pill" href="{{ $config['backUrl'] }}"><x-icon name="arrow-right" /> Voltar aos mapas</a>
             <button type="button" class="button button--pill" data-layers-save><x-icon name="save" /> Salvar</button>
         </x-slot:actions>
     </x-page-header>

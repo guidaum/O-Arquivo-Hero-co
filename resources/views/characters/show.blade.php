@@ -120,6 +120,13 @@
         <div class="alert alert--error" role="alert">{{ $errors->first() }}</div>
     @endif
 
+    {{-- Atalhos para as seções (a ficha é longa, principalmente no celular); a seção visível fica destacada. --}}
+    <nav class="tabs sheet-sections" aria-label="Seções da ficha" data-scrollspy>
+        @foreach (['dados' => 'Dados', 'atributos' => 'Atributos', 'combate' => 'Combate', 'estado' => 'Estado', 'talentos' => 'Talentos', 'pericias' => 'Perícias', 'poderes' => 'Poderes', 'tracos' => 'Traços', 'equipados' => 'Equipados'] as $anchor => $label)
+            <a class="tabs__link" href="#{{ $anchor }}">{{ $label }}</a>
+        @endforeach
+    </nav>
+
     <div class="sheet-grid">
         {{-- Coluna da esquerda: atributos e combate --}}
         <div class="sheet-grid__side">

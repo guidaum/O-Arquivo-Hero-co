@@ -214,7 +214,7 @@
 .item-grid {
     display: grid;
     gap: 1.25rem;
-    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(17rem, 100%), 1fr));
 }
 
 .item-card {
@@ -374,5 +374,30 @@
     .inventory-nav__shop,
     .inventory-nav__link {
         flex-shrink: 0;
+    }
+}
+
+@media (max-width: 639px) {
+    .inventory-header {
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .inventory-header__title h1 {
+        font-size: 1.625rem;
+        overflow-wrap: anywhere;
+    }
+
+    /* Peso e moedas lado a lado, ocupando a largura da tela. */
+    .inventory-header__stats {
+        display: grid;
+        width: 100%;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+    }
+
+    .inventory-stat {
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
     }
 }
