@@ -21,7 +21,7 @@ use Tests\TestCase;
  * Fase 9a: battlemap da masmorra (tokens, névoa, áreas, marcadores e combate).
  * Grade de teste: 10 × 5 células (cada célula = 10% × 20%).
  */
-class DungeonTest extends TestCase
+class Dungeon2Test extends TestCase
 {
     use RefreshDatabase;
 
