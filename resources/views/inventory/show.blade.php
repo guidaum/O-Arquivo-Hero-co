@@ -118,7 +118,7 @@
 
             <div class="item-grid">
                 @forelse ($items as $item)
-                    <article @class(['item-card', 'glass', 'item-card--equipped' => $item->equipped, 'rarity-border--'.strtolower($item->rarityKey())])>
+                    <article @class(['item-card', 'glass', 'item-card--equipped' => $item->equipped, 'rarity-border--'.strtolower($item->rarityKey())]) data-item-card="{{ $item->id }}">
                         <div class="item-card__top">
                             <span class="item-card__image">
                                 @if ($item->image_url)
@@ -132,7 +132,7 @@
                                 <div class="item-card__badges">
                                     <span class="badge badge--pill rarity rarity--{{ strtolower($item->rarityKey()) }}">{{ $item->rarityLabel() }}</span>
                                     @if ($item->equipped) <span class="badge badge--pill badge--gm">Equipado</span> @endif
-                                    @if ($item->quantity > 1 || $item->isStackable()) <span class="badge badge--pill badge--admin">x{{ $item->quantity }}</span> @endif
+                                    @if ($item->quantity > 1 || $item->isStackable()) <span class="badge badge--pill badge--admin" data-item-quantity>x{{ $item->quantity }}</span> @endif
                                 </div>
                             </div>
                         </div>
@@ -154,7 +154,7 @@
                         @if ($canEdit)
                             <div class="item-card__actions">
                                 @if ($item->damage)
-                                    <form method="POST" action="{{ route('inventory.items.roll', [$character, $item]) }}">
+                                    <form method="POST" action="{{ route('inventory.items.roll', [$character, $item]) }}" data-roll-dialog="Dano · {{ $item->name }}">
                                         @csrf
                                         <button type="submit" class="button button--ember"><x-icon name="dice" :size="16" /> Rolar dano</button>
                                     </form>
@@ -220,6 +220,13 @@
         </x-modal>
 
         <x-catalog.delete-modal type="item" />
+
+        {{-- Rolagem de dano numa janela, sem recarregar; a munição gasta é atualizada na lista. --}}
+        <x-roll-dialog />
+
+        @push('scripts')
+            <script type="module" src="@asset('js/inventory/ammo.js')"></script>
+        @endpush
     @endif
     {{-- Menu de ações: dados, chat da campanha (as rolagens também aparecem nele) e anotações. --}}
     <x-action-menu :session="$character->gameSession" :character="$character" />

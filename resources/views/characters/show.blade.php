@@ -540,6 +540,11 @@
         <x-catalog.delete-modal type="da ficha" />
     @endif
 
+    {{-- Testes rápidos (F, N, D, E): o resultado abre numa janela, sem recarregar a ficha. --}}
+    @if ($canEdit)
+        <x-roll-dialog />
+    @endif
+
     @push('scripts')
         <script type="module" src="@asset('js/sheet/vitals.js')"></script>
     @endpush

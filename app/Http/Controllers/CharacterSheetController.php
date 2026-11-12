@@ -21,6 +21,7 @@ use App\Support\CampaignLibrary;
 use App\Support\Navigation;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -101,7 +102,7 @@ class CharacterSheetController extends Controller
      * Teste rápido "menor é melhor" com dificuldade. O valor-alvo é sempre
      * calculado aqui, nunca recebido do navegador.
      */
-    public function test(Request $request, Character $character, DiceRoller $roller): RedirectResponse
+    public function test(Request $request, Character $character, DiceRoller $roller): RedirectResponse|JsonResponse
     {
         Gate::authorize('update', $character);
 
@@ -122,7 +123,8 @@ class CharacterSheetController extends Controller
 
         // Com campanha, o resultado também vai para o chat da sessão.
         $session = $character->gameSession;
-        if ($session !== null && $request->user()->can('view', $session)) {
+        $postedToChat = $session !== null && $request->user()->can('view', $session);
+        if ($postedToChat) {
             ChatMessage::postRoll(
                 $session,
                 $request->user(),
@@ -135,13 +137,35 @@ class CharacterSheetController extends Controller
             );
         }
 
+        $result = [
+            'target' => $data['target'],
+            'label' => $label,
+            ...$roll->toArray(),
+        ];
+
+        // A ficha rola pela janela de rolagem (x-roll-dialog), sem recarregar a página.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'result' => [
+                    'title' => $target['label'],
+                    'label' => 'Teste '.$difficulty->label(),
+                    'value' => $roll->roll,
+                    'outcome' => match (true) {
+                        $roll->isCritical => 'critical',
+                        $roll->isFumble => 'fumble',
+                        $roll->success => 'success',
+                        default => 'failure',
+                    },
+                    'detail' => $roll->detail(),
+                    'note' => $postedToChat ? 'Enviado ao chat da campanha.' : null,
+                ],
+                'test' => $result,
+            ]);
+        }
+
         return redirect()
             ->to(route('characters.show', $character).'#'.self::anchorFor($data['target']))
-            ->with('test', [
-                'target' => $data['target'],
-                'label' => $label,
-                ...$roll->toArray(),
-            ]);
+            ->with('test', $result);
     }
 
     /**

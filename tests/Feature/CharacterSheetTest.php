@@ -171,6 +171,25 @@ class CharacterSheetTest extends TestCase
             ->assertSessionHas('test', fn (array $test): bool => $test['target'] === 7 && $test['sides'] === 20 && $test['is_fumble']);
     }
 
+    public function test_quick_test_answers_json_for_the_roll_dialog(): void
+    {
+        $this->fakeDice(9);
+
+        $this->actingAs($this->player)
+            ->postJson(route('characters.test', $this->character), ['target' => 'attr:for', 'difficulty' => 'normal'])
+            ->assertOk()
+            ->assertJsonPath('result.value', 9)
+            ->assertJsonPath('result.outcome', 'success')
+            ->assertJsonPath('result.detail', '1D10 <= 14')
+            ->assertJsonPath('result.note', null)
+            ->assertJsonPath('test.target', 14);
+
+        $this->get(route('characters.show', $this->character))
+            ->assertOk()
+            ->assertSee('data-roll-dialog-modal', false)
+            ->assertDontSee('test-result__roll', false);
+    }
+
     public function test_unknown_test_target_is_rejected(): void
     {
         $this->actingAs($this->player)

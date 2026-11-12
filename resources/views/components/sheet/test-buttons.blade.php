@@ -3,8 +3,9 @@
 {{--
     Teste rápido com dificuldade (F, N, D, E), como na ficha antiga. O valor é
     calculado no servidor a partir do alvo ("attr:for", "talent:3", "combat:en"...).
+    O resultado abre na janela de rolagem (x-roll-dialog), que a tela deve incluir.
 --}}
-<form class="test-buttons" method="POST" action="{{ route('characters.test', $character) }}" aria-label="Testar {{ $label }}">
+<form class="test-buttons" method="POST" action="{{ route('characters.test', $character) }}" aria-label="Testar {{ $label }}" data-roll-dialog="Teste · {{ $label }}">
     @csrf
     <input type="hidden" name="target" value="{{ $target }}">
     <x-icon name="dice" :size="16" class="test-buttons__icon" />

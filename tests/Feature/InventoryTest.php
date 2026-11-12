@@ -161,6 +161,27 @@ class InventoryTest extends TestCase
         $this->assertModelMissing($arrows);
     }
 
+    public function test_damage_roll_answers_json_for_the_roll_dialog(): void
+    {
+        $bow = CatalogItem::query()->create(['name' => 'Arco', 'category' => 'weapons']);
+        $arrowsCatalog = CatalogItem::query()->create(['name' => 'Flechas', 'category' => 'ammo']);
+        $arrowsCatalog->relatedItems()->attach($bow);
+        $weapon = $this->item(['name' => 'Arco', 'category' => 'weapons', 'damage' => 'FOR + 2', 'catalog_item_id' => $bow->id]);
+
+        $this->actingAs($this->player)->postJson(route('inventory.items.roll', [$this->character, $weapon]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['roll' => 'FALHA: sem munição para Arco!']);
+
+        $arrows = $this->item(['name' => 'Flechas', 'category' => 'ammo', 'quantity' => 2, 'catalog_item_id' => $arrowsCatalog->id]);
+
+        $this->actingAs($this->player)->postJson(route('inventory.items.roll', [$this->character, $weapon]))
+            ->assertOk()
+            ->assertJsonPath('result.title', 'Dano · Arco')
+            ->assertJsonPath('result.value', 7)
+            ->assertJsonPath('result.outcome', null)
+            ->assertJsonPath('ammo', ['id' => $arrows->id, 'quantity' => 1]);
+    }
+
     public function test_money_never_goes_below_zero(): void
     {
         $this->actingAs($this->player)->put(route('inventory.money', $this->character), ['amount' => 50, 'operation' => 'add']);

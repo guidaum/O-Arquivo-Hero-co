@@ -10,6 +10,7 @@ use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CharacterItem;
 use App\Models\ChatMessage;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -179,12 +181,13 @@ class InventoryItemController extends Controller
      * Rola o dano da arma com os atributos do personagem. Armas que têm
      * munição no catálogo gastam uma unidade compatível; sem munição, falham.
      */
-    public function roll(Request $request, Character $character, CharacterItem $item, DiceRoller $roller): RedirectResponse
+    public function roll(Request $request, Character $character, CharacterItem $item, DiceRoller $roller): RedirectResponse|JsonResponse
     {
         Gate::authorize('update', $character);
 
+        // ValidationException: volta com o erro no formulário ou 422 na janela de rolagem.
         if (blank($item->damage)) {
-            return back()->withErrors(['roll' => 'Este item não tem dano para rolar.']);
+            throw ValidationException::withMessages(['roll' => 'Este item não tem dano para rolar.']);
         }
 
         // Com campanha, rolagens e avisos de munição também vão para o chat da sessão.
@@ -212,7 +215,7 @@ class InventoryItemController extends Controller
                 if ($ammo === null) {
                     $chat(['type' => ChatMessage::TYPE_SYSTEM, 'text' => '⚠️ A arma de '.$character->name.' ('.$item->name.') falhou! Está sem munição.']);
 
-                    return back()->withErrors(['roll' => 'FALHA: sem munição para '.$item->name.'!']);
+                    throw ValidationException::withMessages(['roll' => 'FALHA: sem munição para '.$item->name.'!']);
                 }
 
                 $remaining = $this->takeOne($ammo);
@@ -232,6 +235,21 @@ class InventoryItemController extends Controller
 
         if (isset($remaining) && $remaining === 0) {
             $chat(['type' => ChatMessage::TYPE_SYSTEM, 'text' => '❗ A munição ('.$ammo->name.') de '.$character->name.' acabou!']);
+        }
+
+        // Inventário: a janela de rolagem mostra o dano e atualiza a munição sem recarregar.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'result' => [
+                    'title' => 'Dano · '.$item->name,
+                    'label' => 'Rolagem de dano',
+                    'value' => $roll->total,
+                    'outcome' => null,
+                    'detail' => ChatMessage::describeRolls($roll->rolls) ?: $roll->detail,
+                    'note' => $ammoMessage,
+                ],
+                'ammo' => isset($ammo, $remaining) ? ['id' => $ammo->id, 'quantity' => $remaining] : null,
+            ]);
         }
 
         return back()->with('roll', [

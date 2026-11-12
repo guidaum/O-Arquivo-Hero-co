@@ -1434,6 +1434,90 @@ button {
     margin-top: 1.5rem;
 }
 
+/* Janela de rolagem (components/roll-dialog.blade.php) */
+
+.roll-dialog__body {
+    --roll-color: var(--arcane);
+
+    display: grid;
+    justify-items: center;
+    gap: 0.375rem;
+    text-align: center;
+}
+
+.roll-dialog__body p {
+    margin: 0;
+}
+
+.roll-dialog__body[data-outcome="success"] { --roll-color: var(--success); }
+.roll-dialog__body[data-outcome="failure"] { --roll-color: var(--ember); }
+.roll-dialog__body[data-outcome="critical"] { --roll-color: var(--gold); }
+.roll-dialog__body[data-outcome="fumble"],
+.roll-dialog__body[data-outcome="error"] { --roll-color: var(--danger); }
+
+.roll-dialog__die {
+    display: flex;
+    width: 5.5rem;
+    height: 5.5rem;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+    border: 2px solid color-mix(in srgb, var(--roll-color) 45%, transparent);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--roll-color) 14%, transparent);
+    box-shadow: 0 0 24px color-mix(in srgb, var(--roll-color) 25%, transparent);
+    color: var(--roll-color);
+    font-family: var(--font-serif);
+    font-size: 2.75rem;
+    transition: color var(--transition), border-color var(--transition), background-color var(--transition);
+}
+
+.roll-dialog__body:not(.is-rolling) .roll-dialog__die {
+    animation: roll-dialog-land 0.35s ease-out;
+}
+
+.roll-dialog__body.is-rolling .roll-dialog__die {
+    animation: roll-dialog-spin 0.5s linear infinite;
+}
+
+.roll-dialog__outcome {
+    color: var(--roll-color);
+    font-family: var(--font-serif);
+    font-size: 1.5rem;
+}
+
+.roll-dialog__detail {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.roll-dialog__note {
+    color: var(--gold);
+    font-size: 0.8rem;
+}
+
+.roll-dialog__body .alert {
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+@keyframes roll-dialog-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes roll-dialog-land {
+    0% { transform: scale(0.7); }
+    70% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .roll-dialog__body .roll-dialog__die,
+    .roll-dialog__body.is-rolling .roll-dialog__die {
+        animation: none;
+    }
+}
+
 /* Formulários */
 
 .form {
