@@ -173,7 +173,9 @@ class CampaignLibraryTest extends TestCase
         $this->assertSame($this->session->id, $talent->game_session_id);
         $this->assertTrue($this->library()->allows(Talent::class, $talent->id));
         $this->assertFalse($this->library($other)->allows(Talent::class, $talent->id));
-        $this->actingAs($this->gm)->get(route('catalog.talents.index'))->assertDontSee('Navegação');
+        // Pela lista, não pelo HTML: o aviso de sucesso do envio anterior também cita o nome.
+        $this->actingAs($this->gm)->get(route('catalog.talents.index'))
+            ->assertViewHas('talents', static fn ($talents): bool => collect($talents->items())->doesntContain('id', $talent->id));
     }
 
     public function test_sheet_uses_the_campaign_version_of_its_skills(): void

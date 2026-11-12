@@ -113,7 +113,7 @@ class SkillController extends Controller
         // Sai da base e das campanhas novas; as campanhas existentes ficam com a sua cópia.
         DB::transaction(static fn () => CampaignLibrary::baseArchived($skill));
 
-        return back()->with('status', 'Perícia "'.$skill->name.'" excluída da base. As campanhas que já o usavam continuam com ele.');
+        return back()->with('status', 'Perícia "'.$skill->name.'" excluída da base. As campanhas que já a usavam continuam com ela.');
     }
 
     protected function libraryModel(): string

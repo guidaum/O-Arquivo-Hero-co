@@ -108,7 +108,9 @@ class CatalogTest extends TestCase
         // Excluir da base arquiva: sai do catálogo, mas as campanhas existentes ficam com a sua cópia.
         $this->actingAs($this->gm)->delete(route('catalog.skills.destroy', $skill))->assertSessionHas('status');
         $this->assertNotNull($skill->fresh()->archived_at);
-        $this->actingAs($this->gm)->get('/catalogos/pericias')->assertDontSee('Furtividade Avançada');
+        // Pela lista, não pelo HTML: o aviso "Perícia ... excluída da base" também cita o nome.
+        $this->actingAs($this->gm)->get('/catalogos/pericias')
+            ->assertViewHas('skills', static fn ($skills): bool => collect($skills->items())->doesntContain('id', $skill->id));
         $this->actingAs($this->gm)->get(route('catalog.skills.edit', $skill))->assertNotFound();
     }
 

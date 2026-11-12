@@ -121,7 +121,9 @@ class AuthorizationTest extends TestCase
 
         $this->assertTrue($this->player->can('delete', $suggestion));
         $this->assertFalse($this->outsider->can('delete', $suggestion));
-        $this->assertTrue($this->gm->can('review', $suggestion));
+        // Revisar sugestões de jogadores é só do administrador (a aprovada entra na base).
+        $this->assertTrue(User::factory()->admin()->create()->can('review', $suggestion));
+        $this->assertFalse($this->gm->can('review', $suggestion));
         $this->assertFalse($this->player->can('review', $suggestion));
     }
 
