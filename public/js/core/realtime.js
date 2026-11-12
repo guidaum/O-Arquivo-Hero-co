@@ -12,11 +12,23 @@
 // feed.refresh();          // pede agora (ex.: logo após enviar uma mensagem)
 // feed.setInterval(15000); // muda o ritmo (ex.: chat fechado)
 // feed.stop();
+//
+// O estado da conexão é anunciado no document, e public/js/core/connection.js
+// mostra o aviso no layout: evento 'realtime:status' com detail
+// { feed, state: 'online' | 'unstable' | 'expired' | 'forbidden', status }.
 
 import { getJson } from './http.js';
 
 const HIDDEN_INTERVAL = 30000;
 const MAX_BACKOFF = 60000;
+// Falhas seguidas antes de avisar que a conexão está instável (uma só é ruído).
+const UNSTABLE_AFTER = 2;
+
+let feeds = 0;
+
+function announce(feed, state, status = null) {
+    document.dispatchEvent(new CustomEvent('realtime:status', { detail: { feed, state, status } }));
+}
 
 export function subscribe(url, { interval = 5000, params = () => ({}), onData, onError } = {}) {
     // Página dentro de um popup (html.is-embedded, theme-init.js): quem consulta
@@ -25,6 +37,7 @@ export function subscribe(url, { interval = 5000, params = () => ({}), onData, o
         return { refresh() {}, setInterval() {}, stop() {} };
     }
 
+    const feed = ++feeds;
     let current = interval;
     let failures = 0;
     let timer = null;
@@ -47,15 +60,24 @@ export function subscribe(url, { interval = 5000, params = () => ({}), onData, o
         running = true;
 
         try {
-            onData?.(await getJson(url, params()));
+            const body = await getJson(url, params());
+            if (failures >= UNSTABLE_AFTER) announce(feed, 'online');
             failures = 0;
+            onData?.(body);
         } catch (error) {
             failures = Math.min(failures + 1, 5);
             onError?.(error);
 
             // Sessão expirada ou acesso removido: não adianta insistir.
-            if (error.status === 401 || error.status === 403 || error.status === 419) {
+            if (error.status === 401 || error.status === 419) {
                 stopped = true;
+                announce(feed, 'expired', error.status);
+            } else if (error.status === 403) {
+                stopped = true;
+                announce(feed, 'forbidden', error.status);
+            } else if (failures === UNSTABLE_AFTER) {
+                // Sem resposta (rede) ou erro do servidor: segue tentando, com recuo.
+                announce(feed, 'unstable', error.status ?? null);
             }
         } finally {
             running = false;
@@ -83,6 +105,7 @@ export function subscribe(url, { interval = 5000, params = () => ({}), onData, o
             schedule();
         },
         stop() {
+            if (failures >= UNSTABLE_AFTER) announce(feed, 'online');
             stopped = true;
             clearTimeout(timer);
             document.removeEventListener('visibilitychange', onVisibility);

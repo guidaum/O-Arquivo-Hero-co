@@ -17,6 +17,7 @@ use App\Models\GameSessionMap;
 use App\Models\MapDrawing;
 use App\Models\MapPing;
 use App\Models\User;
+use App\Support\BoardVersion;
 use App\Support\Navigation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -100,27 +101,16 @@ class DungeonController extends Controller
         $scope = static fn ($query) => $query->where('game_session_id', $gameSession->id)->where('campaign_map_id', $campaignMap->id);
 
         $pivot = $gameSession->maps()->whereKey($campaignMap->id)->first()?->pivot;
-        $fog = $campaignMap->fogIn($gameSession, $pivot?->layer_settings);
         $atmosphere = DungeonAtmosphere::query()->tap($scope)->first();
 
-        // Tokens vêm sempre (são poucos por mapa): a versão usa o conteúdo deles,
-        // e não só max(updated_at), que tem resolução de segundos e perdia
-        // movimentos feitos no mesmo segundo; o retrato atual da ficha também conta.
-        $allTokens = DungeonToken::query()->tap($scope)
-            ->with(DungeonToken::BOARD_RELATIONS)
-            ->orderBy('id')
-            ->get();
-
+        // Tokens, AoEs, marcadores, desenhos e névoa trocam a versão do tabuleiro
+        // no cache a cada escrita (App\Support\BoardVersion), então "nada mudou"
+        // custa poucas consultas. Camadas, combate/clima (milissegundos) e a
+        // grade do mapa entram pelos próprios updated_at, já carregados aqui.
         $version = md5(implode('|', [
-            md5($allTokens->map(static fn (DungeonToken $token): string => implode(',', [
-                $token->id, $token->x, $token->y, $token->hp, $token->max_hp, $token->initiative, $token->size,
-                $token->is_hidden ? 1 : 0, $token->name, $token->color, $token->user_id,
-                implode(';', (array) $token->conditions), $token->avatar_path, $token->character?->image_path,
-                $token->last_moved_by, $token->updated_at,
-            ]))->implode('|')),
-            ...array_map(static fn (string $model): string => (string) $model::query()->tap($scope)->count().'@'.$model::query()->tap($scope)->max('updated_at'), [DungeonAoe::class, DungeonMarker::class, MapDrawing::class]),
-            DungeonFog::query()->tap($scope)->max('updated_at'),
-            $atmosphere?->updated_at,
+            BoardVersion::fingerprint($gameSession->id, $campaignMap->id),
+            $campaignMap->updated_at,
+            $atmosphere?->updated_at?->format('Y-m-d H:i:s.v'),
             $pivot?->updated_at,
             $isGm ? 'gm' : 'player',
         ]));
@@ -133,6 +123,12 @@ class DungeonController extends Controller
         if ($request->query('versao') === $version) {
             return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);
         }
+
+        $fog = $campaignMap->fogIn($gameSession, $pivot?->layer_settings);
+        $allTokens = DungeonToken::query()->tap($scope)
+            ->with(DungeonToken::BOARD_RELATIONS)
+            ->orderBy('id')
+            ->get();
 
         $cols = $campaignMap->gridCols();
         $rows = $campaignMap->gridRows();

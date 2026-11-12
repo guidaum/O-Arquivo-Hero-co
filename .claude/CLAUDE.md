@@ -590,6 +590,13 @@ GM audio (phase 9c, reference: `App\Support\Sounds`, `SoundBoardController`, `Am
 * browsers only play audio after a click, so listening is an opt-in per participant (`localStorage`: track, GM effects, volume); the 6 procedural soundscapes are ported to `core/ambience.js` (custom tracks loop and fall back to the cavern); the legacy per-map soundscapes imported in `dungeon_atmospheres` are not used;
 * dungeon weather (`none`, `rain`, `fog`, `embers`, `snow`) is per map: `PUT .../masmorra/clima` (GM), returned as `weather` in the dungeon state and drawn in screen space by `dungeon/weather.js` (one still frame with `prefers-reduced-motion`).
 
+Polishing (reference: `App\Support\BoardVersion`, `App\Support\HttpErrors`, `public/js/core/connection.js`):
+
+* the dungeon state version comes from `BoardVersion::fingerprint()` (cache value swapped after commit on every write, mixed with a 30 s safety window) plus the map, pivot and atmosphere `updated_at`; board models (`DungeonToken`, `DungeonAoe`, `DungeonMarker`, `MapDrawing`, `DungeonFog`) use `Concerns\BumpsBoardVersion`; **mass `query()->delete()/update()` on them must call `BoardVersion::bump($sessionId, $mapId)`**; a character portrait change bumps the boards of its tokens;
+* `realtime.js` announces `realtime:status` (`online`, `unstable` after 2 failures, `expired` on 401/419, `forbidden` on 403); `connection.js` shows the layout banner (`[data-connection-banner]`) with a reload button;
+* error pages live in `resources/views/errors/` (one file per code shipped by the framework, plus `4xx`/`5xx`), all rendering `x-error-page` on the guest layout; texts come from `HttpErrors`, which also answers JSON `HttpException`s in Portuguese (framework English defaults and model class names never reach the user; 5xx never shows the exception message); a custom `abort(403, 'mensagem')` keeps its message;
+* outside production, lazy loading on models from a collection is logged (`Consulta N+1`, once per model/relation per request) instead of thrown; fix the reported cases with eager loads.
+
 Session journal (phase 5c, reference: `JournalEntryController`, `JournalImageController`, `resources/views/journal/`):
 
 * `/diario` shows one selected entry (`?registro=`) with filters by query string: `visao=tudo` (own entries), `visao=campanha&campanha=` (every entry of a campaign the user plays or masters), `visao=personagem&personagem=`;

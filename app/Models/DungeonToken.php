@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\TokenType;
+use App\Models\Concerns\BumpsBoardVersion;
 use App\Models\Concerns\HasPublicFiles;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['firestore_id'])]
 class DungeonToken extends Model
 {
+    use BumpsBoardVersion;
     use HasPublicFiles;
 
     /** Condições (TOKEN_CONDITIONS do sistema antigo): nome, símbolo e cor. */

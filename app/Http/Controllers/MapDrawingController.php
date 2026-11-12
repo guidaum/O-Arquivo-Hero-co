@@ -8,6 +8,7 @@ use App\Http\Controllers\Concerns\AuthorizesMapAccess;
 use App\Models\CampaignMap;
 use App\Models\GameSession;
 use App\Models\MapDrawing;
+use App\Support\BoardVersion;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -85,6 +86,7 @@ class MapDrawingController extends Controller
             ->where('campaign_map_id', $campaignMap->id)
             ->when(! $all, static fn ($query) => $query->where('user_id', $request->user()->id))
             ->delete();
+        BoardVersion::bump($gameSession->id, $campaignMap->id);
 
         return response()->json([
             'message' => $deleted === 0 ? 'Não havia desenhos para limpar.' : ($all ? 'Todos os desenhos foram apagados.' : 'Seus desenhos foram apagados.'),

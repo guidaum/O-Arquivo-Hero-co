@@ -11,7 +11,9 @@ use App\Models\Character;
 use App\Models\DungeonFog;
 use App\Models\DungeonToken;
 use App\Models\GameSession;
+use App\Models\MapDrawing;
 use App\Models\User;
+use App\Support\BoardVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -173,6 +175,61 @@ class DungeonTest extends TestCase
         $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => [0]])->assertOk();
 
         $this->actingAs($this->gm)->withSession(['view_mode' => 'user'])->getJson($this->url('dungeon.state'))->assertJsonCount(0, 'tokens');
+    }
+
+    public function test_state_stays_unchanged_until_the_board_changes(): void
+    {
+        $this->freezeTime();
+        $token = $this->join();
+
+        $version = fn (): string => $this->actingAs($this->player)->getJson($this->url('dungeon.state'))->json('version');
+        $assertChanged = function (string $before, bool $changed): void {
+            $this->actingAs($this->player)->getJson($this->url('dungeon.state', ['versao' => $before]))
+                ->assertOk()
+                ->assertJsonPath('changed', $changed);
+        };
+
+        // Nada mudou: a resposta curta só traz versão e pings.
+        $before = $version();
+        $assertChanged($before, false);
+
+        // Cada tipo de escrita troca a versão, inclusive as exclusões em massa.
+        $this->actingAs($this->player)->putJson($this->url('dungeon.tokens.update', ['token' => $token['id']]), ['x' => 25, 'y' => 50])->assertOk();
+        $assertChanged($before, true);
+
+        $before = $version();
+        $this->actingAs($this->player)->postJson($this->url('dungeon.aoes.store'), ['type' => 'circle', 'color' => '#ef4444', 'x' => 30, 'y' => 40, 'radius_feet' => 10, 'rotation' => 0])->assertCreated();
+        $assertChanged($before, true);
+
+        $before = $version();
+        $this->actingAs($this->gm)->deleteJson($this->url('dungeon.aoes.clear'))->assertOk();
+        $assertChanged($before, true);
+
+        $drawing = new MapDrawing(['points' => [[1, 1], [2, 2]], 'color' => '#ffffff']);
+        $drawing->forceFill(['game_session_id' => $this->session->id, 'campaign_map_id' => $this->map->id, 'user_id' => $this->gm->id])->save();
+        $before = $version();
+        $this->actingAs($this->gm)->deleteJson(route('maps.drawings.clear', [$this->session, $this->map, 'todos' => 1]))->assertOk();
+        $assertChanged($before, true);
+
+        $before = $version();
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => [0]])->assertOk();
+        $assertChanged($before, true);
+
+        // O retrato da ficha aparece no token.
+        $before = $version();
+        $this->character->forceFill(['image_path' => 'https://example.test/novo.png'])->save();
+        $assertChanged($before, true);
+
+        // Personagem excluído leva o token junto.
+        $before = $version();
+        $this->character->deleteWithFiles();
+        $assertChanged($before, true);
+        $this->assertSame(0, DungeonToken::query()->count());
+
+        // Rede de segurança: depois da janela, tudo é reenviado mesmo sem escrita.
+        $before = $version();
+        $this->travel(BoardVersion::SAFETY_SECONDS)->seconds();
+        $assertChanged($before, true);
     }
 
     public function test_tokens_show_the_current_portrait_and_link_the_sheet(): void

@@ -135,6 +135,42 @@
     text-align: center;
 }
 
+/* Páginas de erro (components/error-page.blade.php) */
+
+.error-page {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    text-align: center;
+}
+
+.error-page__icon {
+    color: var(--gold);
+}
+
+.error-page__code {
+    margin: 0;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.error-page__message {
+    max-width: 32ch;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.error-page__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
 .google-button {
     border-color: var(--border);
     background: #ffffff;

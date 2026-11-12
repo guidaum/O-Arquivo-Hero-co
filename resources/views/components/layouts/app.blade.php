@@ -172,6 +172,13 @@
                     </div>
                 </aside>
 
+                {{-- Estado do tempo real (public/js/core/connection.js): sessão expirada, acesso removido ou conexão instável. --}}
+                <div class="connection-banner glass" data-connection-banner role="status" aria-live="polite" hidden>
+                    <x-icon name="wifi-off" :size="18" class="connection-banner__icon" />
+                    <p class="connection-banner__text" data-connection-text></p>
+                    <button type="button" class="button button--small" data-connection-reload hidden>Recarregar</button>
+                </div>
+
                 <main id="conteudo" tabindex="-1" @class(['main', 'main--full' => $full])>
                     <div class="main__inner">
                         <x-alert />
@@ -213,6 +220,7 @@
 
         <script type="module" src="@asset('js/core/theme.js')"></script>
         <script type="module" src="@asset('js/core/layout.js')"></script>
+        <script type="module" src="@asset('js/core/connection.js')"></script>
         <script type="module" src="@asset('js/notifications/bell.js')"></script>
         @stack('scripts')
     </body>

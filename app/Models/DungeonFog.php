@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsBoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['enabled', 'revealed_cells'])]
 class DungeonFog extends Model
 {
+    use BumpsBoardVersion;
+
     /**
      * @return array<string, string>
      */

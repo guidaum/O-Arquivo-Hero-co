@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\BoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -149,6 +150,8 @@ class Character extends Model
             ->all();
 
         DB::transaction(function (): void {
+            // Exclusão em massa não dispara eventos: avisa antes cada tabuleiro afetado.
+            $this->bumpBoards();
             DungeonToken::query()->where('character_id', $this->id)->delete();
             $this->delete();
         });
@@ -156,5 +159,26 @@ class Character extends Model
         if ($files !== []) {
             Storage::disk('public')->delete($files);
         }
+    }
+
+    /**
+     * O retrato da ficha aparece nos tokens: trocá-lo atualiza os tabuleiros
+     * onde o personagem está (App\Support\BoardVersion).
+     */
+    protected static function booted(): void
+    {
+        static::updated(static function (Character $character): void {
+            if ($character->wasChanged('image_path')) {
+                $character->bumpBoards();
+            }
+        });
+    }
+
+    private function bumpBoards(): void
+    {
+        DungeonToken::query()->where('character_id', $this->id)
+            ->distinct()
+            ->get(['game_session_id', 'campaign_map_id'])
+            ->each(static fn (DungeonToken $token) => BoardVersion::bump($token->game_session_id, $token->campaign_map_id));
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsBoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['label', 'category', 'description', 'color', 'x', 'y'])]
 class DungeonMarker extends Model
 {
+    use BumpsBoardVersion;
+
     /** Categorias (DUNGEON_MARKER_CATEGORIES): rótulo, ícone do sprite e cor. */
     public const CATEGORIES = [
         'danger' => ['Perigo / Atenção', 'flame', '#ef4444'],

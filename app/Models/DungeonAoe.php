@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\BumpsBoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['type', 'name', 'color', 'x', 'y', 'target_x', 'target_y', 'radius_feet', 'rotation'])]
 class DungeonAoe extends Model
 {
+    use BumpsBoardVersion;
+
     /**
      * @return array<string, string>
      */

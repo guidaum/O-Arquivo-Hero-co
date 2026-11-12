@@ -9,6 +9,7 @@ use App\Models\CampaignMap;
 use App\Models\DungeonAoe;
 use App\Models\DungeonMarker;
 use App\Models\GameSession;
+use App\Support\BoardVersion;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -77,6 +78,7 @@ class DungeonAnnotationController extends Controller
         Gate::authorize('update', $gameSession);
 
         DungeonAoe::query()->where('game_session_id', $gameSession->id)->where('campaign_map_id', $campaignMap->id)->delete();
+        BoardVersion::bump($gameSession->id, $campaignMap->id);
 
         return response()->json(['message' => 'Todas as áreas de efeito foram removidas.']);
     }

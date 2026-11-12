@@ -2284,6 +2284,59 @@ fieldset.field .radio-group {
     color: var(--danger);
 }
 
+/* Aviso de conexão do tempo real (public/js/core/connection.js): fixo no topo
+   do conteúdo, acima do menu inferior e dos painéis dos mapas. */
+
+.connection-banner {
+    position: fixed;
+    top: calc(var(--header-height) + var(--safe-top) + 0.75rem);
+    left: 50%;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: min(40rem, calc(100% - 2rem));
+    padding: 0.75rem 1rem;
+    border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-strong);
+    color: var(--text-primary);
+    transform: translateX(-50%);
+}
+
+.connection-banner[hidden] {
+    display: none;
+}
+
+.connection-banner[data-state="expired"],
+.connection-banner[data-state="forbidden"] {
+    border-color: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+.connection-banner__icon {
+    flex-shrink: 0;
+    color: var(--gold);
+}
+
+.connection-banner[data-state="expired"] .connection-banner__icon,
+.connection-banner[data-state="forbidden"] .connection-banner__icon {
+    color: var(--danger);
+}
+
+.connection-banner__text {
+    flex: 1;
+    margin: 0;
+    font-size: 0.875rem;
+}
+
+.connection-banner .button {
+    flex-shrink: 0;
+}
+
+html.is-embedded .connection-banner {
+    display: none !important;
+}
+
 /* Responsivo */
 
 /* Sino de notificações (menções no chat) */
