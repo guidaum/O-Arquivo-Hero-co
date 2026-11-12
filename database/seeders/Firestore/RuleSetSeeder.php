@@ -127,6 +127,19 @@ class RuleSetSeeder extends Seeder
         if ($config !== null) {
             $ruleSet = RuleSet::query()->global()->firstOrNew();
             $ruleSet->forceFill(self::attributesFrom($config))->save();
+
+            // Regras de campanha importadas (GameSessionSeeder) passam a ter a base
+            // importada como referência: só mudanças futuras da base viram sugestão.
+            $global = $ruleSet->fresh();
+
+            RuleSet::query()
+                ->whereNotNull('game_session_id')
+                ->whereNull('base_snapshot')
+                ->each(static function (RuleSet $campaign) use ($global): void {
+                    $campaign->base_snapshot = $global->ruleValues();
+                    $campaign->base_version = (int) ($global->version ?? 1);
+                    $campaign->save();
+                });
         }
 
         $features = 0;
