@@ -3103,3 +3103,55 @@ html.is-embedded .main {
 html.is-embedded .sheet-sections {
     top: 0;
 }
+
+/* Balão de descrição (public/js/core/tooltip.js) */
+
+.info-tip-button {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: help;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.info-tip-button:hover,
+.info-tip-button:focus-visible,
+.info-tip-button[aria-expanded="true"] {
+    border-color: var(--arcane);
+    background: color-mix(in srgb, var(--arcane) 14%, transparent);
+    color: var(--arcane);
+}
+
+.info-tip {
+    position: fixed;
+    z-index: 250;
+    display: grid;
+    gap: 0.3rem;
+    max-height: min(22rem, 60vh);
+    overflow-y: auto;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--glass-modal-border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-strong);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.info-tip[hidden] {
+    display: none;
+}
+
+.info-tip__title {
+    font-family: var(--font-serif);
+    font-size: 1rem;
+}

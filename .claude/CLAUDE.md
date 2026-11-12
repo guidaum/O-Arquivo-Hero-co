@@ -513,6 +513,7 @@ Character creation (phase 6c, reference: `CharacterCreationController`, `App\Gam
 * a character is born in an active campaign or in one the user masters; library entries must be global or belong to that campaign; a player creating in someone else's campaign joins it as a player; PV and ATP start full;
 * players suggest skills, powers and traits through `POST /sugestoes` (JSON, `SuggestionSubmissionController`), reviewed by the admin in the admin panel (`/admin/sugestoes?origem=jogadores`);
 * shared JS helpers: `public/js/core/http.js` (`request`, `postJson`, CSRF and Portuguese 422 messages) and `public/js/core/dom.js` (`el`, `replace`, `icon`; text is never inserted as HTML; the sprite URL comes from `<meta name="icon-sprite">` in the app layout).
+* description tooltips: `public/js/core/tooltip.js` (`infoTip(text, label, title)` returns an "i" button; one shared floating bubble, `position: fixed`, so scrolling lists do not clip it; click/tap, plus hover/focus with a mouse; Esc, outside click and scroll close it; call `hideInfoTip()` before re-rendering a list); inside clickable cards keep the button outside the card button (`.pick-wrap`), never nested. Used by traits in character creation.
 
 Sessions, chat and notifications (phase 7, reference: `GameSessionController`, `ChatController`, `NotificationController`, `GmSessionController`, `components/session-chat.blade.php`, `public/js/chat/session-chat.js`):
 

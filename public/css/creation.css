@@ -178,6 +178,22 @@
     font-weight: 700;
 }
 
+/* Cartão com o botão "i" de descrição no canto (fora do botão do cartão). */
+.pick-wrap {
+    position: relative;
+    display: grid;
+}
+
+.pick-wrap.has-info .pick__title {
+    padding-right: 2rem;
+}
+
+.pick-wrap .info-tip-button {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
+}
+
 .pick__meta {
     display: flex;
     flex-wrap: wrap;

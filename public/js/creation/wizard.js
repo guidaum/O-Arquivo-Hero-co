@@ -10,6 +10,7 @@ import { abilityCost, derivedStats, formulaStats } from '../core/formula.js';
 import { attributeModifiers, effectiveModifier, isDisadvantage, targetDisplayName, traitBalance, traitCost } from '../core/traits.js';
 import { el, icon, replace, scrollIntoBar } from '../core/dom.js';
 import { postJson } from '../core/http.js';
+import { hideInfoTip, infoTip } from '../core/tooltip.js';
 
 const form = document.querySelector('[data-creation]');
 
@@ -108,6 +109,7 @@ if (form) {
         const list = library().traits.filter((trait) => (!type || (type === 'disadvantage') === isDisadvantage(trait))
             && (!search || normalize(`${trait.name} ${trait.effect} ${trait.description}`).includes(normalize(search))));
 
+        hideInfoTip();
         replace(form.querySelector('[data-list="traits"]'), list.length === 0
             ? el('p', { class: 'muted' }, 'Nenhum traço encontrado.')
             : list.map((trait) => {
@@ -116,8 +118,11 @@ if (form) {
                 const advantage = !isDisadvantage(trait);
                 const modifier = effectiveModifier(trait);
                 const blocked = !selected && advantage && balance < cost;
+                const description = String(trait.description ?? '').trim();
 
-                return el('button', {
+                // O "i" fica fora do botão do cartão (botão dentro de botão não é válido).
+                return el('div', { class: `pick-wrap${description ? ' has-info' : ''}` },
+                el('button', {
                     type: 'button',
                     class: `pick${selected ? ' is-selected' : ''}${blocked ? ' is-blocked' : ''} pick--${advantage ? 'advantage' : 'disadvantage'}`,
                     'aria-pressed': String(selected),
@@ -128,7 +133,8 @@ if (form) {
                     el('span', { class: `badge badge--pill ${advantage ? 'badge--gm' : 'badge--player'}` }, advantage ? 'Vantagem' : 'Defeito'),
                     el('span', { class: 'badge badge--pill badge--admin' }, `${advantage ? '-' : '+'}${cost} pts`),
                     trait.target ? el('span', {}, `${modifier > 0 ? '+' : ''}${modifier} em ${targetDisplayName(trait.target, (rules() ?? config.sessions[0]?.rules)?.attributes ?? [], library().talents)}`) : null),
-                trait.effect ? el('span', { class: 'pick__text' }, trait.effect) : null);
+                trait.effect ? el('span', { class: 'pick__text' }, trait.effect) : null),
+                description ? infoTip(description, `Descrição de ${trait.name}`, trait.name) : null);
             }));
     }
 

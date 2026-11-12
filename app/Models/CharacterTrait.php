@@ -6,7 +6,7 @@ namespace App\Models;
 
 use App\Enums\TraitType;
 use App\Models\Concerns\CampaignLibraryEntry;
-use IlluminateDatabaseloquentAttributesillable;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
