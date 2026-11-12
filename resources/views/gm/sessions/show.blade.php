@@ -27,8 +27,9 @@
         </x-slot:badges>
 
         <x-slot:actions>
-            <a class="button button--secondary button--pill" href="{{ route('gm.sessions.rules.edit', $session) }}">
-                <x-icon name="sliders" /> Regras da Campanha
+            <a class="button button--secondary button--pill" href="{{ route('gm.sessions.rules.edit', $session) }}" @if ($libraryPending > 0) title="{{ $libraryPending }} sugestão(ões) das Configurações Base" @endif>
+                <x-icon name="sliders" /> Regras & Biblioteca
+                @if ($libraryPending > 0) <span class="tabs__count">{{ $libraryPending }}</span> @endif
             </a>
             @can('use-feature', 'journal')
                 <a class="button button--secondary button--pill" href="{{ route('journal.index', ['visao' => 'campanha', 'campanha' => $session->id]) }}">
@@ -53,6 +54,12 @@
                 @endif
             </a>
         @endforeach
+
+        {{-- Configurações da campanha (regras e bibliotecas herdadas da base) ficam em páginas próprias. --}}
+        <a class="tabs__link" href="{{ route('gm.sessions.rules.edit', $session) }}">
+            <x-icon name="library" :size="16" /> Regras & Biblioteca
+            @if ($libraryPending > 0) <span class="tabs__count" title="Sugestões das Configurações Base">{{ $libraryPending }}</span> @endif
+        </a>
     </nav>
 
     <div class="gm-dashboard" data-gm-dashboard data-config="{{ json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}">

@@ -19,10 +19,15 @@
             ['admin.users.index', 'Usuários', 'users'],
             ['admin.characters.index', 'Personagens', 'sword'],
             ['admin.sessions.index', 'Sessões', 'scroll-text'],
+            ['admin.suggestions.index', 'Sugestões', 'lightbulb'],
         ] as [$route, $label, $icon])
             <a class="tabs__link" href="{{ route($route) }}" @if (request()->routeIs($route)) aria-current="page" @endif>
                 <x-icon :name="$icon" :size="18" />
                 {{ $label }}
+                {{-- Pendências: propostas das campanhas + sugestões dos jogadores. --}}
+                @if ($route === 'admin.suggestions.index' && ($pendingSuggestions = \App\Support\CampaignLibrary::proposals()->count() + \App\Models\Suggestion::query()->where('status', \App\Enums\SuggestionStatus::Pending)->count()) > 0)
+                    <span class="tabs__count">{{ $pendingSuggestions }}</span>
+                @endif
             </a>
         @endforeach
     </nav>

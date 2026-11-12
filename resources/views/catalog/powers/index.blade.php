@@ -51,5 +51,5 @@
 
     {{ $powers->links() }}
 
-    <x-catalog.delete-modal type="poder" warning="Ele também sai das fichas dos personagens que o possuem." />
+    <x-catalog.delete-modal type="poder" warning="Sai do catálogo base e das campanhas criadas depois; as campanhas existentes e as fichas continuam com ele." />
 </x-layouts.app>

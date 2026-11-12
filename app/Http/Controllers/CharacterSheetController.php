@@ -17,9 +17,10 @@ use App\Models\GameSession;
 use App\Models\Power;
 use App\Models\Skill;
 use App\Models\Talent;
+use App\Support\CampaignLibrary;
 use App\Support\Navigation;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -178,43 +179,30 @@ class CharacterSheetController extends Controller
     }
 
     /**
-     * Talentos globais e os da campanha do personagem.
+     * Talentos da campanha do personagem (base com as alterações da campanha).
      *
      * @return Collection<int, Talent>
      */
     private function talentsFor(Character $character): Collection
     {
-        return Talent::query()
-            ->where(static function (Builder $query) use ($character): void {
-                $query->whereNull('game_session_id');
-
-                if ($character->game_session_id !== null) {
-                    $query->orWhere('game_session_id', $character->game_session_id);
-                }
-            })
-            ->orderBy('name')
-            ->get();
+        return CampaignLibrary::for($character->gameSession)->entries(Talent::class)->values();
     }
 
     /**
-     * Itens das bibliotecas que ainda não estão na ficha (globais ou da campanha).
+     * Itens da biblioteca da campanha que ainda não estão na ficha.
      *
-     * @return array{skills: \Illuminate\Support\Collection<int, Skill>, powers: \Illuminate\Support\Collection<int, Power>, traits: \Illuminate\Support\Collection<int, CharacterTrait>}
+     * @return array{skills: Collection<int, Skill>, powers: Collection<int, Power>, traits: Collection<int, CharacterTrait>}
      */
     private function libraryFor(Character $character): array
     {
-        $scope = static function (Builder $query) use ($character): void {
-            $query->whereNull('game_session_id');
-
-            if ($character->game_session_id !== null) {
-                $query->orWhere('game_session_id', $character->game_session_id);
-            }
-        };
+        $library = CampaignLibrary::for($character->gameSession);
 
         return [
-            'skills' => Skill::query()->where($scope)->whereNotIn('id', $character->skills->pluck('id'))->orderBy('name')->get(['id', 'name', 'type', 'purchase_cost']),
-            'powers' => Power::query()->where($scope)->whereNotIn('id', $character->powers->pluck('id'))->orderBy('name')->get(['id', 'name', 'type', 'purchase_cost']),
-            'traits' => CharacterTrait::query()->whereNotIn('id', $character->traits->pluck('id'))->orderBy('type')->orderBy('name')->get(['id', 'name', 'type']),
+            'skills' => $library->entries(Skill::class)->except($character->skills->modelKeys())->values(),
+            'powers' => $library->entries(Power::class)->except($character->powers->modelKeys())->values(),
+            'traits' => $library->entries(CharacterTrait::class)->except($character->traits->modelKeys())
+                ->sortBy(static fn (CharacterTrait $trait): string => ($trait->type?->value ?? '').mb_strtolower($trait->name))
+                ->values(),
         ];
     }
 

@@ -7,9 +7,11 @@ namespace App\Http\Controllers;
 use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CharacterItem;
+use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
@@ -48,12 +50,13 @@ class ShopController extends Controller
         $category = (string) $request->query('categoria');
 
         $items = $this->catalog($character)
-            ->when($search !== '', static fn (Builder $query) => $query->where('name', 'like', '%'.$search.'%'))
-            ->when(array_key_exists($category, CatalogItem::CATEGORIES), static fn (Builder $query) => $query->where('category', $category))
-            ->orderBy('category')
-            ->orderBy('name')
-            ->paginate(24)
-            ->withQueryString();
+            ->when($search !== '', static fn (Collection $items) => $items->filter(
+                static fn (CatalogItem $item): bool => str_contains(mb_strtolower($item->name), mb_strtolower($search)),
+            ))
+            ->when(array_key_exists($category, CatalogItem::CATEGORIES), static fn (Collection $items) => $items->where('category', $category))
+            ->sortBy(static fn (CatalogItem $item): string => $item->category.'|'.mb_strtolower($item->name))
+            ->values();
+        $items = CampaignLibrary::paginate($items, $request, 24);
 
         return view('inventory.shop', [
             'character' => $character,
@@ -67,7 +70,8 @@ class ShopController extends Controller
     {
         Gate::authorize('update', $character);
         abort_unless(self::isOpen($character), 403, 'A loja desta campanha está fechada.');
-        abort_unless($this->catalog($character)->whereKey($catalogItem->id)->exists(), 404);
+        // Item à venda na campanha, com o preço e os dados da versão da campanha.
+        $catalogItem = $this->catalog($character)->get($catalogItem->id) ?? abort(404);
 
         $request->validate(['quantity' => ['nullable', 'integer', 'min:1', 'max:1000']], [], ['quantity' => 'quantidade']);
 
@@ -129,15 +133,17 @@ class ShopController extends Controller
     }
 
     /**
-     * Itens à venda para o personagem.
+     * Itens à venda para o personagem: a biblioteca da campanha, limitada
+     * aos itens escolhidos pelo mestre quando ele escolheu algum.
      *
-     * @return Builder<CatalogItem>
+     * @return Collection<int, CatalogItem>
      */
-    private function catalog(Character $character): Builder
+    private function catalog(Character $character): Collection
     {
         $session = $character->gameSession;
-        $shopIds = $session?->shopItems()->pluck('catalog_items.id') ?? collect();
+        $shopIds = $session?->shopItems()->pluck('catalog_items.id')->all() ?? [];
+        $items = CampaignLibrary::for($session)->entries(CatalogItem::class);
 
-        return CatalogItem::query()->when($shopIds->isNotEmpty(), static fn (Builder $query) => $query->whereIn('id', $shopIds));
+        return $shopIds !== [] ? $items->only($shopIds) : $items;
     }
 }

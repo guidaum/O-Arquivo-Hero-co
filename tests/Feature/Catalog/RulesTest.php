@@ -141,7 +141,7 @@ class RulesTest extends TestCase
 
         $this->actingAs($gm)->get(route('gm.sessions.rules.edit', $session))
             ->assertOk()
-            ->assertSee('ainda usa as regras globais')
+            ->assertSee('usa as Configurações Base como estão')
             ->assertSee('value="(FOR + CON) * 5"', false);
 
         $this->actingAs($gm)->put(route('gm.sessions.rules.update', $session), $this->payload([

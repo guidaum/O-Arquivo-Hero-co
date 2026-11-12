@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\CampaignLibraryEntry;
 use App\Models\Concerns\HasPublicFiles;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Hidden(['firestore_id'])]
 class CatalogItem extends Model
 {
+    use CampaignLibraryEntry;
     use HasPublicFiles;
 
     /** Categorias do sistema antigo (valor gravado => rótulo). */

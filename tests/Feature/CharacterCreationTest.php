@@ -193,7 +193,7 @@ class CharacterCreationTest extends TestCase
         $this->actingAs($this->player)
             ->postJson(route('suggestions.store'), ['type' => 'skill', 'name' => 'Arco Longo', 'category' => 'Luta', 'purchase_cost' => 2])
             ->assertCreated()
-            ->assertJson(['message' => 'Sugestão enviada para o mestre!']);
+            ->assertJson(['message' => 'Sugestão enviada para o administrador!']);
 
         $suggestion = Suggestion::query()->firstOrFail();
         $this->assertSame($this->player->id, $suggestion->user_id);

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use App\Models\Concerns\CampaignLibraryEntry;
+use IlluminateDatabaseloquentAttributesillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Hidden(['firestore_id'])]
 class Talent extends Model
 {
+    use CampaignLibraryEntry;
+
     /**
      * @return array<string, string>
      */
@@ -24,14 +27,6 @@ class Talent extends Model
         return [
             'composition' => 'array',
         ];
-    }
-
-    /**
-     * @return BelongsTo<GameSession, $this>
-     */
-    public function gameSession(): BelongsTo
-    {
-        return $this->belongsTo(GameSession::class);
     }
 
     /**

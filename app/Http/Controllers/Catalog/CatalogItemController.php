@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Catalog;
 
 use App\Game\GameRules;
+use App\Http\Controllers\Catalog\Concerns\ManagesCampaignEntries;
 use App\Http\Controllers\Controller;
 use App\Models\CatalogItem;
+use App\Models\GameSession;
+use App\Support\CampaignLibrary;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +21,15 @@ use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
- * Catálogo Global de Itens (armas, armaduras, munição, consumíveis...).
+ * Catálogo de Itens (armas, armaduras, munição, consumíveis...). As rotas
+ * /catalogos editam a base (mudanças chegam às campanhas como sugestão);
+ * as do Painel do Mestre, a versão da campanha. As armas compatíveis de uma
+ * munição pertencem ao item: a versão da campanha usa as da base.
  */
 class CatalogItemController extends Controller
 {
+    use ManagesCampaignEntries;
+
     private const DISK = 'public';
 
     private const IMAGE_FOLDER = 'catalog';
@@ -31,6 +40,7 @@ class CatalogItemController extends Controller
         $category = (string) $request->query('categoria');
 
         $items = CatalogItem::query()
+            ->base()
             ->when($search !== '', static fn ($query) => $query->where('name', 'like', '%'.$search.'%'))
             ->when(array_key_exists($category, CatalogItem::CATEGORIES), static fn ($query) => $query->where('category', $category))
             ->orderBy('name')
@@ -48,61 +58,66 @@ class CatalogItemController extends Controller
     {
         Gate::authorize('create', CatalogItem::class);
 
-        return $this->form(new CatalogItem(['category' => 'weapons', 'rarity' => 'Common', 'stats' => []]));
+        return $this->form(new CatalogItem(['category' => 'weapons', 'rarity' => 'Common', 'stats' => []]), self::baseForm(null));
     }
 
     public function store(Request $request): RedirectResponse
     {
         Gate::authorize('create', CatalogItem::class);
 
-        $data = $this->validated($request);
+        $data = $this->validatedEntry($request, null, null);
 
         $item = DB::transaction(function () use ($request, $data): CatalogItem {
-            $item = new CatalogItem($data['attributes']);
+            $item = new CatalogItem;
             $item->created_by = $request->user()->id;
-            $this->applyImage($request, $item);
+            $this->fillEntry($request, $item, $data);
             $item->save();
-            $item->relatedItems()->sync($data['related']);
+            $this->afterEntrySaved($item, $data, false);
+            CampaignLibrary::baseCreated($item);
 
             return $item;
         });
 
-        return redirect()->route('catalog.items.index')->with('status', 'Item "'.$item->name.'" criado no catálogo!');
+        return redirect()->route('catalog.items.index')->with('status', 'Item "'.$item->name.'" criado no catálogo! As campanhas existentes o recebem como sugestão.');
     }
 
     public function edit(CatalogItem $item): View
     {
         Gate::authorize('update', $item);
+        abort_unless($item->isBase(), 404);
 
-        return $this->form($item);
+        return $this->form($item, self::baseForm($item));
     }
 
     public function update(Request $request, CatalogItem $item): RedirectResponse
     {
         Gate::authorize('update', $item);
+        abort_unless($item->isBase(), 404);
 
-        $data = $this->validated($request, $item);
+        $data = $this->validatedEntry($request, null, $item);
 
         DB::transaction(function () use ($request, $item, $data): void {
-            $item->fill($data['attributes']);
-            $this->applyImage($request, $item);
+            $this->fillEntry($request, $item, $data);
+            CampaignLibrary::baseUpdating($item);
             $item->save();
-            $item->relatedItems()->sync($data['related']);
+            $this->afterEntrySaved($item, $data, false);
         });
 
-        return redirect()->route('catalog.items.index')->with('status', 'Item "'.$item->name.'" atualizado!');
+        return redirect()->route('catalog.items.index')->with('status', 'Item "'.$item->name.'" atualizado! As campanhas recebem a mudança como sugestão.');
     }
 
     public function duplicate(Request $request, CatalogItem $item): RedirectResponse
     {
         Gate::authorize('create', CatalogItem::class);
+        abort_unless($item->isBase(), 404);
 
         $copy = DB::transaction(static function () use ($request, $item): CatalogItem {
-            $copy = $item->replicate(['firestore_id']);
+            $copy = $item->replicate(['firestore_id', 'version', 'base_version']);
             $copy->name = Str::limit($item->name.' (Cópia)', 255, '');
             $copy->created_by = $request->user()->id;
             $copy->save();
             $copy->relatedItems()->sync($item->relatedItems()->pluck('catalog_items.id'));
+            CampaignLibrary::baseCreated($copy);
 
             return $copy;
         });
@@ -113,34 +128,47 @@ class CatalogItemController extends Controller
     public function destroy(CatalogItem $item): RedirectResponse
     {
         Gate::authorize('delete', $item);
+        abort_unless($item->isBase(), 404);
 
-        $path = $item->image_path;
-        $item->delete();
-        $this->deleteImageIfUnused($path);
+        // Sai da base e das campanhas novas; as campanhas existentes ficam com a sua cópia (e a imagem).
+        DB::transaction(static fn () => CampaignLibrary::baseArchived($item));
 
-        return back()->with('status', 'Item "'.$item->name.'" excluído do catálogo.');
+        return back()->with('status', 'Item "'.$item->name.'" excluído da base. As campanhas que já o usavam continuam com ele.');
     }
 
-    private function form(CatalogItem $item): View
+    protected function libraryModel(): string
     {
+        return CatalogItem::class;
+    }
+
+    /**
+     * @param  array{action: string, method: string, cancel: string, session: ?GameSession, notice: ?string, version: bool}  $form
+     */
+    protected function form(Model $entry, array $form, ?int $suggestionId = null): View
+    {
+        $weapons = $form['session'] !== null
+            ? CampaignLibrary::for($form['session'])->entries(CatalogItem::class)->where('category', 'weapons')->values()
+            : CatalogItem::query()->base()->where('category', 'weapons')->orderBy('name')->get(['id', 'name']);
+
         return view('catalog.items.form', [
-            'item' => $item,
-            'attributes' => GameRules::global()->attributes(),
-            'weapons' => CatalogItem::query()
-                ->where('category', 'weapons')
-                ->when($item->exists, static fn ($query) => $query->whereKeyNot($item->getKey()))
-                ->orderBy('name')
-                ->get(['id', 'name']),
-            'related' => $item->exists ? $item->relatedItems()->pluck('catalog_items.id')->all() : [],
+            'item' => $entry,
+            'attributes' => GameRules::forSession($form['session'])->attributes(),
+            // A versão da campanha usa as armas compatíveis da base.
+            'weapons' => $form['version'] ? collect() : $weapons->reject(static fn (CatalogItem $weapon): bool => $entry->exists && $weapon->id === $entry->getKey())->values(),
+            'related' => $entry->exists ? $entry->relatedItems()->pluck('catalog_items.id')->all() : [],
+            'form' => $form,
         ]);
     }
 
     /**
      * @return array{attributes: array<string, mixed>, related: list<int>}
      */
-    private function validated(Request $request, ?CatalogItem $item = null): array
+    protected function validatedEntry(Request $request, ?GameSession $session, ?Model $entry): array
     {
-        $attributeIds = array_map(static fn (array $attribute): string => strtolower($attribute['id']), GameRules::global()->attributes());
+        $attributeIds = array_map(static fn (array $attribute): string => strtolower($attribute['id']), GameRules::forSession($session)->attributes());
+        $weaponIds = $session !== null
+            ? CampaignLibrary::for($session)->entries(CatalogItem::class)->where('category', 'weapons')->keys()->all()
+            : CatalogItem::query()->base()->where('category', 'weapons')->pluck('id')->all();
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -160,8 +188,8 @@ class CatalogItemController extends Controller
             'related' => ['array'],
             'related.*' => [
                 'integer',
-                Rule::exists('catalog_items', 'id')->where('category', 'weapons'),
-                Rule::notIn($item?->exists ? [$item->getKey()] : []),
+                Rule::in($weaponIds),
+                Rule::notIn($entry?->exists ? [$entry->getKey()] : []),
             ],
         ]);
 
@@ -185,7 +213,41 @@ class CatalogItemController extends Controller
         ];
     }
 
-    private function applyImage(Request $request, CatalogItem $item): void
+    /**
+     * @param  array{attributes: array<string, mixed>, related: list<int>}  $data
+     */
+    protected function fillEntry(Request $request, Model $entry, array $data): void
+    {
+        $entry->fill($data['attributes']);
+        $this->applyImage($request, $entry);
+    }
+
+    /**
+     * @param  array{attributes: array<string, mixed>, related: list<int>}  $data
+     */
+    protected function afterEntrySaved(Model $entry, array $data, bool $isVersion): void
+    {
+        if (! $isVersion) {
+            $entry->relatedItems()->sync($data['related']);
+        }
+    }
+
+    /**
+     * @return array{action: string, method: string, cancel: string, session: null, notice: ?string, version: bool}
+     */
+    private static function baseForm(?CatalogItem $item): array
+    {
+        return [
+            'action' => $item !== null ? route('catalog.items.update', $item) : route('catalog.items.store'),
+            'method' => $item !== null ? 'PUT' : 'POST',
+            'cancel' => route('catalog.items.index'),
+            'session' => null,
+            'notice' => null,
+            'version' => false,
+        ];
+    }
+
+    private function applyImage(Request $request, Model $item): void
     {
         $previous = $item->getOriginal('image_path');
 
@@ -201,7 +263,8 @@ class CatalogItemController extends Controller
     }
 
     /**
-     * Apaga a imagem local se nenhum outro item (ex.: uma cópia) a usa.
+     * Apaga a imagem local se nenhum outro item (ex.: uma cópia ou a versão
+     * de uma campanha) a usa.
      */
     private function deleteImageIfUnused(?string $path): void
     {

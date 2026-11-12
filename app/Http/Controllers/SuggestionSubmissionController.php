@@ -63,7 +63,7 @@ class SuggestionSubmissionController extends Controller
         $suggestion->save();
 
         return response()->json([
-            'message' => 'Sugestão enviada para o mestre!',
+            'message' => 'Sugestão enviada para o administrador!',
             'id' => $suggestion->id,
         ], 201);
     }

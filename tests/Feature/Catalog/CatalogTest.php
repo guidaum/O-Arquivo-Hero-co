@@ -49,7 +49,7 @@ class CatalogTest extends TestCase
     {
         $player = User::factory()->create();
 
-        foreach (['/catalogos/talentos', '/catalogos/pericias', '/catalogos/poderes', '/catalogos/tracos', '/catalogos/itens', '/catalogos/sugestoes'] as $uri) {
+        foreach (['/catalogos/talentos', '/catalogos/pericias', '/catalogos/poderes', '/catalogos/tracos', '/catalogos/itens'] as $uri) {
             $this->actingAs($player)->get($uri)->assertForbidden();
             $this->actingAs($this->gm)->get($uri)->assertOk();
         }
@@ -105,8 +105,11 @@ class CatalogTest extends TestCase
 
         $this->assertSame('Furtividade Avançada', $skill->fresh()->name);
 
+        // Excluir da base arquiva: sai do catálogo, mas as campanhas existentes ficam com a sua cópia.
         $this->actingAs($this->gm)->delete(route('catalog.skills.destroy', $skill))->assertSessionHas('status');
-        $this->assertModelMissing($skill);
+        $this->assertNotNull($skill->fresh()->archived_at);
+        $this->actingAs($this->gm)->get('/catalogos/pericias')->assertDontSee('Furtividade Avançada');
+        $this->actingAs($this->gm)->get(route('catalog.skills.edit', $skill))->assertNotFound();
     }
 
     public function test_trait_target_can_be_attribute_or_talent(): void
@@ -162,7 +165,7 @@ class CatalogTest extends TestCase
         $this->assertSame(0, CatalogItem::query()->where('name', 'Escudo')->firstOrFail()->relatedItems()->count());
     }
 
-    public function test_duplicated_item_shares_image_until_last_copy_is_deleted(): void
+    public function test_duplicated_item_shares_image_and_deleted_items_keep_it(): void
     {
         Storage::fake('public');
         $path = UploadedFile::fake()->create('espada.png', 12, 'image/png')->store('catalog', 'public');
@@ -172,11 +175,11 @@ class CatalogTest extends TestCase
         $copy = CatalogItem::query()->where('name', 'Espada (Cópia)')->firstOrFail();
         $this->assertSame($path, $copy->image_path);
 
+        // Itens excluídos da base são arquivados (campanhas podem continuar com eles): a imagem fica.
         $this->actingAs($this->gm)->delete(route('catalog.items.destroy', $sword));
-        Storage::disk('public')->assertExists($path);
-
         $this->actingAs($this->gm)->delete(route('catalog.items.destroy', $copy));
-        Storage::disk('public')->assertMissing($path);
+        Storage::disk('public')->assertExists($path);
+        $this->assertSame(0, CatalogItem::query()->base()->count());
     }
 
     public function test_suggestion_is_reviewed_and_approved(): void
@@ -185,18 +188,23 @@ class CatalogTest extends TestCase
             'name' => 'Bola de Fogo', 'type' => 'Elemental', 'effect' => '2D6 de dano', 'purchaseCost' => 3,
         ]);
 
-        $this->actingAs($this->gm)->get(route('catalog.suggestions.review', $suggestion))
+        // Sugestões entram na base: só o administrador revisa.
+        $this->actingAs($this->gm)->get(route('catalog.suggestions.review', $suggestion))->assertForbidden();
+
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->get(route('catalog.suggestions.review', $suggestion))
             ->assertRedirect(route('catalog.powers.create', ['sugestao' => $suggestion->id]));
 
-        $this->actingAs($this->gm)->get(route('catalog.powers.create', ['sugestao' => $suggestion->id]))
+        $this->actingAs($admin)->get(route('catalog.powers.create', ['sugestao' => $suggestion->id]))
             ->assertOk()
             ->assertSee('Revisar Sugestão de Poder')
             ->assertSee('value="Bola de Fogo"', false);
 
-        $this->actingAs($this->gm)->post(route('catalog.powers.store'), [
+        $this->actingAs($admin)->post(route('catalog.powers.store'), [
             'suggestion_id' => $suggestion->id,
             'name' => 'Bola de Fogo Menor', 'type' => 'Elemental', 'purchase_cost' => 2, 'effect' => '1D6 de dano',
-        ])->assertRedirect(route('catalog.powers.index'));
+        ])->assertRedirect(route('admin.suggestions.index', ['origem' => 'jogadores']));
 
         $this->assertDatabaseHas('powers', ['name' => 'Bola de Fogo Menor', 'purchase_cost' => 2]);
         $suggestion->refresh();
@@ -210,28 +218,34 @@ class CatalogTest extends TestCase
             'name' => 'Olhos de Águia', 'type' => 'advantage', 'modifier' => 2, 'modifierType' => 'per',
         ]);
 
-        $this->actingAs($this->gm)->get(route('catalog.traits.create', ['sugestao' => $suggestion->id]))
+        $this->actingAs(User::factory()->admin()->create())->get(route('catalog.traits.create', ['sugestao' => $suggestion->id]))
             ->assertSee('value="attr:per" selected', false);
     }
 
     public function test_suggestion_can_be_rejected_but_not_reviewed_twice(): void
     {
         $suggestion = $this->suggestion(SuggestionType::Skill, ['name' => 'Culinária', 'type' => 'Geral']);
+        $admin = User::factory()->admin()->create();
 
-        $this->actingAs($this->gm)->put(route('catalog.suggestions.reject', $suggestion))->assertSessionHas('status');
+        $this->actingAs($this->gm)->put(route('catalog.suggestions.reject', $suggestion))->assertForbidden();
+        $this->actingAs($admin)->put(route('catalog.suggestions.reject', $suggestion))->assertSessionHas('status');
         $this->assertSame(SuggestionStatus::Rejected, $suggestion->fresh()->status);
 
-        $this->actingAs($this->gm)->get(route('catalog.suggestions.review', $suggestion))->assertSessionHasErrors('suggestion');
-        $this->actingAs($this->gm)->get('/catalogos/sugestoes?status=rejected')->assertSee('Culinária');
-        $this->actingAs($this->gm)->get('/catalogos/sugestoes')->assertDontSee('Culinária');
+        $this->actingAs($admin)->get(route('catalog.suggestions.review', $suggestion))->assertSessionHasErrors('suggestion');
+        $this->actingAs($admin)->get('/admin/sugestoes?origem=jogadores&status=rejected')->assertSee('Culinária');
+        $this->actingAs($admin)->get('/admin/sugestoes?origem=jogadores')->assertDontSee('Culinária');
     }
 
-    public function test_pending_suggestions_are_counted_in_the_tabs(): void
+    public function test_pending_suggestions_are_listed_in_the_admin_panel(): void
     {
         $this->suggestion(SuggestionType::Skill, ['name' => 'Culinária']);
         $this->suggestion(SuggestionType::Power, ['name' => 'Telecinese']);
 
-        $this->actingAs($this->gm)->get('/catalogos/talentos')->assertSee('<span class="tabs__count">2</span>', false);
+        // O endereço antigo dos catálogos leva para o Painel Admin.
+        $this->actingAs($this->gm)->get('/catalogos/sugestoes')->assertRedirect('/admin/sugestoes?origem=jogadores');
+        $this->actingAs($this->gm)->get('/admin/sugestoes')->assertForbidden();
+
+        $this->actingAs(User::factory()->admin()->create())->get('/admin')->assertSee('<span class="tabs__count">2</span>', false);
     }
 
     public function test_global_rules_tab_is_only_for_admins(): void

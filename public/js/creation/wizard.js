@@ -34,10 +34,12 @@ if (form) {
     const byId = (list, id) => list.find((item) => String(item.id) === String(id));
     const session = () => byId(config.sessions, state.basics.game_session_id) ?? null;
     const rules = () => session()?.rules ?? null;
-    const selectedTraits = () => config.traits.filter((trait) => state.traits.has(trait.id));
+    const selectedTraits = () => library().traits.filter((trait) => state.traits.has(trait.id));
     const normalize = (text) => String(text ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const money = (value) => `${Number(value).toLocaleString('pt-BR')} MO`;
-    const inSession = (item) => item.game_session_id === null || String(item.game_session_id) === String(state.basics.game_session_id);
+    // Biblioteca da campanha escolhida (antes da escolha, a da primeira campanha).
+    const EMPTY_LIBRARY = { skills: [], powers: [], traits: [], talents: [], catalog: [] };
+    const library = () => session()?.library ?? config.sessions[0]?.library ?? EMPTY_LIBRARY;
 
     // Cálculos (mesmas regras do servidor)
 
@@ -47,7 +49,7 @@ if (form) {
 
         if (!current) return values;
 
-        Object.entries(attributeModifiers(selectedTraits(), current.attributes, config.talents)).forEach(([id, modifier]) => {
+        Object.entries(attributeModifiers(selectedTraits(), current.attributes, library().talents)).forEach(([id, modifier]) => {
             values[id] = (values[id] ?? 0) + modifier;
         });
 
@@ -56,13 +58,13 @@ if (form) {
 
     function formulaValues() {
         const current = rules();
-        const skillTypes = [...state.skills.keys()].map((id) => byId(config.skills, id)?.type ?? '');
+        const skillTypes = [...state.skills.keys()].map((id) => byId(library().skills, id)?.type ?? '');
 
         return current ? formulaStats(attributesWithTraits(), skillTypes, state.powers.size, current) : {};
     }
 
     function abilityRowCost(kind, row, stats) {
-        const ability = byId(config[kind], row.id);
+        const ability = byId(library()[kind], row.id);
 
         return ability ? abilityCost(ability.purchase_cost, row.level, row.type || ability.type, kind === 'powers', stats, rules()) : 0;
     }
@@ -74,7 +76,7 @@ if (form) {
         const spentAttributes = Object.values(state.stats).reduce((sum, value) => sum + value, 0);
         const spentSkills = current ? [...state.skills.values()].reduce((sum, row) => sum + abilityRowCost('skills', row, stats), 0) : 0;
         const spentPowers = current ? [...state.powers.values()].reduce((sum, row) => sum + abilityRowCost('powers', row, stats), 0) : 0;
-        const spentMoney = state.catalog.reduce((sum, id) => sum + Number(byId(config.catalog, id)?.value ?? 0), 0);
+        const spentMoney = state.catalog.reduce((sum, id) => sum + Number(byId(library().catalog, id)?.value ?? 0), 0);
 
         return {
             stats,
@@ -103,7 +105,7 @@ if (form) {
     function renderTraits() {
         const { search, type } = filters.traits;
         const balance = traitBalance(selectedTraits());
-        const list = config.traits.filter((trait) => (!type || (type === 'disadvantage') === isDisadvantage(trait))
+        const list = library().traits.filter((trait) => (!type || (type === 'disadvantage') === isDisadvantage(trait))
             && (!search || normalize(`${trait.name} ${trait.effect} ${trait.description}`).includes(normalize(search))));
 
         replace(form.querySelector('[data-list="traits"]'), list.length === 0
@@ -125,7 +127,7 @@ if (form) {
                 el('span', { class: 'pick__meta' },
                     el('span', { class: `badge badge--pill ${advantage ? 'badge--gm' : 'badge--player'}` }, advantage ? 'Vantagem' : 'Defeito'),
                     el('span', { class: 'badge badge--pill badge--admin' }, `${advantage ? '-' : '+'}${cost} pts`),
-                    trait.target ? el('span', {}, `${modifier > 0 ? '+' : ''}${modifier} em ${targetDisplayName(trait.target, (rules() ?? config.sessions[0]?.rules)?.attributes ?? [], config.talents)}`) : null),
+                    trait.target ? el('span', {}, `${modifier > 0 ? '+' : ''}${modifier} em ${targetDisplayName(trait.target, (rules() ?? config.sessions[0]?.rules)?.attributes ?? [], library().talents)}`) : null),
                 trait.effect ? el('span', { class: 'pick__text' }, trait.effect) : null);
             }));
     }
@@ -173,6 +175,20 @@ if (form) {
             state.skills.clear();
             state.powers.clear();
             notify('Campanha trocada: atributos, perícias e poderes foram zerados.');
+        }
+
+        // Cada campanha tem a sua biblioteca: traços e itens que não existem nela saem do rascunho.
+        const available = (list) => new Set(list.map((item) => String(item.id)));
+        const traitIds = available(library().traits);
+        const itemIds = available(library().catalog);
+        const traitsBefore = state.traits.size;
+        const itemsBefore = state.catalog.length;
+
+        state.traits = new Set([...state.traits].filter((id) => traitIds.has(String(id))));
+        state.catalog = state.catalog.filter((id) => itemIds.has(String(id)));
+
+        if (state.traits.size < traitsBefore || state.catalog.length < itemsBefore) {
+            notify('Alguns traços ou itens não existem nesta campanha e foram retirados.');
         }
 
         const current = rules();
@@ -247,7 +263,7 @@ if (form) {
         const current = rules();
         const fromRules = kind === 'skills' ? Object.keys(current?.skill_type_vars ?? {}) : Object.keys(current?.power_type_vars ?? {});
         const fallback = kind === 'skills' ? (current?.skill_categories ?? []) : [];
-        const fromLibrary = config[kind].filter(inSession).map((item) => item.type);
+        const fromLibrary = library()[kind].map((item) => item.type);
 
         return [...new Set([...(fromRules.length ? fromRules : fallback), ...fromLibrary])].filter(Boolean).sort();
     }
@@ -280,7 +296,7 @@ if (form) {
         replace(pickedContainer, picked.size === 0
             ? el('p', { class: 'muted' }, `Nenhum(a) ${isPower ? 'poder' : 'perícia'} escolhido(a). Restam ${remaining} pontos.`)
             : [...picked.values()].map((row) => {
-                const ability = byId(config[kind], row.id);
+                const ability = byId(library()[kind], row.id);
                 const cost = abilityRowCost(kind, row, stats);
                 const nextCost = abilityRowCost(kind, { ...row, level: row.level + 1 }, stats);
 
@@ -316,7 +332,7 @@ if (form) {
             }));
 
         const { search, type } = filters[kind];
-        const list = config[kind].filter((item) => inSession(item) && !picked.has(item.id)
+        const list = library()[kind].filter((item) => !picked.has(item.id)
             && (!type || item.type === type)
             && (!search || normalize(`${item.name} ${item.description ?? ''} ${item.effect ?? ''}`).includes(normalize(search))));
 
@@ -353,7 +369,7 @@ if (form) {
         const remaining = totals().money;
         const pickedContainer = form.querySelector('[data-picked="equipment"]');
         const rows = [
-            ...state.catalog.map((id, index) => ({ item: byId(config.catalog, id), remove: () => state.catalog.splice(index, 1), own: false })),
+            ...state.catalog.map((id, index) => ({ item: byId(library().catalog, id), remove: () => state.catalog.splice(index, 1), own: false })),
             ...state.custom.map((item, index) => ({ item, remove: () => state.custom.splice(index, 1), own: true })),
         ];
 
@@ -366,9 +382,9 @@ if (form) {
                     own ? el('span', { class: 'badge badge--pill' }, 'Item próprio') : el('span', { class: 'badge badge--pill badge--admin' }, money(item?.value ?? 0)),
                     el('button', { type: 'button', class: 'icon-button', 'aria-label': `Remover ${item?.name}`, onClick: () => { remove(); render(); } }, icon('x', 16))))));
 
-        replace(form.querySelector('[data-list="catalog"]'), config.catalog.length === 0
+        replace(form.querySelector('[data-list="catalog"]'), library().catalog.length === 0
             ? el('p', { class: 'muted' }, 'O mestre ainda não marcou itens como equipamento inicial.')
-            : config.catalog.map((item) => {
+            : library().catalog.map((item) => {
                 const blocked = remaining === null || Number(item.value) > remaining;
 
                 return el('button', {
@@ -430,9 +446,9 @@ if (form) {
             section('Atributos', current
                 ? el('dl', { class: 'derived-preview' }, current.attributes.map((attribute) => el('div', {}, el('dt', {}, attribute.id.toUpperCase()), el('dd', {}, String(values[attribute.id.toLowerCase()] ?? 0)))))
                 : el('p', { class: 'muted' }, '—')),
-            section('Perícias', list([...state.skills.values()].map((row) => `${byId(config.skills, row.id)?.name} (nível ${row.level})`), 'Nenhuma perícia.')),
-            section('Poderes', list([...state.powers.values()].map((row) => `${byId(config.powers, row.id)?.name} (nível ${row.level})`), 'Nenhum poder.')),
-            section('Equipamento', list([...state.catalog.map((id) => byId(config.catalog, id)?.name), ...state.custom.map((item) => item.name)], 'Nenhum item.')));
+            section('Perícias', list([...state.skills.values()].map((row) => `${byId(library().skills, row.id)?.name} (nível ${row.level})`), 'Nenhuma perícia.')),
+            section('Poderes', list([...state.powers.values()].map((row) => `${byId(library().powers, row.id)?.name} (nível ${row.level})`), 'Nenhum poder.')),
+            section('Equipamento', list([...state.catalog.map((id) => byId(library().catalog, id)?.name), ...state.custom.map((item) => item.name)], 'Nenhum item.')));
     }
 
     // Resumo lateral
@@ -554,7 +570,7 @@ if (form) {
         });
     });
 
-    // Sugestões ao mestre
+    // Sugestões ao administrador
 
     const suggestionDialog = document.getElementById('suggestion');
     const suggestionForm = suggestionDialog?.querySelector('[data-suggestion-form]');
@@ -564,7 +580,7 @@ if (form) {
         const type = button.dataset.suggest;
         suggestionForm.reset();
         suggestionForm.querySelector('[data-suggestion-type]').value = type;
-        suggestionForm.querySelector('[data-suggestion-intro]').textContent = `Não encontrou a ${SUGGESTION_LABELS[type]} que queria? Sugira ao mestre; ele revisa antes de entrar na biblioteca.`;
+        suggestionForm.querySelector('[data-suggestion-intro]').textContent = `Não encontrou a ${SUGGESTION_LABELS[type]} que queria? Sugira ao administrador; ele revisa antes de entrar na biblioteca.`;
         suggestionForm.querySelector('[data-suggestion-error]').textContent = '';
         suggestionForm.querySelectorAll('[data-suggestion-only]').forEach((block) => {
             block.hidden = !block.dataset.suggestionOnly.split(' ').includes(type);

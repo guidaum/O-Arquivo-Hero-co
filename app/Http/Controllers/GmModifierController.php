@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Game\GameRules;
 use App\Models\Character;
 use App\Models\Talent;
+use App\Support\CampaignLibrary;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,7 @@ class GmModifierController extends Controller
 
         $targets = [
             ...array_map(static fn (array $attribute): string => strtolower($attribute['id']), GameRules::forSession($character->gameSession)->attributes()),
-            ...Talent::query()->pluck('id')->map(static fn (int $id): string => 'talent:'.$id)->all(),
+            ...CampaignLibrary::for($character->gameSession)->entries(Talent::class)->keys()->map(static fn (int $id): string => 'talent:'.$id)->all(),
         ];
 
         $data = $request->validate([

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Character;
 use App\Models\GameSession;
 use App\Models\Talent;
+use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -81,7 +82,7 @@ class CharacterEditController extends Controller
             'talent_mods.*' => ['nullable', 'integer', 'min:-100', 'max:100'],
         ], [], ['talent_mods.*' => 'modificador do talento']);
 
-        $validIds = Talent::query()->whereIn('id', array_keys($data['talent_mods'] ?? []))->pluck('id')->map(static fn (int $id): string => (string) $id)->all();
+        $validIds = CampaignLibrary::for($character->gameSession)->entries(Talent::class)->keys()->map(static fn (int $id): string => (string) $id)->all();
         $mods = [];
 
         foreach ($data['talent_mods'] ?? [] as $talentId => $value) {

@@ -11,6 +11,7 @@ use App\Models\CharacterTrait;
 use App\Models\Power;
 use App\Models\Skill;
 use App\Models\Talent;
+use App\Support\CampaignLibrary;
 use Illuminate\Support\Collection;
 
 /**
@@ -40,6 +41,9 @@ final class CharacterSheet
      */
     public static function for(Character $character, GameRules $rules, Collection $talents): self
     {
+        // Perícias, poderes e traços da ficha com os dados da versão da campanha (o ID é o da base).
+        CampaignLibrary::for($character->gameSession)->overlay($character->skills, $character->powers, $character->traits);
+
         $calculator = new CharacterCalculator;
         $traitCalculator = new TraitCalculator;
         $formulas = new FormulaEvaluator;
@@ -217,16 +221,7 @@ final class CharacterSheet
     public static function maxPv(Character $character): int
     {
         $character->loadMissing(['skills', 'powers', 'traits', 'items', 'gameSession']);
-        $sessionId = $character->game_session_id;
-        $talents = Talent::query()
-            ->where(static function ($query) use ($sessionId): void {
-                $query->whereNull('game_session_id');
-
-                if ($sessionId !== null) {
-                    $query->orWhere('game_session_id', $sessionId);
-                }
-            })
-            ->get();
+        $talents = CampaignLibrary::for($character->gameSession)->entries(Talent::class)->values();
 
         $max = (int) (self::for($character, GameRules::forSession($character->gameSession), $talents)->data['derived']['pv'] ?? 0);
         $stored = (array) ($character->stats ?? []);

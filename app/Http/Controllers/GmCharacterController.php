@@ -15,7 +15,7 @@ use App\Models\DungeonToken;
 use App\Models\GameSession;
 use App\Models\Power;
 use App\Models\Skill;
-use Illuminate\Database\Eloquent\Builder;
+use App\Support\CampaignLibrary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -70,7 +70,7 @@ class GmCharacterController extends Controller
         $map = isset($data['map_id']) ? $this->dungeonMapOf($gameSession, (int) $data['map_id']) : null;
         $rules = GameRules::forSession($gameSession);
         $generator = new NpcGenerator($rules);
-        $inLibrary = static fn (Builder $query) => $query->whereNull('game_session_id')->orWhere('game_session_id', $gameSession->id);
+        $library = CampaignLibrary::for($gameSession);
 
         $npc = $generator->generate(
             [
@@ -82,9 +82,9 @@ class GmCharacterController extends Controller
                 'danger_level' => $data['danger_level'] ?? 'Moderado',
                 'trait_count' => (int) $data['trait_count'],
             ],
-            Skill::query()->where($inLibrary)->get(['id', 'name', 'type', 'purchase_cost']),
-            Power::query()->where($inLibrary)->get(['id', 'name', 'type', 'purchase_cost']),
-            CharacterTrait::query()->get(['id', 'name']),
+            $library->entries(Skill::class)->values(),
+            $library->entries(Power::class)->values(),
+            $library->entries(CharacterTrait::class)->values(),
         );
 
         $character = DB::transaction(function () use ($request, $gameSession, $npc, $isMonster, $data, $map): Character {

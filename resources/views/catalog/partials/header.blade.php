@@ -4,14 +4,12 @@
 @endpush
 
 @php
-    $pendingSuggestions = \App\Models\Suggestion::query()->where('status', \App\Enums\SuggestionStatus::Pending)->count();
     $tabs = [
         ['catalog.talents.*', 'catalog.talents.index', 'Talentos', 'activity'],
         ['catalog.skills.*', 'catalog.skills.index', 'Perícias', 'sword'],
         ['catalog.powers.*', 'catalog.powers.index', 'Poderes', 'zap'],
         ['catalog.traits.*', 'catalog.traits.index', 'Vantagens & Defeitos', 'sparkles'],
         ['catalog.items.*', 'catalog.items.index', 'Itens', 'backpack'],
-        ['catalog.suggestions.*', 'catalog.suggestions.index', 'Sugestões', 'lightbulb'],
     ];
 @endphp
 
@@ -29,9 +27,6 @@
             <a class="tabs__link" href="{{ route($route) }}" @if (request()->routeIs($pattern)) aria-current="page" @endif>
                 <x-icon :name="$icon" :size="18" />
                 {{ $label }}
-                @if ($route === 'catalog.suggestions.index' && $pendingSuggestions > 0)
-                    <span class="tabs__count">{{ $pendingSuggestions }}</span>
-                @endif
             </a>
         @endforeach
 

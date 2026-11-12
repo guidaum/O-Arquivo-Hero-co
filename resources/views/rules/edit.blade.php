@@ -28,17 +28,75 @@
 
 <x-layouts.app :title="$global ? 'Configurações Base · Catálogos' : 'Regras · '.$session->name">
     @if ($global)
-        @include('catalog.partials.header', ['title' => 'Configurações Base', 'subtitle' => 'Regras globais, usadas pelas campanhas sem regras próprias'])
+        @include('catalog.partials.header', ['title' => 'Configurações Base', 'subtitle' => 'Regras herdadas pelas campanhas; mudanças chegam a elas como sugestão'])
     @else
-        @push('styles')
-            <link rel="stylesheet" href="@asset('css/catalog.css')">
-        @endpush
+        @include('gm.sessions.library.header', ['session' => $session, 'current' => 'regras', 'pendingCounts' => $pendingCounts, 'rulesPending' => count($pendingBase)])
 
-        <x-page-header title="Regras da Campanha" :subtitle="$session->name" :back="route('gm.sessions.show', $session)" back-label="Voltar ao Painel do Mestre" />
+        @if (! $ruleSet->exists)
+            <p class="alert library-notice"><x-icon name="shield" :size="16" /> Esta campanha usa as Configurações Base como estão. Ao salvar uma mudança, ela passa a ter regras próprias; a base não muda.</p>
+        @else
+            <div class="library-status glass">
+                <p>
+                    <strong>Regras próprias da campanha.</strong>
+                    @if ($differences === [])
+                        Iguais às Configurações Base atuais.
+                    @else
+                        Diferentes da base em {{ count($differences) }} regra(s).
+                    @endif
+                </p>
+                <button type="button" class="button button--secondary button--small" data-modal-open="restore-rules"><x-icon name="rotate-ccw" :size="16" /> Restaurar base</button>
+            </div>
+        @endif
 
-        @unless ($ruleSet->exists)
-            <p class="alert">Esta campanha ainda usa as regras globais. Os valores abaixo são uma cópia delas: ao salvar, a campanha passa a ter regras próprias.</p>
-        @endunless
+        {{-- Mudanças da base que ainda não foram avaliadas: adotar as marcadas, dispensar as demais. --}}
+        @if ($pendingBase !== [])
+            @php
+                $show = static fn (mixed $value): string => match (true) {
+                    is_array($value) => collect($value)->map(fn ($item, $key) => is_array($item) ? implode(' · ', $item) : (is_string($key) ? $key.': '.$item : $item))->implode(', ') ?: '—',
+                    $value === null || $value === '' => '—',
+                    default => \Illuminate\Support\Str::limit((string) $value, 80),
+                };
+            @endphp
+
+            <form class="library-suggestions library-suggestions--rules glass" method="POST" action="{{ route('gm.sessions.rules.adopt', $session) }}">
+                @csrf
+                @method('PUT')
+
+                <div>
+                    <h2 class="library-suggestions__title"><x-icon name="sparkles" :size="20" /> A base mudou em {{ count($pendingBase) }} regra(s)</h2>
+                    <p class="muted">Marque o que a campanha deve adotar. O que ficar desmarcado continua como está na campanha.</p>
+                </div>
+
+                <div class="library-diff library-diff--choices">
+                    @foreach ($pendingBase as $column => $change)
+                        <label class="checkbox library-diff__choice">
+                            <input type="checkbox" name="adopt[]" value="{{ $column }}" checked>
+                            <span>
+                                <strong>{{ \App\Models\RuleSet::FIELD_LABELS[$column] ?? $column }}</strong>
+                                <span><span class="library-diff__old">{{ $show($change['campaign']) }}</span> <x-icon name="arrow-right" :size="14" /> <span class="library-diff__new">{{ $show($change['base']) }}</span></span>
+                            </span>
+                        </label>
+                    @endforeach
+                </div>
+
+                <div class="library-suggestions__actions">
+                    <button type="submit" class="button button--gold button--small"><x-icon name="check" :size="16" /> Adotar marcadas</button>
+                </div>
+            </form>
+        @endif
+
+        @if ($ruleSet->exists)
+            <x-modal id="restore-rules" title="Restaurar as regras da base?" danger>
+                <p class="muted">A campanha descarta as regras próprias e volta a usar as Configurações Base como estão. Fichas existentes passam a ser calculadas com as regras da base.</p>
+
+                <form class="modal__actions" method="POST" action="{{ route('gm.sessions.rules.restore', $session) }}">
+                    @csrf
+                    @method('DELETE')
+                    <button type="button" class="button button--secondary" data-modal-close>Cancelar</button>
+                    <button type="submit" class="button button--danger"><x-icon name="rotate-ccw" :size="16" /> Restaurar</button>
+                </form>
+            </x-modal>
+        @endif
     @endif
 
     @if ($errors->any())
@@ -207,7 +265,7 @@
         @endif
 
         <div class="form-actions form-actions--sticky glass">
-            <span class="muted">{{ $global ? 'As regras globais valem para as campanhas sem regras próprias.' : 'Estas regras valem só para esta campanha.' }}</span>
+            <span class="muted">{{ $global ? 'Campanhas que usam a base recebem as mudanças como sugestão.' : 'Estas regras valem só para esta campanha; a base não muda.' }}</span>
             <button type="submit" class="button"><x-icon name="save" :size="16" /> Salvar Regras</button>
         </div>
     </form>

@@ -170,3 +170,190 @@
         border-radius: var(--radius-xl);
     }
 }
+
+/* Configurações da campanha (Painel do Mestre): regras e bibliotecas herdadas da base. */
+
+.library-intro {
+    max-width: 52rem;
+    margin: -1rem 0 1.25rem;
+    font-size: 0.9rem;
+}
+
+.library-tabs {
+    margin-bottom: 1.5rem;
+}
+
+.library-notice,
+.library-changed {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.library-notice {
+    border-color: color-mix(in srgb, var(--arcane) 35%, transparent);
+}
+
+.library-notice .icon {
+    margin-top: 0.15rem;
+    color: var(--arcane);
+}
+
+.library-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding: 0.875rem 1.25rem;
+    border-radius: var(--radius-lg);
+}
+
+.library-status p {
+    margin: 0;
+}
+
+/* Sugestões da base: atualizações e itens novos aguardando o mestre. */
+.library-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+    border-radius: var(--radius-xl);
+    background: color-mix(in srgb, var(--gold) 8%, var(--glass-bg));
+}
+
+.library-suggestions p {
+    margin: 0.25rem 0 0;
+}
+
+.library-suggestions--rules {
+    display: grid;
+    justify-content: stretch;
+}
+
+.library-suggestions__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.library-suggestions__title .icon {
+    color: var(--gold);
+}
+
+.library-suggestions__actions,
+.library-suggestions__actions form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.library-suggestions--rules .library-suggestions__actions {
+    justify-content: flex-end;
+}
+
+/* Diferenças entre a versão da campanha e a base. */
+.library-diff {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0.6rem 0 0;
+    font-size: 0.8rem;
+}
+
+.library-diff > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+}
+
+.library-diff dt {
+    color: var(--text-secondary);
+    font-weight: 700;
+}
+
+.library-diff dd {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+}
+
+.library-diff__old {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    overflow-wrap: anywhere;
+}
+
+.library-diff__new {
+    color: var(--gold);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.library-diff--choices {
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.library-diff__choice {
+    align-items: flex-start;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    background: var(--surface-low);
+}
+
+.library-diff__choice > span {
+    display: grid;
+    gap: 0.2rem;
+}
+
+.library-diff__choice > span > span {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.library-changed {
+    margin: 0.4rem 0 0;
+    color: var(--arcane);
+    font-size: 0.8rem;
+}
+
+.library-row--pending {
+    border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+.library-row--muted .row-card__main {
+    opacity: 0.6;
+}
+
+.library-row .row-card__actions form {
+    display: inline-flex;
+}
+
+@media (max-width: 639px) {
+    .library-suggestions {
+        padding: 1rem;
+    }
+
+    .library-suggestions__actions,
+    .library-suggestions__actions form,
+    .library-suggestions__actions .button {
+        width: 100%;
+    }
+
+    .library-suggestions__actions .button {
+        flex: 1;
+    }
+}

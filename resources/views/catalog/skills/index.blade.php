@@ -51,5 +51,5 @@
 
     {{ $skills->links() }}
 
-    <x-catalog.delete-modal type="perícia" warning="Ela também sai das fichas dos personagens que a possuem." />
+    <x-catalog.delete-modal type="perícia" warning="Sai do catálogo base e das campanhas criadas depois; as campanhas existentes e as fichas continuam com ele." />
 </x-layouts.app>

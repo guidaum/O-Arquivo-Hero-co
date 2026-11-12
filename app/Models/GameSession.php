@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\MapType;
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -20,6 +21,20 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class GameSession extends Model
 {
     use HasPublicFiles;
+
+    protected static function booted(): void
+    {
+        // Versões da campanha de itens da base saem junto com a campanha (a
+        // chave estrangeira apenas anularia a campanha e as tornaria "globais").
+        static::deleting(static function (self $session): void {
+            foreach (CampaignLibrary::TYPES as $definition) {
+                $definition['model']::query()
+                    ->where('game_session_id', $session->id)
+                    ->whereNotNull('base_id')
+                    ->delete();
+            }
+        });
+    }
 
     /**
      * @return array<string, string>

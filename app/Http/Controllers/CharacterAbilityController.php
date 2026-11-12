@@ -8,7 +8,7 @@ use App\Models\Character;
 use App\Models\CharacterTrait;
 use App\Models\Power;
 use App\Models\Skill;
-use Illuminate\Database\Eloquent\Builder;
+use App\Support\CampaignLibrary;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,16 +45,18 @@ class CharacterAbilityController extends Controller
     {
         Gate::authorize('editStats', $character);
 
+        $library = CampaignLibrary::for($character->gameSession)->entries(CharacterTrait::class);
         $data = $request->validate([
-            'trait_id' => ['required', 'integer', Rule::exists('traits', 'id')],
-        ], [], ['trait_id' => 'vantagem ou defeito']);
+            // Só itens visíveis na biblioteca da campanha do personagem.
+            'trait_id' => ['required', 'integer', Rule::in($library->keys()->all())],
+        ], ['trait_id.in' => 'Este traço não está disponível na campanha.'], ['trait_id' => 'vantagem ou defeito']);
 
         if ($character->traits()->whereKey($data['trait_id'])->exists()) {
             return back()->withErrors(['trait_id' => 'Este traço já está na ficha.']);
         }
 
         $character->traits()->attach($data['trait_id']);
-        $trait = CharacterTrait::query()->findOrFail($data['trait_id']);
+        $trait = $library->get((int) $data['trait_id']);
 
         return redirect()->to(route('characters.show', $character).'#tracos')->with('status', 'Traço "'.$trait->name.'" adicionado à ficha!');
     }
@@ -75,22 +77,13 @@ class CharacterAbilityController extends Controller
     {
         Gate::authorize('editStats', $character);
 
+        // Só itens visíveis na biblioteca da campanha (com o custo da versão da campanha).
+        $library = CampaignLibrary::for($character->gameSession)->entries($model);
         $data = $request->validate([
-            'ability_id' => [
-                'required',
-                'integer',
-                // Bibliotecas globais ou da campanha do personagem.
-                Rule::exists((new $model)->getTable(), 'id')->where(static function ($query) use ($character): void {
-                    $query->whereNull('game_session_id');
+            'ability_id' => ['required', 'integer', Rule::in($library->keys()->all())],
+        ], ['ability_id.in' => 'Esta '.$label.' não está disponível na campanha.'], ['ability_id' => $label]);
 
-                    if ($character->game_session_id !== null) {
-                        $query->orWhere('game_session_id', $character->game_session_id);
-                    }
-                }),
-            ],
-        ], [], ['ability_id' => $label]);
-
-        $ability = $model::query()->findOrFail($data['ability_id']);
+        $ability = $library->get((int) $data['ability_id']);
 
         $error = DB::transaction(static function () use ($character, $ability, $relation, $pointsColumn, $label): ?string {
             $locked = Character::query()->lockForUpdate()->findOrFail($character->id);
@@ -120,6 +113,9 @@ class CharacterAbilityController extends Controller
     private function destroy(Character $character, Skill|Power $ability, string $relation, string $pointsColumn, string $anchor, string $label): RedirectResponse
     {
         Gate::authorize('editStats', $character);
+
+        // Devolve o custo da versão da campanha, o mesmo cobrado ao adicionar.
+        CampaignLibrary::for($character->gameSession)->overlay([$ability]);
 
         DB::transaction(static function () use ($character, $ability, $relation, $pointsColumn): void {
             $locked = Character::query()->lockForUpdate()->findOrFail($character->id);

@@ -65,5 +65,5 @@
 
     {{ $items->links() }}
 
-    <x-catalog.delete-modal type="item" warning="Itens já guardados nos inventários dos personagens continuam com eles." />
+    <x-catalog.delete-modal type="item" warning="Sai do catálogo base e das campanhas criadas depois; as campanhas existentes e as fichas continuam com ele." />
 </x-layouts.app>

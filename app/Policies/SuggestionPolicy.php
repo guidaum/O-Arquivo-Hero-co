@@ -29,11 +29,12 @@ class SuggestionPolicy
     }
 
     /**
-     * Aprovar, recusar ou ajustar os dados da sugestão.
+     * Aprovar, recusar ou ajustar os dados da sugestão: só o administrador
+     * (liberado pelo Gate::before), pois a sugestão aprovada entra na base.
      */
     public function review(User $user, Suggestion $suggestion): bool
     {
-        return $user->isGm();
+        return false;
     }
 
     /**
@@ -41,7 +42,6 @@ class SuggestionPolicy
      */
     public function delete(User $user, Suggestion $suggestion): bool
     {
-        return $user->isGm()
-            || ($suggestion->user_id === $user->id && $suggestion->status === SuggestionStatus::Pending);
+        return $suggestion->user_id === $user->id && $suggestion->status === SuggestionStatus::Pending;
     }
 }

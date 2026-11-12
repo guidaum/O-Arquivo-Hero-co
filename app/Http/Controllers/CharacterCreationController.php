@@ -17,6 +17,7 @@ use App\Models\RuleSet;
 use App\Models\Skill;
 use App\Models\Talent;
 use App\Models\User;
+use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\RedirectResponse;
@@ -56,21 +57,9 @@ class CharacterCreationController extends Controller
                     'gm' => $session->gm?->name,
                     'is_gm' => $session->gm_id === $user->id,
                     'rules' => (new GameRules($sessionRules->get($session->id) ?? $global))->toArray(),
+                    // Cada campanha tem a sua biblioteca (base + alterações da campanha).
+                    'library' => self::libraryFor($session),
                 ])->values(),
-                'skills' => Skill::query()->orderBy('name')->get(['id', 'name', 'type', 'purchase_cost', 'atp_cost', 'damage', 'description', 'difficulty_formula', 'game_session_id']),
-                'powers' => Power::query()->orderBy('name')->get(['id', 'name', 'type', 'purchase_cost', 'cost', 'effect', 'description', 'difficulty_formula', 'game_session_id']),
-                'traits' => CharacterTrait::query()->orderBy('name')->get()->map(static fn (CharacterTrait $trait): array => [
-                    'id' => $trait->id,
-                    'name' => $trait->name,
-                    'type' => $trait->type?->value,
-                    'modifier' => $trait->modifier,
-                    'target' => $trait->modifier_attribute ?? ($trait->modifier_talent_id !== null ? (string) $trait->modifier_talent_id : null),
-                    'effect' => $trait->effect,
-                    'description' => $trait->description,
-                ]),
-                'talents' => Talent::query()->orderBy('name')->get(['id', 'name']),
-                'catalog' => CatalogItem::query()->where('is_starting_item', true)->orderBy('category')->orderBy('name')
-                    ->get(['id', 'name', 'category', 'rarity', 'value', 'weight', 'damage', 'defense', 'description']),
                 'categories' => array_diff_key(CatalogItem::CATEGORIES, ['Geral' => true]),
                 'icons' => self::ICONS,
                 'colors' => self::COLORS,
@@ -78,6 +67,41 @@ class CharacterCreationController extends Controller
                 'suggestionUrl' => route('suggestions.store'),
             ],
         ]);
+    }
+
+    /**
+     * Biblioteca da campanha enviada ao assistente (só os campos usados no navegador).
+     *
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private static function libraryFor(GameSession $session): array
+    {
+        $library = CampaignLibrary::for($session);
+        $only = static fn (string $model, array $fields) => $library->entries($model)
+            ->map(static fn ($entry): array => $entry->only($fields))
+            ->values()
+            ->all();
+
+        return [
+            'skills' => $only(Skill::class, ['id', 'name', 'type', 'purchase_cost', 'atp_cost', 'damage', 'description', 'difficulty_formula']),
+            'powers' => $only(Power::class, ['id', 'name', 'type', 'purchase_cost', 'cost', 'effect', 'description', 'difficulty_formula']),
+            'traits' => $library->entries(CharacterTrait::class)->map(static fn (CharacterTrait $trait): array => [
+                'id' => $trait->id,
+                'name' => $trait->name,
+                'type' => $trait->type?->value,
+                'modifier' => $trait->modifier,
+                'target' => $trait->modifier_attribute ?? ($trait->modifier_talent_id !== null ? (string) $trait->modifier_talent_id : null),
+                'effect' => $trait->effect,
+                'description' => $trait->description,
+            ])->values()->all(),
+            'talents' => $only(Talent::class, ['id', 'name']),
+            'catalog' => $library->entries(CatalogItem::class)
+                ->filter(static fn (CatalogItem $item): bool => (bool) $item->is_starting_item)
+                ->sortBy(static fn (CatalogItem $item): string => $item->category.'|'.mb_strtolower($item->name))
+                ->map(static fn (CatalogItem $item): array => $item->only(['id', 'name', 'category', 'rarity', 'value', 'weight', 'damage', 'defense', 'description']))
+                ->values()
+                ->all(),
+        ];
     }
 
     public function store(Request $request): RedirectResponse
@@ -135,14 +159,14 @@ class CharacterCreationController extends Controller
 
         $session = $sessions->firstWhere('id', (int) $data['basics']['game_session_id']);
         $rules = GameRules::forSession($session);
-        $inScope = static function (Builder $query) use ($session): void {
-            $query->whereNull('game_session_id')->orWhere('game_session_id', $session->id);
-        };
-
-        $traits = CharacterTrait::query()->whereIn('id', $data['traits'] ?? [])->get();
-        $skillModels = Skill::query()->where($inScope)->whereIn('id', array_column($data['skills'] ?? [], 'id'))->get()->keyBy('id');
-        $powerModels = Power::query()->where($inScope)->whereIn('id', array_column($data['powers'] ?? [], 'id'))->get()->keyBy('id');
-        $catalog = CatalogItem::query()->where('is_starting_item', true)->whereIn('id', $data['equipment']['catalog'] ?? [])->get()->keyBy('id');
+        // Só itens visíveis na biblioteca da campanha escolhida, com os dados da versão da campanha.
+        $library = CampaignLibrary::for($session);
+        $traits = $library->entries(CharacterTrait::class)->only(array_map('intval', $data['traits'] ?? []))->values();
+        $skillModels = $library->entries(Skill::class)->only(array_map('intval', array_column($data['skills'] ?? [], 'id')));
+        $powerModels = $library->entries(Power::class)->only(array_map('intval', array_column($data['powers'] ?? [], 'id')));
+        $catalog = $library->entries(CatalogItem::class)
+            ->filter(static fn (CatalogItem $item): bool => (bool) $item->is_starting_item)
+            ->only(array_map('intval', $data['equipment']['catalog'] ?? []));
 
         $errors = [];
 
@@ -168,7 +192,7 @@ class CharacterCreationController extends Controller
             $stats[$id] = (int) ($data['stats'][$id] ?? $data['stats'][$attribute['id']] ?? 0);
         }
 
-        $talents = Talent::query()->where($inScope)->get();
+        $talents = $library->entries(Talent::class)->values();
         $draft = new CharacterDraft($rules, $stats, $traits, $skills, $powers, $purchases, $talents);
         $errors = [...$errors, ...$draft->errors()];
 

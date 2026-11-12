@@ -66,13 +66,15 @@ class SoundBoardController extends Controller
         $alsoGlobal = $request->boolean('also_global') && $user->can('access-admin');
 
         DB::transaction(static function () use ($gameSession, $values, $alsoGlobal): void {
-            $campaign = $gameSession->ruleSet ?? (RuleSet::query()->global()->first()?->replicate(['game_session_id']) ?? new RuleSet);
-            $campaign->game_session_id = $gameSession->id;
+            $campaign = $gameSession->ruleSet ?? RuleSet::copyOfGlobalFor($gameSession);
             self::apply($campaign, $values);
+            $campaign->save();
 
+            // Mudança no padrão global chega às outras campanhas como sugestão.
             if ($alsoGlobal) {
                 $global = RuleSet::query()->global()->first() ?? new RuleSet;
                 self::apply($global, $values);
+                $global->saveAsGlobal();
             }
         });
 
@@ -173,6 +175,5 @@ class SoundBoardController extends Controller
         }
 
         $ruleSet->sound_settings = array_filter($extra, static fn (?string $value): bool => $value !== null);
-        $ruleSet->save();
     }
 }

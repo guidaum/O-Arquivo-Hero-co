@@ -5,11 +5,11 @@
 @endphp
 
 <x-layouts.app :title="($editing ? 'Editar' : 'Novo').' Item · Catálogos'">
-    @include('catalog.partials.header', ['title' => 'Catálogo Global de Itens'])
+    @include('catalog.partials.form-header', ['title' => 'Catálogo Global de Itens', 'type' => 'itens', 'form' => $form])
 
-    <form class="catalog-form glass" method="POST" enctype="multipart/form-data" action="{{ $editing ? route('catalog.items.update', $item) : route('catalog.items.store') }}">
+    <form class="catalog-form glass" method="POST" enctype="multipart/form-data" action="{{ $form['action'] }}">
         @csrf
-        @if ($editing) @method('PUT') @endif
+        @if ($form['method'] === 'PUT') @method('PUT') @endif
 
         <h2 class="catalog-form__title">{{ $editing ? 'Editar Item' : 'Novo Item' }}</h2>
 
@@ -78,7 +78,7 @@
         <x-form.field name="description" label="Descrição" type="textarea" :value="$item->description" maxlength="5000" />
 
         <div class="form-actions">
-            <a class="button button--secondary" href="{{ route('catalog.items.index') }}">Cancelar</a>
+            <a class="button button--secondary" href="{{ $form['cancel'] }}">Cancelar</a>
             <button type="submit" class="button"><x-icon name="save" :size="16" /> {{ $editing ? 'Salvar Item' : 'Criar Item' }}</button>
         </div>
     </form>

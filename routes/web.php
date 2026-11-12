@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Admin\CharacterController as AdminCharacterController;
 use App\Http\Controllers\AmbienceController;
+use App\Http\Controllers\CampaignLibraryController;
 use App\Http\Controllers\SoundBoardController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\FeatureController as AdminFeatureController;
 use App\Http\Controllers\Admin\GameSessionController as AdminGameSessionController;
+use App\Http\Controllers\Admin\SuggestionController as AdminSuggestionController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\LoginController;
@@ -139,6 +141,33 @@ Route::middleware('auth')->group(function (): void {
     });
     Route::get('/mestre/sessoes/{gameSession}/regras', [RuleSetController::class, 'editSession'])->name('gm.sessions.rules.edit');
     Route::put('/mestre/sessoes/{gameSession}/regras', [RuleSetController::class, 'updateSession'])->name('gm.sessions.rules.update');
+    Route::put('/mestre/sessoes/{gameSession}/regras/base', [RuleSetController::class, 'adoptBase'])->name('gm.sessions.rules.adopt');
+    Route::delete('/mestre/sessoes/{gameSession}/regras', [RuleSetController::class, 'restoreBase'])->name('gm.sessions.rules.restore');
+
+    // Biblioteca da campanha: catálogos herdados da base, alterações da campanha e sugestões da base.
+    Route::prefix('/mestre/sessoes/{gameSession}/biblioteca')->name('gm.sessions.library.')->group(function (): void {
+        Route::get('/', [CampaignLibraryController::class, 'index'])->name('index');
+        Route::post('/sugestoes', [CampaignLibraryController::class, 'bulk'])->name('bulk');
+
+        foreach ([
+            'talentos' => TalentController::class,
+            'pericias' => SkillController::class,
+            'poderes' => PowerController::class,
+            'tracos' => TraitController::class,
+            'itens' => CatalogItemController::class,
+        ] as $type => $controller) {
+            Route::get('/'.$type.'/novo', [$controller, 'campaignCreate'])->name($type.'.create');
+            Route::post('/'.$type, [$controller, 'campaignStore'])->name($type.'.store');
+            Route::get('/'.$type.'/{entry}/editar', [$controller, 'campaignEdit'])->whereNumber('entry')->name($type.'.edit');
+            Route::put('/'.$type.'/{entry}', [$controller, 'campaignUpdate'])->whereNumber('entry')->name($type.'.update');
+        }
+
+        $types = implode('|', array_keys(\App\Support\CampaignLibrary::TYPES));
+        Route::put('/{type}/{entry}/adotar', [CampaignLibraryController::class, 'adopt'])->where(['type' => $types, 'entry' => '[0-9]+'])->name('adopt');
+        Route::put('/{type}/{entry}/manter', [CampaignLibraryController::class, 'keep'])->where(['type' => $types, 'entry' => '[0-9]+'])->name('keep');
+        Route::put('/{type}/{entry}/visibilidade', [CampaignLibraryController::class, 'visibility'])->where(['type' => $types, 'entry' => '[0-9]+'])->name('visibility');
+        Route::delete('/{type}/{entry}', [CampaignLibraryController::class, 'destroy'])->where(['type' => $types, 'entry' => '[0-9]+'])->name('destroy');
+    });
 
     // Catálogos globais e regras (abas de biblioteca do GMDashboard antigo).
     Route::middleware('can:use-gm-tools')->prefix('catalogos')->name('catalog.')->group(function (): void {
@@ -156,7 +185,8 @@ Route::middleware('auth')->group(function (): void {
             ->parameters(['itens' => 'item'])->names('items');
         Route::post('itens/{item}/duplicar', [CatalogItemController::class, 'duplicate'])->name('items.duplicate');
 
-        Route::get('sugestoes', [SuggestionController::class, 'index'])->name('suggestions.index');
+        // A revisão das sugestões fica no Painel Admin; o endereço antigo leva para lá.
+        Route::redirect('sugestoes', '/admin/sugestoes?origem=jogadores')->name('suggestions.index');
         Route::get('sugestoes/{suggestion}/revisar', [SuggestionController::class, 'review'])->name('suggestions.review');
         Route::put('sugestoes/{suggestion}/recusar', [SuggestionController::class, 'reject'])->name('suggestions.reject');
         Route::delete('sugestoes/{suggestion}', [SuggestionController::class, 'destroy'])->name('suggestions.destroy');
@@ -319,6 +349,14 @@ Route::middleware('auth')->group(function (): void {
 
         Route::get('/sessoes', [AdminGameSessionController::class, 'index'])->name('sessions.index');
         Route::delete('/sessoes/{gameSession}', [AdminGameSessionController::class, 'destroy'])->name('sessions.destroy');
+
+        // Sugestões para a base: das campanhas (?origem=campanhas) e dos jogadores (?origem=jogadores).
+        Route::get('/sugestoes', [AdminSuggestionController::class, 'index'])->name('suggestions.index');
+        $libraryTypes = implode('|', array_keys(\App\Support\CampaignLibrary::TYPES));
+        Route::put('/sugestoes/campanhas/{type}/{entry}/adotar', [AdminSuggestionController::class, 'promote'])
+            ->where(['type' => $libraryTypes, 'entry' => '[0-9]+'])->name('suggestions.promote');
+        Route::put('/sugestoes/campanhas/{type}/{entry}/ignorar', [AdminSuggestionController::class, 'dismiss'])
+            ->where(['type' => $libraryTypes, 'entry' => '[0-9]+'])->name('suggestions.dismiss');
     });
 
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');

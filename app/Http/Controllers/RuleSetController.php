@@ -10,10 +10,12 @@ use App\Models\Power;
 use App\Models\RuleSet;
 use App\Models\Skill;
 use App\Rules\Formula;
+use App\Support\CampaignLibrary;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 /**
@@ -70,17 +72,60 @@ class RuleSetController extends Controller
     {
         Gate::authorize('update', $gameSession);
 
-        return $this->form($gameSession->ruleSet ?? $this->copyOfGlobal(), $gameSession);
+        return $this->form($gameSession->ruleSet ?? RuleSet::copyOfGlobalFor($gameSession), $gameSession);
     }
 
     public function updateSession(Request $request, GameSession $gameSession): RedirectResponse
     {
         Gate::authorize('update', $gameSession);
 
-        $this->save($request, $gameSession->ruleSet ?? $this->copyOfGlobal(), $gameSession);
+        $this->save($request, $gameSession->ruleSet ?? RuleSet::copyOfGlobalFor($gameSession), $gameSession);
 
         return redirect()->route('gm.sessions.rules.edit', $gameSession)
             ->with('status', 'Regras da campanha salvas!');
+    }
+
+    /**
+     * Sugestões da base: adota as regras marcadas e dispensa as demais.
+     */
+    public function adoptBase(Request $request, GameSession $gameSession): RedirectResponse
+    {
+        Gate::authorize('update', $gameSession);
+
+        $ruleSet = $gameSession->ruleSet;
+        $global = RuleSet::query()->global()->first();
+
+        if ($ruleSet === null || $global === null) {
+            return redirect()->route('gm.sessions.rules.edit', $gameSession);
+        }
+
+        $pending = array_keys($ruleSet->pendingBaseChanges($global));
+        $data = $request->validate([
+            'adopt' => ['array'],
+            'adopt.*' => ['string', Rule::in($pending)],
+        ]);
+
+        $adopted = $data['adopt'] ?? [];
+        $ruleSet->adoptBase($global, $adopted);
+
+        return redirect()->route('gm.sessions.rules.edit', $gameSession)->with('status', match (true) {
+            $adopted === [] => 'Sugestões da base dispensadas: a campanha mantém as regras atuais.',
+            count($adopted) === count($pending) => 'Todas as mudanças da base foram adotadas!',
+            default => count($adopted).' mudança(s) da base adotada(s); as demais foram dispensadas.',
+        });
+    }
+
+    /**
+     * Descarta as regras próprias: a campanha volta a herdar a base.
+     */
+    public function restoreBase(GameSession $gameSession): RedirectResponse
+    {
+        Gate::authorize('update', $gameSession);
+
+        $gameSession->ruleSet()->delete();
+
+        return redirect()->route('gm.sessions.rules.edit', $gameSession)
+            ->with('status', 'A campanha voltou a usar as Configurações Base.');
     }
 
     private function form(RuleSet $ruleSet, ?GameSession $session): View
@@ -89,9 +134,14 @@ class RuleSetController extends Controller
             ? $ruleSet->getAttribute('attributes')
             : config('arquivo.rules.attributes');
 
+        $global = $session !== null ? RuleSet::query()->global()->first() : null;
+
         return view('rules.edit', [
             'ruleSet' => $ruleSet,
             'session' => $session,
+            'pendingBase' => $session !== null && $ruleSet->exists ? $ruleSet->pendingBaseChanges($global) : [],
+            'differences' => $session !== null && $ruleSet->exists ? $ruleSet->differencesFrom($global) : [],
+            'pendingCounts' => $session !== null ? CampaignLibrary::for($session)->pendingCounts() : [],
             'numbers' => array_keys(self::NUMBERS),
             'formulas' => self::FORMULAS,
             'attributes' => array_values($attributes),
@@ -144,8 +194,14 @@ class RuleSetController extends Controller
 
         DB::transaction(function () use ($ruleSet, $session, $values, $previousSkillTypes, $previousPowerTypes): void {
             $ruleSet->forceFill($values);
-            $ruleSet->game_session_id = $session?->id;
-            $ruleSet->save();
+
+            if ($session === null) {
+                // Campanhas que herdavam a base recebem a mudança como sugestão.
+                $ruleSet->saveAsGlobal();
+            } else {
+                $ruleSet->game_session_id = $session->id;
+                $ruleSet->save();
+            }
 
             // Perícias e poderes do catálogo acompanham o tipo renomeado.
             $this->renameCatalogTypes(Skill::class, $previousSkillTypes, $session);
@@ -371,22 +427,26 @@ class RuleSetController extends Controller
     private function renameCatalogTypes(string $model, array $renames, ?GameSession $session): void
     {
         foreach ($renames as $old => $new) {
-            $model::query()
-                ->where('type', $old)
-                ->when(
-                    $session === null,
-                    static fn ($query) => $query->whereNull('game_session_id'),
-                    static fn ($query) => $query->where('game_session_id', $session->id),
-                )
-                ->update(['type' => $new]);
-        }
-    }
+            $bases = $model::query()->base()->where('type', $old)->get();
 
-    /**
-     * Regras novas de uma campanha começam iguais às globais.
-     */
-    private function copyOfGlobal(): RuleSet
-    {
-        return RuleSet::query()->global()->first()?->replicate(['game_session_id']) ?? new RuleSet;
+            // Na base, cada item renomeado chega às campanhas como sugestão.
+            if ($session === null) {
+                foreach ($bases as $base) {
+                    $base->type = $new;
+                    CampaignLibrary::baseUpdating($base);
+                    $base->save();
+                }
+
+                continue;
+            }
+
+            // Na campanha, itens herdados ganham uma versão própria com o tipo novo; a base não muda.
+            $library = CampaignLibrary::for($session);
+            foreach ($bases as $base) {
+                $library->versionOf($base);
+            }
+
+            $model::query()->where('game_session_id', $session->id)->where('type', $old)->update(['type' => $new]);
+        }
     }
 }

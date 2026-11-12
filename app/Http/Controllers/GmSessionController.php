@@ -13,6 +13,8 @@ use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CustomSound;
 use App\Models\GameSession;
+use App\Models\RuleSet;
+use App\Support\CampaignLibrary;
 use App\Support\Sounds;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -80,7 +82,8 @@ class GmSessionController extends Controller
             'budgets' => Bestiary::partyBudgets($levels),
             'archetypes' => NpcGenerator::ARCHETYPES,
             'dangerLevels' => NpcGenerator::DANGER_LEVELS,
-            'catalogItems' => $tab === 'configuracoes' ? CatalogItem::query()->orderBy('name')->get(['id', 'name', 'category', 'value']) : collect(),
+            'catalogItems' => $tab === 'configuracoes' ? CampaignLibrary::for($gameSession)->entries(CatalogItem::class)->values() : collect(),
+            'libraryPending' => array_sum(CampaignLibrary::for($gameSession)->pendingCounts()) + count($gameSession->ruleSet?->pendingBaseChanges(RuleSet::query()->global()->first()) ?? []),
             'shopItemIds' => $tab === 'configuracoes' ? $gameSession->shopItems()->pluck('catalog_items.id')->all() : [],
             'library' => $tab === 'sons'
                 ? CustomSound::query()->availableTo($request->user(), $gameSession)->with('user:id,name')->orderBy('category')->orderBy('name')->get()
@@ -105,7 +108,7 @@ class GmSessionController extends Controller
             'active' => ['boolean'],
             'shop_enabled' => ['boolean'],
             'shop_items' => ['array'],
-            'shop_items.*' => ['integer', Rule::exists('catalog_items', 'id')],
+            'shop_items.*' => ['integer', Rule::in(CampaignLibrary::for($gameSession)->entries(CatalogItem::class)->keys()->all())],
         ], [], [
             'name' => 'nome',
             'description' => 'descrição',

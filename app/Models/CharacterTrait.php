@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\TraitType;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use App\Models\Concerns\CampaignLibraryEntry;
+use IlluminateDatabaseloquentAttributesillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Hidden(['firestore_id'])]
 class CharacterTrait extends Model
 {
+    use CampaignLibraryEntry;
+
     /**
      * @return array<string, string>
      */

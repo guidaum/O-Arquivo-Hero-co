@@ -60,5 +60,5 @@
 
     {{ $talents->links() }}
 
-    <x-catalog.delete-modal type="talento" warning="Personagens e traços que usam este talento perdem o vínculo." />
+    <x-catalog.delete-modal type="talento" warning="Sai do catálogo base e das campanhas criadas depois; as campanhas existentes e as fichas continuam com ele." />
 </x-layouts.app>

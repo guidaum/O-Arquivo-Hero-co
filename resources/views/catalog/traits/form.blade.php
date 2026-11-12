@@ -10,11 +10,11 @@
 @endphp
 
 <x-layouts.app :title="($editing ? 'Editar' : 'Nova').' Vantagem/Defeito · Catálogos'">
-    @include('catalog.partials.header', ['title' => 'Vantagens & Defeitos'])
+    @include('catalog.partials.form-header', ['title' => 'Vantagens & Defeitos', 'type' => 'tracos', 'form' => $form])
 
-    <form class="catalog-form glass" method="POST" action="{{ $editing ? route('catalog.traits.update', $trait) : route('catalog.traits.store') }}" data-trait-form>
+    <form class="catalog-form glass" method="POST" action="{{ $form['action'] }}" data-trait-form>
         @csrf
-        @if ($editing) @method('PUT') @endif
+        @if ($form['method'] === 'PUT') @method('PUT') @endif
         @if ($suggestionId) <input type="hidden" name="suggestion_id" value="{{ $suggestionId }}"> @endif
 
         <h2 class="catalog-form__title">{{ $editing ? 'Editar Vantagem/Defeito' : ($suggestionId ? 'Revisar Sugestão de Vantagem/Defeito' : 'Nova Vantagem/Defeito') }}</h2>
@@ -41,7 +41,7 @@
         <x-form.field name="description" label="Descrição" type="textarea" :value="$trait->description" maxlength="5000" />
 
         <div class="form-actions">
-            <a class="button button--secondary" href="{{ $suggestionId ? route('catalog.suggestions.index') : route('catalog.traits.index') }}">Cancelar</a>
+            <a class="button button--secondary" href="{{ $suggestionId ? route('admin.suggestions.index', ['origem' => 'jogadores']) : $form['cancel'] }}">Cancelar</a>
             <button type="submit" class="button"><x-icon name="save" :size="16" /> {{ $suggestionId ? 'Aprovar e Adicionar' : ($editing ? 'Salvar' : 'Criar') }}</button>
         </div>
     </form>

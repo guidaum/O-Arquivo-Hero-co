@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use App\Models\Concerns\CampaignLibraryEntry;
+use IlluminateDatabaseloquentAttributesillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 #[Hidden(['firestore_id'])]
 class Skill extends Model
 {
+    use CampaignLibraryEntry;
+
     /**
      * @return array<string, string>
      */
@@ -23,14 +26,6 @@ class Skill extends Model
             'atp_cost' => 'integer',
             'purchase_cost' => 'integer',
         ];
-    }
-
-    /**
-     * @return BelongsTo<GameSession, $this>
-     */
-    public function gameSession(): BelongsTo
-    {
-        return $this->belongsTo(GameSession::class);
     }
 
     /**
