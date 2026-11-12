@@ -197,16 +197,22 @@
     grid-template-columns: minmax(18rem, 1fr) minmax(0, 2fr);
 }
 
+/* Trilhas minmax(0, 1fr) e min-width: 0: sem isso um <select> com opções
+   longas (ou um texto sem quebra) alarga a coluna além da tela do celular. */
 .sheet-grid__side,
 .sheet-grid__main {
     display: grid;
+    min-width: 0;
     align-content: start;
     gap: 2rem;
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .sheet-card {
     display: grid;
+    min-width: 0;
     gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
     padding: 1.75rem;
     border-radius: var(--radius-2xl);
     /* Soma ao scroll-padding-top do html (app.css): espaço dos atalhos fixos. */
@@ -538,42 +544,281 @@ details > .attribute__summary {
     }
 }
 
+/* Celular: menos camadas de respiro (cartão dentro de cartão), cabeçalho
+   compacto e atalhos colados à barra do topo, para sobrar tela ao conteúdo. */
 @media (max-width: 639px) {
-    .sheet-card {
-        padding: 1.25rem;
+    /* Cabeçalho: retrato pequeno ao lado do nome; números rápidos em grade. */
+    .sheet-header {
+        display: grid;
+        align-items: start;
+        gap: 0.5rem 1rem;
+        grid-template-columns: auto minmax(0, 1fr);
+        margin-bottom: 1rem;
+        padding: 1rem;
         border-radius: var(--radius-xl);
+    }
+
+    .sheet-header__main {
+        display: contents;
+    }
+
+    .sheet-header__portrait {
+        width: 4.5rem;
+        height: 4.5rem;
+        grid-row: 1 / span 3;
+        border-radius: var(--radius-lg);
+    }
+
+    .sheet-header__title {
+        gap: 0.375rem 0.5rem;
+    }
+
+    .sheet-header__title h1 {
+        width: 100%;
+        font-size: 1.5rem;
+    }
+
+    .sheet-header__class {
+        margin-top: 0;
+        font-size: 0.7rem;
+    }
+
+    .sheet-header__campaign {
+        gap: 0.25rem 0.75rem;
+        margin-top: 0;
+    }
+
+    .sheet-header__campaign .badge {
+        max-width: 100%;
+        white-space: normal;
+    }
+
+    .sheet-header__campaign .inline-form {
+        display: flex;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .sheet-header__campaign .inline-form .select {
+        min-width: 0;
+        flex: 1 1 10rem;
+    }
+
+    .sheet-quick {
+        display: grid;
+        gap: 0.375rem;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 0.5rem;
+    }
+
+    .sheet-quick div {
+        align-items: center;
+        min-width: 0;
+        padding: 0.375rem 0.25rem;
+        border-radius: var(--radius);
+        background: var(--surface-low);
+        text-align: center;
+    }
+
+    .sheet-quick__pv {
+        grid-column: span 2;
+    }
+
+    .sheet-quick dd {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.25rem;
+        font-size: 1rem;
+        white-space: nowrap;
+    }
+
+    .sheet-quick dd .icon {
+        width: 0.875rem;
+        height: 0.875rem;
+    }
+
+    .sheet-header__actions {
+        grid-column: 1 / -1;
+        gap: 0.5rem;
+    }
+
+    .sheet-header__actions .button {
+        flex: 1;
+        justify-content: center;
+    }
+
+    .test-result {
+        gap: 0.875rem;
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .test-result__roll {
+        width: 2.75rem;
+        height: 2.75rem;
+        flex-shrink: 0;
+        font-size: 1.375rem;
+    }
+
+    .test-result__outcome {
+        font-size: 1.2rem;
+    }
+
+    /* Atalhos: faixa de ponta a ponta, colada à barra do topo e opaca
+       (nada do conteúdo aparece acima nem através dela). */
+    .sheet-sections {
+        top: calc(var(--header-height) + var(--safe-top));
+        margin: 0 calc(-1 * max(1rem, var(--safe-right))) 1rem calc(-1 * max(1rem, var(--safe-left)));
+        padding: 0.375rem max(0.75rem, var(--safe-left));
+        border-width: 0 0 1px;
+        border-radius: 0;
+        background: color-mix(in srgb, var(--bg-primary) 92%, transparent);
+        box-shadow: 0 6px 12px -8px rgb(0 0 0 / 0.45);
+        scroll-padding-inline: 0.75rem;
+    }
+
+    .sheet-sections .tabs__link {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.8125rem;
     }
 
     .sheet-grid,
     .sheet-grid__side,
     .sheet-grid__main {
-        gap: 1.25rem;
-    }
-}
-
-@media (max-width: 639px) {
-    .sheet-header {
-        padding: 1.5rem;
-        text-align: center;
+        gap: 1rem;
     }
 
-    .sheet-header__portrait {
-        margin-inline: auto;
+    .sheet-card {
+        gap: 0.875rem;
+        padding: 1rem;
+        border-radius: var(--radius-xl);
+        scroll-margin-top: 2.75rem;
     }
 
-    .sheet-header__title,
-    .sheet-header__class,
-    .sheet-quick,
-    .sheet-header__actions {
+    .sheet-card__title {
+        gap: 0.5rem;
+        font-size: 1.25rem;
+    }
+
+    .sheet-card__title .icon {
+        width: 1.125rem;
+        height: 1.125rem;
+    }
+
+    /* Itens internos: menos recuo, pois já estão dentro do cartão. */
+    .attribute-list {
+        gap: 0.5rem;
+    }
+
+    .attribute,
+    .talent {
+        gap: 0.5rem;
+        padding: 0.625rem 0.75rem;
+        border-radius: var(--radius-lg);
+    }
+
+    .attribute__name,
+    .talent__name,
+    .ability__name {
+        font-size: 1rem;
+    }
+
+    .attribute__total,
+    .talent__total,
+    .ability__difficulty {
+        min-width: 2.5rem;
+        padding: 0.125rem 0.5rem;
+        font-size: 1.125rem;
+    }
+
+    .talent-grid {
+        gap: 0.5rem;
+    }
+
+    .test-buttons__button {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    .combat-grid {
+        gap: 0.5rem;
+    }
+
+    .combat-grid div {
+        padding: 0.5rem;
+    }
+
+    .combat-grid dd {
+        font-size: 1.25rem;
+    }
+
+    .ability {
+        padding: 0.75rem 0;
+    }
+
+    .ability__head {
+        gap: 0.5rem;
+    }
+
+    .ability__meta {
+        gap: 0.25rem 0.625rem;
+        font-size: 0.75rem;
+    }
+
+    .ability__text {
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+
+    /* Estado: duas colunas de contadores em vez de uma lista comprida. */
+    .vitals {
+        gap: 0.75rem 0.5rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stepper {
+        align-content: end;
+    }
+
+    .stepper .field__label {
+        font-size: 0.6rem;
+        letter-spacing: 0.08em;
+    }
+
+    .stepper__control {
+        gap: 0.25rem;
+    }
+
+    .stepper__control .icon-button {
+        min-width: 2.5rem;
+        flex-shrink: 0;
+        padding: 0.25rem;
+    }
+
+    .stepper__control .field__input {
+        width: 100%;
+        padding-inline: 0.25rem;
+    }
+
+    .vitals__actions {
+        gap: 0.5rem;
+    }
+
+    .vitals__actions .button {
+        flex: 1 1 8rem;
         justify-content: center;
     }
 
-    .sheet-header__title h1 {
-        font-size: 2rem;
+    .library-add .button,
+    .sheet-card > .form-actions .button,
+    .sheet-card .form > .button {
+        width: 100%;
+        justify-content: center;
     }
 
-    .vitals {
-        grid-template-columns: minmax(0, 1fr);
+    .campaign-maps {
+        gap: 0.75rem;
     }
 }
 
@@ -681,8 +926,22 @@ details > .attribute__summary {
 }
 
 .library-add .select {
+    width: 100%;
     min-width: 0;
-    flex: 1;
+    max-width: 100%;
+    flex: 1 1 14rem;
+    text-overflow: ellipsis;
+}
+
+.ability__head > div:first-child,
+.talent__head > div:first-child {
+    min-width: 0;
+}
+
+.ability__name,
+.ability__text,
+.talent__name {
+    overflow-wrap: anywhere;
 }
 
 .ability__side {
