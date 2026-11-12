@@ -35,6 +35,9 @@ class DungeonToken extends Model
         'weakened' => ['Enfraquecido', '🛡️', '#a8a29e'],
     ];
 
+    /** Relações que toBoardArray() usa (retrato da ficha, foto do dono, quem moveu). */
+    public const BOARD_RELATIONS = ['lastMovedBy:id,name', 'character:id,user_id,game_session_id,image_path', 'user:id,photo_path'];
+
     /** Cores dos tokens de jogador, em ordem de entrada. */
     public const PLAYER_COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6', '#f97316', '#14b8a6'];
 
@@ -57,13 +60,24 @@ class DungeonToken extends Model
     public function toBoardArray(User $viewer, bool $isGm): array
     {
         $mine = $this->user_id !== null && $this->user_id === $viewer->id;
+        $type = $this->typeKey();
+        $character = $this->relationLoaded('character') ? $this->character : null;
+
+        // Ficha no popup: o mestre abre a de qualquer personagem da campanha;
+        // jogadores, só as fichas de personagens de jogador (não as de NPCs/monstros).
+        $sheetUrl = $character !== null
+            && $character->game_session_id === $this->game_session_id
+            && ($isGm || $type === TokenType::Player->value || $character->user_id === $viewer->id)
+                ? route('characters.show', $character->id)
+                : null;
 
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'type' => $this->type instanceof \BackedEnum ? $this->type->value : (string) $this->type,
+            'type' => $type,
             'color' => $this->color ?: '#38bdf8',
-            'avatar_url' => $this->avatar_url,
+            'avatar_url' => $this->portraitUrl(),
+            'sheet_url' => $sheetUrl,
             'x' => $this->x,
             'y' => $this->y,
             'size' => $this->size ?: 1,
@@ -77,6 +91,32 @@ class DungeonToken extends Model
             'can_control' => $isGm || $mine,
             'moved_by' => $this->lastMovedBy?->name,
         ];
+    }
+
+    public function typeKey(): string
+    {
+        return $this->type instanceof \BackedEnum ? $this->type->value : (string) $this->type;
+    }
+
+    /** Token de jogador controlado por este usuário (o próprio personagem). */
+    public function isPlayerTokenOf(User $user): bool
+    {
+        return $this->typeKey() === TokenType::Player->value && $this->user_id !== null && $this->user_id === $user->id;
+    }
+
+    /**
+     * Imagem do token: o retrato atual da ficha (o token guardava só o da
+     * entrada no mapa), depois a imagem própria do token e, para jogadores,
+     * a foto do perfil do dono.
+     */
+    public function portraitUrl(): ?string
+    {
+        $character = $this->relationLoaded('character') ? $this->character : null;
+        $owner = $this->relationLoaded('user') ? $this->user : null;
+
+        return $character?->image_url
+            ?? $this->avatar_url
+            ?? ($this->typeKey() === TokenType::Player->value ? $owner?->photo_url : null);
     }
 
     /**

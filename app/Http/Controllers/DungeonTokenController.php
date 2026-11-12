@@ -68,21 +68,23 @@ class DungeonTokenController extends Controller
                 ->first();
 
             if ($existing !== null) {
-                return response()->json(['message' => $character->name.' já está no mapa.', 'token' => $existing->toBoardArray($user, $isGm)]);
+                return response()->json(['message' => $character->name.' já está no mapa.', 'token' => $existing->load(DungeonToken::BOARD_RELATIONS)->toBoardArray($user, $isGm)]);
             }
 
             [$hp, $maxHp] = self::vitals($character);
             $ini = (int) ($character->rollStats()['INI'] ?? 0);
+            // NPCs e monstros da campanha (colocados pelo mestre) seguem a névoa como criaturas.
+            $type = $character->is_monster ? 'monster' : ($character->is_npc ? 'npc' : 'player');
             $players = DungeonToken::query()->where('game_session_id', $gameSession->id)->where('campaign_map_id', $campaignMap->id)->where('type', 'player')->count();
 
             $token->fill([
                 'name' => $character->name,
-                'type' => 'player',
-                'color' => DungeonToken::PLAYER_COLORS[$players % count(DungeonToken::PLAYER_COLORS)],
+                'type' => $type,
+                'color' => $type === 'player' ? DungeonToken::PLAYER_COLORS[$players % count(DungeonToken::PLAYER_COLORS)] : ($character->color ?: ($type === 'monster' ? '#ef4444' : '#10b981')),
                 'hp' => $hp,
                 'max_hp' => $maxHp,
                 'initiative' => random_int(1, 20) + $ini,
-                'size' => 1,
+                'size' => $character->is_monster ? (float) max(1, min(4, (int) $character->monster_size)) : 1,
                 'is_hidden' => false,
             ]);
             $token->character_id = $character->id;
@@ -119,7 +121,7 @@ class DungeonTokenController extends Controller
 
         return response()->json([
             'message' => $token->name.' entrou no mapa.',
-            'token' => $token->toBoardArray($user, $isGm),
+            'token' => $token->load(DungeonToken::BOARD_RELATIONS)->toBoardArray($user, $isGm),
         ], 201);
     }
 
@@ -182,7 +184,7 @@ class DungeonTokenController extends Controller
             $this->revealAround($token, $gameSession, $campaignMap, $user);
         }
 
-        return response()->json(['token' => $token->load('lastMovedBy:id,name')->toBoardArray($user, $isGm)]);
+        return response()->json(['token' => $token->load(DungeonToken::BOARD_RELATIONS)->toBoardArray($user, $isGm)]);
     }
 
     public function destroy(Request $request, GameSession $gameSession, CampaignMap $campaignMap, DungeonToken $token): JsonResponse

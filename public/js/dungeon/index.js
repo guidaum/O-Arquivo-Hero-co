@@ -118,7 +118,10 @@ if (root) {
                 if (weatherSelect && document.activeElement !== weatherSelect) weatherSelect.value = state.weather;
                 drawing.setStrokes(body.drawings ?? []);
                 if (state.selectedId && !selectedToken()) state.selectedId = null;
-                renderAll();
+                // Arrastando um token: redesenhar agora trocaria o elemento sob o
+                // dedo; a posição dos outros chega ao soltar.
+                if (drag) pendingRender = true;
+                else renderAll();
             }
 
             renderPings(body.pings ?? []);
@@ -244,6 +247,14 @@ if (root) {
     // Arrastar tokens e áreas (modo mover)
 
     let drag = null;
+    let pendingRender = false;
+
+    function flushRender() {
+        if (pendingRender) {
+            pendingRender = false;
+            renderAll();
+        }
+    }
 
     stage.addEventListener('pointerdown', (event) => {
         if (state.mode !== 'move' || event.button !== 0) return;
@@ -284,6 +295,7 @@ if (root) {
 
         if (!current.moved) {
             if (current.kind === 'aoe') selectAoe(current.id);
+            flushRender();
             return;
         }
 
@@ -300,6 +312,8 @@ if (root) {
         } catch (failure) {
             fail(failure);
             refresh();
+        } finally {
+            flushRender();
         }
     });
 
@@ -511,6 +525,38 @@ if (root) {
             }, icon('trash', 14), ' Remover marcador') : null);
     }
 
+    // Ficha do personagem em popup: a própria página da ficha, embutida (sem
+    // menu nem polling, ver core/theme-init.js); as rolagens dela vão ao chat.
+
+    const sheetDialog = document.getElementById('dungeon-sheet');
+    const sheetFrame = sheetDialog?.querySelector('[data-sheet-frame]');
+
+    function openSheet(token) {
+        if (!sheetDialog || !token.sheet_url) return;
+
+        sheetDialog.querySelector('.modal__title').textContent = `Ficha · ${token.name}`;
+        sheetDialog.querySelector('[data-sheet-link]').href = token.sheet_url;
+        if (sheetFrame.getAttribute('src') !== token.sheet_url) sheetFrame.setAttribute('src', token.sheet_url);
+        sheetDialog.showModal();
+    }
+
+    // Ao fechar, a ficha sai da memória e o mapa busca o estado (PV pode ter mudado).
+    sheetDialog?.addEventListener('close', () => {
+        sheetFrame.setAttribute('src', 'about:blank');
+        refresh();
+    });
+
+    // Duplo clique (ou toque duplo) no token abre a ficha.
+    stage.addEventListener('dblclick', (event) => {
+        const tokenEl = event.target.closest('.token');
+        const token = tokenEl ? state.tokens.find((item) => item.id === Number(tokenEl.dataset.token)) : null;
+
+        if (token?.sheet_url) {
+            event.stopPropagation();
+            openSheet(token);
+        }
+    });
+
     // Tokens: seleção e painel
 
     function selectToken(token) {
@@ -576,6 +622,7 @@ if (root) {
                 el('strong', {}, token.name),
                 el('button', { type: 'button', class: 'icon-button', title: 'Centralizar', onClick: () => viewport.focus(token) }, icon('locate', 16)),
                 el('button', { type: 'button', class: 'icon-button', title: 'Fechar', onClick: () => { state.selectedId = null; renderAll(); } }, icon('x', 16))),
+            token.sheet_url ? el('button', { type: 'button', class: 'button button--secondary dungeon-selected__sheet', onClick: () => openSheet(token) }, icon('scroll-text', 14), ' Ver ficha') : null,
             el('div', { class: 'dungeon-selected__hp' },
                 el('span', {}, `PV ${token.hp} / ${token.max_hp}`),
                 el('span', { class: 'token__hp token__hp--wide' }, el('span', { style: `width: ${token.max_hp ? (token.hp / token.max_hp) * 100 : 100}%` }))),

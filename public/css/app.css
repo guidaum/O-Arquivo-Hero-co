@@ -3021,3 +3021,32 @@ a.notifications__item:focus-visible {
         animation: none;
     }
 }
+
+/* Página embutida num popup de outra tela (html.is-embedded, theme-init.js):
+   só o conteúdo, sem menu, cabeçalho, barra inferior nem ferramentas. */
+html.is-embedded {
+    --header-height: 0px;
+    --bottom-nav-space: 0px;
+
+    scroll-padding-top: 1rem;
+}
+
+html.is-embedded .skip-link,
+html.is-embedded .topbar,
+html.is-embedded .sidebar,
+html.is-embedded .sidebar-backdrop,
+html.is-embedded .bottom-nav,
+html.is-embedded .app-footer,
+html.is-embedded .action-menu__fab,
+html.is-embedded .action-menu__toast,
+html.is-embedded .tool-panel {
+    display: none !important;
+}
+
+html.is-embedded .main {
+    padding: 1rem;
+}
+
+html.is-embedded .sheet-sections {
+    top: 0;
+}

@@ -103,8 +103,22 @@ class DungeonController extends Controller
         $fog = $campaignMap->fogIn($gameSession, $pivot?->layer_settings);
         $atmosphere = DungeonAtmosphere::query()->tap($scope)->first();
 
+        // Tokens vêm sempre (são poucos por mapa): a versão usa o conteúdo deles,
+        // e não só max(updated_at), que tem resolução de segundos e perdia
+        // movimentos feitos no mesmo segundo; o retrato atual da ficha também conta.
+        $allTokens = DungeonToken::query()->tap($scope)
+            ->with(DungeonToken::BOARD_RELATIONS)
+            ->orderBy('id')
+            ->get();
+
         $version = md5(implode('|', [
-            ...array_map(static fn (string $model): string => (string) $model::query()->tap($scope)->count().'@'.$model::query()->tap($scope)->max('updated_at'), [DungeonToken::class, DungeonAoe::class, DungeonMarker::class, MapDrawing::class]),
+            md5($allTokens->map(static fn (DungeonToken $token): string => implode(',', [
+                $token->id, $token->x, $token->y, $token->hp, $token->max_hp, $token->initiative, $token->size,
+                $token->is_hidden ? 1 : 0, $token->name, $token->color, $token->user_id,
+                implode(';', (array) $token->conditions), $token->avatar_path, $token->character?->image_path,
+                $token->last_moved_by, $token->updated_at,
+            ]))->implode('|')),
+            ...array_map(static fn (string $model): string => (string) $model::query()->tap($scope)->count().'@'.$model::query()->tap($scope)->max('updated_at'), [DungeonAoe::class, DungeonMarker::class, MapDrawing::class]),
             DungeonFog::query()->tap($scope)->max('updated_at'),
             $atmosphere?->updated_at,
             $pivot?->updated_at,
@@ -123,21 +137,24 @@ class DungeonController extends Controller
         $cols = $campaignMap->gridCols();
         $rows = $campaignMap->gridRows();
         $revealed = array_flip($fog['revealed_cells']);
-        $tokens = DungeonToken::query()->tap($scope)->with('lastMovedBy:id,name')->orderBy('id')->get()
-            ->filter(static function (DungeonToken $token) use ($isGm, $user, $fog, $revealed, $cols, $rows): bool {
-                if ($isGm || $token->user_id === $user->id) {
-                    return true;
-                }
-                if ($token->is_hidden) {
-                    return false;
-                }
-                $type = $token->type instanceof \BackedEnum ? $token->type->value : (string) $token->type;
-                if (! $fog['enabled'] || $type === 'player') {
-                    return true;
-                }
+        // Jogador vê o próprio personagem sempre; qualquer outro token (inclusive
+        // de outros jogadores e criaturas do mestre) só fora da névoa e se não
+        // estiver oculto. Tokens de jogador revelam a névoa ao redor quando se
+        // movem, então os companheiros aparecem assim que andam.
+        // O mestre no modo Jogador também vê como jogador: suas criaturas não contam como "dele".
+        $tokens = $allTokens->filter(static function (DungeonToken $token) use ($isGm, $user, $fog, $revealed, $cols, $rows): bool {
+            if ($isGm || $token->isPlayerTokenOf($user)) {
+                return true;
+            }
+            if ($token->is_hidden) {
+                return false;
+            }
+            if (! $fog['enabled']) {
+                return true;
+            }
 
-                return isset($revealed[self::cellOf($token->x, $token->y, $cols, $rows)]);
-            });
+            return isset($revealed[self::cellOf($token->x, $token->y, $cols, $rows)]);
+        });
 
         return response()->json([
             'version' => $version,

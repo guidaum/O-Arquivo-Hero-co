@@ -140,6 +140,68 @@ class DungeonTest extends TestCase
         $this->actingAs($this->player)->putJson($this->url('dungeon.fog'), ['enabled' => false, 'revealed_cells' => []])->assertForbidden();
     }
 
+    public function test_other_players_tokens_follow_the_fog_and_moves_reach_everyone(): void
+    {
+        $companion = User::factory()->create();
+        $this->session->players()->attach($companion);
+        $other = new Character(['name' => 'Brina', 'stats' => ['for' => 2], 'current_pv' => 8]);
+        $other->user_id = $companion->id;
+        $other->game_session_id = $this->session->id;
+        $other->save();
+
+        $mine = $this->join();
+        $theirs = $this->actingAs($companion)->postJson($this->url('dungeon.tokens.store'), ['mode' => 'character', 'character_id' => $other->id])->json('token');
+        $before = $this->actingAs($this->player)->getJson($this->url('dungeon.state'))->assertJsonCount(2, 'tokens')->json('version');
+
+        // Um movimento no mesmo segundo muda a versão e chega ao outro jogador.
+        $this->actingAs($companion)->putJson($this->url('dungeon.tokens.update', ['token' => $theirs['id']]), ['x' => 25, 'y' => 50])->assertOk();
+        $this->actingAs($this->player)->getJson($this->url('dungeon.state', ['versao' => $before]))
+            ->assertJsonPath('changed', true)
+            ->assertJsonPath('tokens.1.x', 25);
+
+        // Com a névoa cobrindo o companheiro, só o próprio token chega.
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => []])->assertOk();
+        $this->actingAs($this->player)->getJson($this->url('dungeon.state'))
+            ->assertJsonCount(1, 'tokens')
+            ->assertJsonPath('tokens.0.id', $mine['id']);
+        $this->actingAs($this->gm)->getJson($this->url('dungeon.state'))->assertJsonCount(2, 'tokens');
+    }
+
+    public function test_gm_creatures_stay_in_the_fog_even_for_the_gm_in_player_mode(): void
+    {
+        $this->actingAs($this->gm)->postJson($this->url('dungeon.tokens.store'), ['mode' => 'preset', 'preset' => 'goblin', 'x' => 95, 'y' => 90])->assertCreated();
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => [0]])->assertOk();
+
+        $this->actingAs($this->gm)->withSession(['view_mode' => 'user'])->getJson($this->url('dungeon.state'))->assertJsonCount(0, 'tokens');
+    }
+
+    public function test_tokens_show_the_current_portrait_and_link_the_sheet(): void
+    {
+        $token = $this->join();
+        $this->assertSame(route('characters.show', $this->character), $token['sheet_url']);
+
+        // O retrato trocado depois de entrar no mapa aparece no token.
+        $this->character->forceFill(['image_path' => 'https://example.test/retrato.png'])->save();
+        $this->actingAs($this->player)->getJson($this->url('dungeon.state'))
+            ->assertJsonPath('tokens.0.avatar_url', 'https://example.test/retrato.png');
+
+        // NPC da campanha: o mestre abre a ficha; jogadores não.
+        $npc = new Character(['name' => 'Taberneiro', 'stats' => ['for' => 1]]);
+        $npc->user_id = $this->gm->id;
+        $npc->game_session_id = $this->session->id;
+        $npc->is_npc = true;
+        $npc->save();
+        $npcToken = $this->actingAs($this->gm)->postJson($this->url('dungeon.tokens.store'), ['mode' => 'character', 'character_id' => $npc->id])
+            ->assertCreated()
+            ->assertJsonPath('token.type', 'npc')
+            ->json('token');
+        $this->assertNotNull($npcToken['sheet_url']);
+
+        $this->actingAs($this->player)->getJson($this->url('dungeon.state'))
+            ->assertJsonPath('tokens.1.name', 'Taberneiro')
+            ->assertJsonPath('tokens.1.sheet_url', null);
+    }
+
     public function test_player_movement_reveals_fog_around(): void
     {
         $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => []])->assertOk();

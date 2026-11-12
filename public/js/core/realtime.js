@@ -19,6 +19,12 @@ const HIDDEN_INTERVAL = 30000;
 const MAX_BACKOFF = 60000;
 
 export function subscribe(url, { interval = 5000, params = () => ({}), onData, onError } = {}) {
+    // Página dentro de um popup (html.is-embedded, theme-init.js): quem consulta
+    // é a tela de fora; aqui nada é pedido, para não dobrar o polling.
+    if (document.documentElement.classList.contains('is-embedded')) {
+        return { refresh() {}, setInterval() {}, stop() {} };
+    }
+
     let current = interval;
     let failures = 0;
     let timer = null;

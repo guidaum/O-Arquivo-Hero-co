@@ -256,6 +256,15 @@
             </x-modal>
         @endif
 
+        {{-- Ficha do personagem do token, por cima do mapa (a página da ficha embutida, sem menu). --}}
+        <x-modal id="dungeon-sheet" title="Ficha" wide class="sheet-popup">
+            <iframe class="sheet-popup__frame" data-sheet-frame title="Ficha do personagem" src="about:blank"></iframe>
+            <div class="sheet-popup__actions">
+                <a class="button button--link" data-sheet-link href="#" target="_blank" rel="noopener"><x-icon name="link" :size="14" /> Abrir em nova aba</a>
+                <button type="button" class="button button--secondary" data-modal-close>Fechar</button>
+            </div>
+        </x-modal>
+
         <x-action-menu :session="$session" :character="$actionCharacter" :notes="$isGm ? 'campaign' : 'character'" />
 
         @push('scripts')

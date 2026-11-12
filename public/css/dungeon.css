@@ -553,3 +553,54 @@
     min-width: 0;
     max-width: 11rem;
 }
+
+/* Ficha do personagem em popup (a página da ficha embutida num iframe). */
+
+.modal.sheet-popup {
+    display: none;
+    width: min(100% - 2rem, 72rem);
+    height: min(100dvh - 2rem, 56rem);
+    max-height: none;
+    padding: 1rem 1.25rem;
+    overflow: hidden;
+}
+
+.modal.sheet-popup[open] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.sheet-popup .modal__header {
+    margin-bottom: 0;
+}
+
+.sheet-popup__frame {
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
+}
+
+.sheet-popup__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+@media (max-width: 639px) {
+    .modal.sheet-popup {
+        width: 100%;
+        height: calc(100dvh - var(--safe-top) - 0.5rem);
+        padding: 0.75rem;
+    }
+}
+
+.dungeon-selected__sheet {
+    justify-content: center;
+    width: 100%;
+}

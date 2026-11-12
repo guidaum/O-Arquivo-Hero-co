@@ -5,6 +5,16 @@
 // Como no sistema antigo, no celular o site sempre abre no tema claro.
 (function () {
     var root = document.documentElement;
+
+    // Página aberta dentro de um popup de outra tela (ex.: ficha no battlemap):
+    // sem menu, cabeçalho nem ferramentas (app.css), e sem polling (realtime.js).
+    try {
+        if (window.self !== window.top) {
+            root.classList.add('is-embedded');
+        }
+    } catch (error) {
+        root.classList.add('is-embedded');
+    }
     var isMobile = window.innerWidth < 768
         || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
