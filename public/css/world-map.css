@@ -425,6 +425,19 @@
     to { opacity: 0; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* Movimento reduzido: sinais e locais letais ficam destacados, mas parados. */
+@media (prefers-reduced-motion: reduce) {
+    .map-ping__pulse {
+        animation: none;
+        opacity: 0.7;
+    }
+
+    .map-pin--deadly .map-pin__marker {
+        animation: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6), 0 0 26px var(--pin-color);
+    }
+}
+
 /* Faixa de aviso, filtros e controles flutuantes */
 
 .world-map__banner {

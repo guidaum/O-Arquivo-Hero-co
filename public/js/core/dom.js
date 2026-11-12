@@ -54,6 +54,30 @@ export function icon(name, size = 18) {
     return svg;
 }
 
+// Trava um botão (ou o botão de envio de um formulário) enquanto a tarefa
+// roda: mostra o giro de .is-busy, avisa leitores de tela (aria-busy) e
+// ignora cliques repetidos, que criariam tokens ou marcadores em dobro.
+//
+// button.addEventListener('click', () => busy(button, () => postJson(url, data)));
+export async function busy(target, task) {
+    const button = target instanceof HTMLFormElement ? target.querySelector('[type="submit"]') : target;
+
+    if (!button) return task();
+    if (button.getAttribute('aria-busy') === 'true') return undefined;
+
+    button.classList.add('is-busy');
+    button.setAttribute('aria-busy', 'true');
+    button.disabled = true;
+
+    try {
+        return await task();
+    } finally {
+        button.classList.remove('is-busy');
+        button.removeAttribute('aria-busy');
+        button.disabled = false;
+    }
+}
+
 /** Troca o conteúdo de um elemento. */
 export function replace(parent, ...children) {
     parent.replaceChildren();

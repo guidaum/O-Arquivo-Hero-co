@@ -7,7 +7,7 @@
 
 import { subscribe } from '../core/realtime.js';
 import { deleteJson, postJson, request } from '../core/http.js';
-import { el, icon, replace } from '../core/dom.js';
+import { busy, el, icon, replace } from '../core/dom.js';
 import { cellsInRadius } from '../core/maps.js';
 import { createViewport } from '../world-map/viewport.js';
 import { createDrawing } from '../world-map/drawing.js';
@@ -481,20 +481,22 @@ if (root) {
 
     const markerForm = document.querySelector('[data-marker-form]');
 
-    markerForm.addEventListener('submit', async (event) => {
+    markerForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        try {
-            await postJson(config.markersUrl, {
-                label: markerForm.elements.label.value,
-                category: markerForm.elements.category.value,
-                description: markerForm.elements.description.value,
-                ...state.markerPoint,
-            });
-            document.getElementById('dungeon-marker').close();
-            refresh();
-        } catch (failure) {
-            markerForm.querySelector('[data-marker-error]').textContent = failure.message;
-        }
+        busy(markerForm, async () => {
+            try {
+                await postJson(config.markersUrl, {
+                    label: markerForm.elements.label.value,
+                    category: markerForm.elements.category.value,
+                    description: markerForm.elements.description.value,
+                    ...state.markerPoint,
+                });
+                document.getElementById('dungeon-marker').close();
+                refresh();
+            } catch (failure) {
+                markerForm.querySelector('[data-marker-error]').textContent = failure.message;
+            }
+        });
     });
 
     function openMarker(marker) {
@@ -736,7 +738,8 @@ if (root) {
         root.querySelectorAll('[data-panel]').forEach((panel) => { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
     }));
 
-    root.querySelectorAll('[data-combat]').forEach((button) => button.addEventListener('click', async () => {
+    // "Próximo turno" clicado duas vezes pularia um combatente: um pedido por vez.
+    root.querySelectorAll('[data-combat]').forEach((button) => button.addEventListener('click', () => busy(button, async () => {
         try {
             const body = await request(config.combatUrl, { method: 'PUT', data: { action: button.dataset.combat } });
             state.combat = body.combat;
@@ -746,7 +749,7 @@ if (root) {
         } catch (failure) {
             fail(failure);
         }
-    }));
+    })));
 
     // Entrar no mapa (jogador) e criaturas (mestre)
 
@@ -762,7 +765,7 @@ if (root) {
         if (joinButton) joinButton.hidden = !freeCharacter();
     }
 
-    joinButton?.addEventListener('click', async () => {
+    joinButton?.addEventListener('click', () => busy(joinButton, async () => {
         const character = freeCharacter();
         if (!character) return;
 
@@ -774,11 +777,12 @@ if (root) {
         } catch (failure) {
             fail(failure);
         }
-    });
+    }));
 
     if (config.isGm) {
         const hidden = () => document.querySelector('[data-spawn-hidden]').checked;
-        const spawn = async (data) => {
+        // trigger: o botão clicado (ou o formulário), travado até a resposta.
+        const spawn = (data, trigger) => busy(trigger, async () => {
             try {
                 const body = await postJson(config.tokensUrl, data);
                 notify(body.message, 'success');
@@ -787,10 +791,10 @@ if (root) {
             } catch (failure) {
                 document.querySelector('[data-spawn-error]').textContent = failure.message;
             }
-        };
+        });
 
         replace(document.querySelector('[data-spawn-characters]'), config.campaignCharacters.length
-            ? config.campaignCharacters.map((character) => el('button', { type: 'button', class: 'chip', onClick: () => spawn({ mode: 'character', character_id: character.id }) },
+            ? config.campaignCharacters.map((character) => el('button', { type: 'button', class: 'chip', onClick: (event) => spawn({ mode: 'character', character_id: character.id }, event.currentTarget) },
                 character.name, character.owner ? el('small', {}, ` · ${character.owner}`) : null))
             : el('p', { class: 'muted' }, 'Nenhum personagem na campanha.'));
 
@@ -798,7 +802,7 @@ if (root) {
             type: 'button',
             class: 'chip',
             style: `border-color: ${preset.color}`,
-            onClick: () => spawn({ mode: 'preset', preset: key, is_hidden: hidden() }),
+            onClick: (event) => spawn({ mode: 'preset', preset: key, is_hidden: hidden() }, event.currentTarget),
         }, `${preset.name} (${preset.hp} PV)`)));
 
         document.querySelector('[data-spawn-form]').addEventListener('submit', (event) => {
@@ -812,7 +816,7 @@ if (root) {
                 size: Number(form.elements.size.value) || 1,
                 color: form.elements.color.value,
                 is_hidden: hidden(),
-            });
+            }, form);
         });
 
         root.querySelectorAll('[data-map-active]').forEach((input) => input.addEventListener('change', async () => {

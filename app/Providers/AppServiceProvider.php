@@ -15,12 +15,15 @@ use App\Policies\GameContentPolicy;
 use App\Support\Assets;
 use App\Support\Navigation;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -45,6 +48,32 @@ class AppServiceProvider extends ServiceProvider
         $this->configurePasswords();
         $this->configureViews();
         $this->configureModels();
+        $this->configureRateLimiting();
+    }
+
+    /**
+     * Limites nomeados de requisições (middleware throttle:<nome>). Rotas com
+     * limite próprio mais rígido (chat, dados, pings...) mantêm o seu.
+     * Estourar o limite responde 429 (página de erro ou JSON em português).
+     */
+    private function configureRateLimiting(): void
+    {
+        $key = static fn (Request $request): string => (string) ($request->user()?->id ?? $request->ip());
+
+        // Toda escrita autenticada: generoso para arrastar tokens e editar a
+        // ficha, mas barra scripts. Leituras e polling (GET/HEAD) ficam de fora.
+        RateLimiter::for('writes', static fn (Request $request): Limit => $request->isMethodSafe()
+            ? Limit::none()
+            : Limit::perMinute(300)->by('writes:'.$key($request)));
+
+        // Envio de arquivos (retratos, imagens do diário, mapas).
+        RateLimiter::for('uploads', static fn (Request $request): Limit => Limit::perMinute(20)->by('uploads:'.$key($request)));
+
+        // Rolagens calculadas no servidor (testes da ficha, dano de itens).
+        RateLimiter::for('rolls', static fn (Request $request): Limit => Limit::perMinute(60)->by('rolls:'.$key($request)));
+
+        // Cadastro e definição de senha, por IP.
+        RateLimiter::for('guest-forms', static fn (Request $request): Limit => Limit::perMinute(6)->by('guest:'.$request->ip()));
     }
 
     /**

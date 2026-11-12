@@ -14,6 +14,7 @@ const SOUND_KEY = 'dice-sound';
 const HISTORY_LIMIT = 50;
 const MIN_SPIN = 900;
 const AUTO_CLOSE = 3800;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 // Contorno de cada dado na animação (viewBox 0 0 100 100).
 const SHAPES = {
@@ -170,6 +171,13 @@ if (panel) {
         stage.hidden = false;
         stage.className = 'dice-stage is-spinning';
         replace(resultBox, el('p', { class: 'dice-stage__rolling' }, icon('sparkles', 14), ' Os dados estão rolando...'));
+
+        // Movimento reduzido: sem a troca rápida de números (piscaria 14 vezes por segundo).
+        if (reducedMotion.matches) {
+            face.textContent = '?';
+
+            return () => {};
+        }
 
         const shuffle = setInterval(() => {
             face.textContent = String(Math.floor(Math.random() * state.sides) + 1);

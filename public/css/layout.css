@@ -1,0 +1,633 @@
+/*
+ * Estrutura da aplicação: cabeçalho, menu lateral, conteúdo, navegação
+ * inferior, selos, avatar e cabeçalho de página. Carregado depois de
+ * app.css (tokens e base) e antes de components.css e responsive.css.
+ */
+
+/* Estrutura da aplicação */
+
+.shell {
+    display: flex;
+    min-height: 100vh;
+    flex-direction: column;
+}
+
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    height: calc(var(--header-height) + var(--safe-top));
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: var(--safe-top) max(1.5rem, var(--safe-right)) 0 max(1.5rem, var(--safe-left));
+    border-width: 0 0 1px;
+}
+
+.topbar__end > * {
+    flex-shrink: 0;
+}
+
+.topbar__start,
+.topbar__end {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.topbar__end {
+    gap: 0.75rem;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+.brand__title {
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icon-tile {
+    display: flex;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in srgb, var(--tile-color, var(--arcane)) 30%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--tile-color, var(--arcane)) 20%, transparent);
+    color: var(--tile-color, var(--arcane));
+}
+
+.icon-tile--large {
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-lg);
+}
+
+.icon-tile--ember {
+    --tile-color: var(--ember);
+}
+
+.icon-tile--gold {
+    --tile-color: var(--gold);
+}
+
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--transition), color var(--transition);
+}
+
+.icon-button:hover,
+.icon-button[aria-expanded="true"] {
+    background: var(--surface-low);
+    color: var(--text-primary);
+}
+
+.icon-button--bordered {
+    border-color: var(--glass-border);
+    background: var(--surface-low);
+}
+
+/* Botão de tema: mostra o sol no tema escuro e a lua no claro */
+.theme-toggle__moon,
+.light .theme-toggle__sun {
+    display: none;
+}
+
+.light .theme-toggle__moon {
+    display: block;
+}
+
+.shell__body {
+    position: relative;
+    display: flex;
+    flex: 1;
+}
+
+/* Menu lateral */
+
+.sidebar {
+    position: sticky;
+    top: calc(var(--header-height) + var(--safe-top));
+    z-index: 40;
+    display: flex;
+    width: var(--sidebar-width);
+    height: calc(100vh - var(--header-height) - var(--safe-top));
+    height: calc(100dvh - var(--header-height) - var(--safe-top));
+    flex-shrink: 0;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-width: 0 1px 0 0;
+    transition: width var(--transition), transform var(--transition);
+}
+
+.sidebar__nav {
+    display: grid;
+    gap: 1.25rem;
+    padding: 1rem 1rem 1rem max(1rem, var(--safe-left));
+}
+
+.sidebar__group {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.sidebar__heading {
+    margin: 0 0 0.25rem;
+    padding: 0 1rem;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* Conta (perfil, modo de visão e sair): só na gaveta do tablet/celular. */
+.sidebar__account {
+    display: none;
+}
+
+.sidebar__link--danger {
+    width: 100%;
+    background: none;
+    font: inherit;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sidebar__link--danger,
+.sidebar__link--danger:hover {
+    color: var(--ember);
+}
+
+.sidebar__link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color var(--transition), color var(--transition);
+}
+
+.sidebar__link:hover {
+    background: var(--surface-low);
+    color: var(--text-primary);
+}
+
+.sidebar__link .icon {
+    transition: transform 200ms ease;
+}
+
+.sidebar__link:hover .icon {
+    transform: scale(1.1);
+}
+
+.sidebar__link[aria-current="page"] {
+    border-color: color-mix(in srgb, var(--arcane) 20%, transparent);
+    background: color-mix(in srgb, var(--arcane) 10%, transparent);
+    color: var(--arcane);
+}
+
+.sidebar__link[aria-current="page"]::before {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 0.25rem;
+    height: 1.5rem;
+    border-radius: 0 999px 999px 0;
+    background: var(--arcane);
+    content: "";
+    transform: translateY(-50%);
+}
+
+.sidebar-backdrop {
+    display: none;
+}
+
+/* Menu recolhido no computador: só os ícones */
+.sidebar-collapsed .sidebar {
+    width: var(--sidebar-collapsed-width);
+}
+
+.sidebar-collapsed .sidebar__label {
+    display: none;
+}
+
+.sidebar-collapsed .sidebar__link {
+    justify-content: center;
+    padding-inline: 0;
+}
+
+/* Recolhido, o título do grupo vira um divisor discreto. */
+.sidebar-collapsed .sidebar__heading {
+    height: 1px;
+    margin: 0 0.75rem 0.5rem;
+    padding: 0;
+    background: var(--glass-border);
+    color: transparent;
+}
+
+.sidebar-collapsed .sidebar__group:first-child .sidebar__heading {
+    display: none;
+}
+
+/* Conteúdo */
+
+.main {
+    min-width: 0;
+    flex: 1;
+    padding: 2.5rem max(2.5rem, var(--safe-right)) 2.5rem 2.5rem;
+    /* Nenhum conteúdo largo cria rolagem lateral na página inteira. */
+    overflow-x: clip;
+}
+
+.main__inner {
+    width: 100%;
+    max-width: 90rem;
+    margin: 0 auto;
+}
+
+.main--full {
+    padding: 0;
+    overflow: hidden;
+}
+
+.main--full .main__inner {
+    max-width: none;
+}
+
+.app-footer {
+    padding: 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+/* Navegação inferior (celular) */
+
+.bottom-nav {
+    display: none;
+}
+
+/* Cabeçalho: alternador de modo, preferências e usuário */
+
+.segmented {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-low);
+}
+
+.segmented form {
+    display: contents;
+}
+
+.segmented__option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: color-mix(in srgb, var(--text-primary) 40%, transparent);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.segmented__option:hover {
+    color: var(--text-primary);
+}
+
+.segmented__option[aria-pressed="true"] {
+    background: var(--option-color, var(--arcane));
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--option-color, var(--arcane)) 25%, transparent);
+    color: var(--bg-primary);
+}
+
+.segmented__option--player {
+    --option-color: var(--ember);
+}
+
+.segmented--large {
+    gap: 0.375rem;
+    padding: 0.375rem;
+    box-shadow: var(--shadow);
+}
+
+.segmented--large .segmented__option {
+    padding: 0.625rem 1.5rem;
+    font-size: 0.875rem;
+}
+
+.dropdown {
+    position: relative;
+}
+
+.dropdown > summary {
+    list-style: none;
+}
+
+.dropdown > summary::-webkit-details-marker {
+    display: none;
+}
+
+.dropdown[open] > summary {
+    background: color-mix(in srgb, var(--arcane) 20%, transparent);
+    color: var(--arcane);
+}
+
+.dropdown__menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    z-index: 100;
+    width: 16rem;
+    overflow: hidden;
+    border: 1px solid var(--glass-modal-border);
+    border-radius: var(--radius-lg);
+    background: var(--glass-modal-bg);
+    box-shadow: var(--shadow-strong);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.dropdown__header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--surface-low);
+    background: var(--surface-low);
+}
+
+.dropdown__group {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.5rem;
+}
+
+.dropdown__group + .dropdown__group {
+    border-top: 1px solid var(--surface-low);
+    background: var(--surface-low);
+}
+
+.dropdown__group form {
+    display: contents;
+}
+
+.dropdown__item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.dropdown__item:hover {
+    background: var(--surface-low);
+}
+
+.dropdown__item .icon {
+    color: var(--arcane);
+}
+
+.dropdown__item strong {
+    display: block;
+    font-weight: 500;
+}
+
+.dropdown__item small {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+}
+
+.dropdown__item--danger,
+.dropdown__item--danger .icon {
+    color: var(--ember);
+}
+
+.dropdown__item--danger:hover {
+    background: color-mix(in srgb, var(--ember) 10%, transparent);
+}
+
+.dropdown__item[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.user-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-left: 1rem;
+    border-left: 1px solid var(--glass-border);
+    color: inherit;
+    text-decoration: none;
+}
+
+.user-chip__text {
+    text-align: right;
+}
+
+.user-chip__name {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.user-chip__level {
+    margin: 0;
+    color: color-mix(in srgb, var(--text-primary) 40%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+/* Selos */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.375rem;
+    border: 1px solid color-mix(in srgb, var(--badge-color, var(--ember)) 40%, transparent);
+    border-radius: 0.25rem;
+    background: color-mix(in srgb, var(--badge-color, var(--ember)) 20%, transparent);
+    color: var(--badge-color, var(--ember));
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.badge--pill {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+}
+
+.badge--admin {
+    --badge-color: var(--gold);
+}
+
+.badge--gm {
+    --badge-color: var(--arcane);
+}
+
+.badge--player {
+    --badge-color: var(--ember);
+}
+
+/* Avatar */
+
+.avatar {
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--arcane) 40%, transparent), color-mix(in srgb, var(--ember) 40%, transparent));
+    color: var(--text-primary);
+    font-family: var(--font-serif);
+    font-size: 0.95rem;
+    object-fit: cover;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.85;
+}
+
+.avatar--large {
+    width: 5rem;
+    height: 5rem;
+    font-size: 2rem;
+}
+
+/* Cabeçalho de página */
+
+.page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+}
+
+.page-header__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.page-header__main {
+    min-width: 0;
+}
+
+/* Link de volta: sempre acima do título, no mesmo lugar em todas as páginas. */
+.page-header__back {
+    display: inline-flex;
+    min-height: 2rem;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0 0 0.75rem -0.5rem;
+    padding: 0.25rem 0.625rem 0.25rem 0.5rem;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color var(--transition), color var(--transition);
+}
+
+.page-header__back:hover,
+.page-header__back:focus-visible {
+    background: var(--surface-low);
+    color: var(--arcane);
+}
+
+.page-header__back .icon {
+    transition: transform 150ms ease;
+}
+
+.page-header__back:hover .icon {
+    transform: translateX(-2px);
+}
+
+.page-header__title {
+    margin: 0 0 0.5rem;
+    font-size: 2.25rem;
+    overflow-wrap: anywhere;
+}
+
+.page-header__subtitle {
+    margin: 0;
+    color: color-mix(in srgb, var(--text-primary) 60%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.page-header__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}

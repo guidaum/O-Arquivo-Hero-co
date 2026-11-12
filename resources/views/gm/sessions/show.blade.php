@@ -66,8 +66,6 @@
         @include('gm.sessions.tabs.'.$tab)
     </div>
 
-    <p class="gm-toast" data-gm-toast role="status" aria-live="polite" hidden></p>
-
     <x-action-menu :session="$session" notes="campaign" />
 
     @push('scripts')

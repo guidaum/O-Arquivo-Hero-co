@@ -7,7 +7,7 @@
     var root = document.documentElement;
 
     // Página aberta dentro de um popup de outra tela (ex.: ficha no battlemap):
-    // sem menu, cabeçalho nem ferramentas (app.css), e sem polling (realtime.js).
+    // sem menu, cabeçalho nem ferramentas (responsive.css), e sem polling (realtime.js).
     try {
         if (window.self !== window.top) {
             root.classList.add('is-embedded');

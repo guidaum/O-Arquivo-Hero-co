@@ -81,8 +81,6 @@
 @endonce
 
 <div @class(['action-menu', 'action-menu--four' => $showAmbience]) data-action-menu>
-    <p class="action-menu__toast" data-action-toast role="status" hidden></p>
-
     {{-- Rolador de Dados --}}
     <section class="tool-panel dice" data-dice data-config="{{ json_encode($diceConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}" hidden aria-label="Rolador de Dados">
         <header class="tool-panel__header">

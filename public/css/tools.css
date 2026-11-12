@@ -137,25 +137,6 @@
     display: none;
 }
 
-.action-menu__toast {
-    position: fixed;
-    right: 1.5rem;
-    bottom: 6rem;
-    z-index: 80;
-    max-width: 20rem;
-    margin: 0;
-    padding: 0.75rem 1rem;
-    border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent);
-    border-radius: var(--radius);
-    background: var(--bg-secondary);
-    color: var(--gold);
-    font-size: 0.8rem;
-    box-shadow: var(--shadow);
-}
-
-.action-menu__toast[hidden] {
-    display: none;
-}
 
 @keyframes action-option-in {
     from {
@@ -799,8 +780,7 @@
     }
 
     .tool-panel,
-    .chat.chat--embedded,
-    .action-menu__toast {
+    .chat.chat--embedded {
         right: max(1rem, var(--safe-right));
         bottom: calc(var(--bottom-nav-space) + 5rem);
     }

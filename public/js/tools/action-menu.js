@@ -7,26 +7,19 @@
 //                                (as outras fecham: só uma aberta por vez);
 // - tool:badge  { tool, count }  número no botão (ex.: mensagens não lidas).
 
+import { toast } from '../core/toast.js';
+
 const menu = document.querySelector('[data-action-menu]');
 
 if (menu) {
     const toggle = menu.querySelector('[data-action-toggle]');
     const options = menu.querySelector('[data-action-options]');
-    const toast = menu.querySelector('[data-action-toast]');
     const openTools = new Set();
-    let toastTimer;
 
     function setExpanded(expanded) {
         options.hidden = !expanded;
         menu.classList.toggle('action-menu--expanded', expanded);
         toggle.setAttribute('aria-expanded', String(expanded));
-    }
-
-    function showToast(text) {
-        toast.textContent = text;
-        toast.hidden = false;
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toast.hidden = true; }, 3500);
     }
 
     toggle.addEventListener('click', () => setExpanded(options.hidden));
@@ -36,7 +29,7 @@ if (menu) {
             setExpanded(false);
 
             if (button.dataset.toolUnavailable) {
-                showToast(button.dataset.toolUnavailable);
+                toast(button.dataset.toolUnavailable);
                 return;
             }
 

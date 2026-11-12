@@ -941,31 +941,9 @@
     white-space: nowrap;
 }
 
-/* Aviso flutuante */
+/* O aviso flutuante é o .toast de app.css (public/js/core/toast.js). */
 
-.gm-toast {
-    position: fixed;
-    bottom: 2rem;
-    left: 50%;
-    z-index: 90;
-    max-width: min(32rem, calc(100vw - 2rem));
-    margin: 0;
-    padding: 0.75rem 1.25rem;
-    border: 1px solid var(--glass-modal-border);
-    border-radius: var(--radius-lg);
-    background: var(--glass-modal-bg);
-    box-shadow: var(--shadow-strong);
-    backdrop-filter: blur(16px);
-    font-weight: 600;
-    transform: translateX(-50%);
-}
-
-.gm-toast[data-tone="success"] { border-color: var(--success); }
-.gm-toast[data-tone="danger"] { border-color: var(--ember); }
-.gm-toast[data-tone="error"] { border-color: var(--danger-strong); color: var(--danger); }
-
-.gm-dashboard [hidden],
-.gm-toast[hidden] {
+.gm-dashboard [hidden] {
     display: none;
 }
 

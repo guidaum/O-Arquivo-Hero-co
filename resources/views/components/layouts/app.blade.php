@@ -35,7 +35,11 @@
         <script src="@asset('js/core/theme-init.js')"></script>
         <link rel="preload" href="{{ asset('fonts/manrope-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
         <link rel="preload" href="{{ asset('fonts/newsreader-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
+        {{-- Estilos globais em ordem de cascata: tokens/base, estrutura, componentes, telas. --}}
         <link rel="stylesheet" href="@asset('css/app.css')">
+        <link rel="stylesheet" href="@asset('css/layout.css')">
+        <link rel="stylesheet" href="@asset('css/components.css')">
+        <link rel="stylesheet" href="@asset('css/responsive.css')">
         @stack('styles')
     </head>
     <body @class(['has-full-main' => $full])>
@@ -178,6 +182,9 @@
                     <p class="connection-banner__text" data-connection-text></p>
                     <button type="button" class="button button--small" data-connection-reload hidden>Recarregar</button>
                 </div>
+
+                {{-- Aviso flutuante das telas (public/js/core/toast.js). --}}
+                <p class="toast" data-toast role="status" aria-live="polite" hidden></p>
 
                 <main id="conteudo" tabindex="-1" @class(['main', 'main--full' => $full])>
                     <div class="main__inner">

@@ -311,6 +311,14 @@
     50% { box-shadow: 0 0 0 4px var(--gold), 0 0 22px var(--gold); }
 }
 
+/* Movimento reduzido: o token da vez fica com o brilho fixo, sem pulsar. */
+@media (prefers-reduced-motion: reduce) {
+    .token.is-active-turn {
+        animation: none;
+        box-shadow: 0 0 0 4px var(--gold), 0 0 22px var(--gold);
+    }
+}
+
 /* Régua */
 
 .ruler__line {

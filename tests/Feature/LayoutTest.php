@@ -255,12 +255,14 @@ class LayoutTest extends TestCase
     public function test_static_files_are_versioned_for_caches(): void
     {
         $css = 'css/app.css?v='.filemtime(public_path('css/app.css'));
+        $responsive = 'css/responsive.css?v='.filemtime(public_path('css/responsive.css'));
         $http = 'js/core/http.js?v='.filemtime(public_path('js/core/http.js'));
 
         // Módulos importados por caminho relativo também recebem a versão (import map).
         $this->actingAs(User::factory()->create())->get('/')
             ->assertOk()
             ->assertSee($css, false)
+            ->assertSee($responsive, false)
             ->assertSee('<script type="importmap">', false)
             ->assertSee(str_replace('/', '\/', $http), false);
     }

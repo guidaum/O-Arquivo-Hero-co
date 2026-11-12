@@ -15,6 +15,9 @@
         <script src="@asset('js/core/theme-init.js')"></script>
         <link rel="preload" href="{{ asset('fonts/newsreader-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
         <link rel="stylesheet" href="@asset('css/app.css')">
+        <link rel="stylesheet" href="@asset('css/layout.css')">
+        <link rel="stylesheet" href="@asset('css/components.css')">
+        <link rel="stylesheet" href="@asset('css/responsive.css')">
         <link rel="stylesheet" href="@asset('css/auth.css')">
     </head>
     <body>

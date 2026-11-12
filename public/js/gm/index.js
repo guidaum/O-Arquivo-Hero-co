@@ -5,21 +5,13 @@ import { setupHealth, setupCharacterSpawn } from './health.js';
 import { setupBestiary } from './bestiary.js';
 import { setupEncounter } from './encounter.js';
 import { setupSounds } from './sounds.js';
+import { toast } from '../core/toast.js';
 
 const root = document.querySelector('[data-gm-dashboard]');
 
 if (root) {
     const config = JSON.parse(root.dataset.config);
-    const toast = document.querySelector('[data-gm-toast]');
-    let toastTimer;
-
-    const notify = (text, tone = 'info') => {
-        toast.textContent = text;
-        toast.dataset.tone = tone;
-        toast.hidden = false;
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toast.hidden = true; }, 4000);
-    };
+    const notify = (text, tone = 'info') => toast(text, tone);
 
     // Destino das criaturas: masmorra escolhida e se entram ocultas.
     const spawnTarget = (scope) => {

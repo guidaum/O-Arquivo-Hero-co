@@ -477,7 +477,7 @@ List and admin patterns (phase 5a, reference: `app/Http/Controllers/Admin/` and 
 * lists filter by query string (`busca`, plus specific filters), use `paginate(20)->withQueryString()` and the default pagination view `partials.pagination`;
 * one confirmation modal per page serves every row: the row button sets `data-modal-action` (DELETE route) and `data-modal-text-<name>`, which fill `form[data-modal-form]` and `[data-modal-text="<name>"]`;
 * `[data-autosubmit]` submits its form on change (filters, inline role change); `[data-check-all="<selector>"]` checks every matching checkbox;
-* shared list styles in `app.css`: `.tabs`, `.toolbar`, `.search-field`, `.select`, `.row-list` / `.row-card`, `.stat-cards`, `.switch`, `.pagination`, `.confirm-box`; module-specific styles go in their own CSS file pushed to the `styles` stack;
+* shared list styles in `components.css`: `.tabs`, `.toolbar`, `.search-field`, `.select`, `.row-list` / `.row-card`, `.stat-cards`, `.switch`, `.pagination`, `.confirm-box`; module-specific styles go in their own CSS file pushed to the `styles` stack;
 * phase 5 is split into 5a (admin panel, done), 5b (catalogs and rules, done), 5c (session journal, done) and 5d (inventory, done).
 
 Inventory and shop (phase 5d, reference: `InventoryController`, `InventoryItemController`, `ShopController`, `resources/views/inventory/`):
@@ -596,7 +596,12 @@ Polishing (reference: `App\Support\BoardVersion`, `App\Support\HttpErrors`, `pub
 * the dungeon state version comes from `BoardVersion::fingerprint()` (cache value swapped after commit on every write, mixed with a 30 s safety window) plus the map, pivot and atmosphere `updated_at`; board models (`DungeonToken`, `DungeonAoe`, `DungeonMarker`, `MapDrawing`, `DungeonFog`) use `Concerns\BumpsBoardVersion`; **mass `query()->delete()/update()` on them must call `BoardVersion::bump($sessionId, $mapId)`**; a character portrait change bumps the boards of its tokens;
 * `realtime.js` announces `realtime:status` (`online`, `unstable` after 2 failures, `expired` on 401/419, `forbidden` on 403); `connection.js` shows the layout banner (`[data-connection-banner]`) with a reload button;
 * error pages live in `resources/views/errors/` (one file per code shipped by the framework, plus `4xx`/`5xx`), all rendering `x-error-page` on the guest layout; texts come from `HttpErrors`, which also answers JSON `HttpException`s in Portuguese (framework English defaults and model class names never reach the user; 5xx never shows the exception message); a custom `abort(403, 'mensagem')` keeps its message;
-* outside production, lazy loading on models from a collection is logged (`Consulta N+1`, once per model/relation per request) instead of thrown; fix the reported cases with eager loads.
+* outside production, lazy loading on models from a collection is logged (`Consulta N+1`, once per model/relation per request) instead of thrown; fix the reported cases with eager loads;
+* rate limits are named in `AppServiceProvider::configureRateLimiting()`: every authenticated route goes through `throttle:writes` (300/min per user, GET/HEAD exempt); routes that receive files use `throttle:uploads` (20/min), server rolls use `throttle:rolls` (60/min), registration and password definition use `throttle:guest-forms` (6/min per IP); routes with a stricter own limit keep it; new upload routes must add `throttle:uploads`;
+* floating notices go through `public/js/core/toast.js` (`toast(text, tone)`, tones `info|success|danger|error`, single `[data-toast]` region in the app layout); contextual messages (map banner, creation wizard message) stay where they are;
+* `busy(buttonOrForm, task)` in `core/dom.js` locks the button while a fetch runs (`.is-busy`, `aria-busy`, ignores repeated clicks); use it for actions that create or advance something (tokens, markers, combat turns);
+* infinite animations need a `prefers-reduced-motion: reduce` variant that keeps the highlight static (pings, deadly pins, active turn token, dice face shuffle);
+* global CSS is split in cascade order: `app.css` (fonts, tokens, base), `layout.css` (app structure), `components.css` (shared components), `responsive.css` (screen size/touch/motion overrides, embedded page, tooltip); both layouts load the four files in this order, before the module files of the `styles` stack.
 
 Session journal (phase 5c, reference: `JournalEntryController`, `JournalImageController`, `resources/views/journal/`):
 

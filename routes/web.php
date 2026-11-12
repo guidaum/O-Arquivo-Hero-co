@@ -66,7 +66,7 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/login', [LoginController::class, 'store'])->name('login.store');
 
     Route::get('/cadastro', [RegisterController::class, 'create'])->name('register');
-    Route::post('/cadastro', [RegisterController::class, 'store'])->name('register.store');
+    Route::post('/cadastro', [RegisterController::class, 'store'])->middleware('throttle:guest-forms')->name('register.store');
 
     Route::get('/esqueci-senha', [PasswordResetLinkController::class, 'create'])->name('password.request');
     Route::post('/esqueci-senha', [PasswordResetLinkController::class, 'store'])
@@ -74,22 +74,24 @@ Route::middleware('guest')->group(function (): void {
         ->name('password.email');
 
     Route::get('/redefinir-senha/{token}', [NewPasswordController::class, 'create'])->name('password.reset');
-    Route::post('/redefinir-senha', [NewPasswordController::class, 'store'])->name('password.store');
+    Route::post('/redefinir-senha', [NewPasswordController::class, 'store'])->middleware('throttle:guest-forms')->name('password.store');
 
     Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])->name('auth.google.redirect');
     Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->name('auth.google.callback');
 });
 
-Route::middleware('auth')->group(function (): void {
+// Toda escrita autenticada passa pelo limite geral "writes"; envios de arquivo
+// usam "uploads" e rolagens "rolls" (limites nomeados no AppServiceProvider).
+Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
     Route::get('/', DashboardController::class)->name('dashboard');
     Route::put('/modo-de-visao', [ViewModeController::class, 'update'])->name('view-mode.update');
 
     Route::get('/perfil', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::put('/perfil', [ProfileController::class, 'update'])->name('profile.update');
+    Route::put('/perfil', [ProfileController::class, 'update'])->middleware('throttle:uploads')->name('profile.update');
     Route::put('/perfil/senha', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
     // Campanhas: o mestre cria, os jogadores entram pelo código.
-    Route::post('/campanhas', [GameSessionController::class, 'store'])->name('sessions.store');
+    Route::post('/campanhas', [GameSessionController::class, 'store'])->middleware('throttle:10,1')->name('sessions.store');
     Route::post('/campanhas/entrar', [GameSessionController::class, 'join'])->middleware('throttle:10,1')->name('sessions.join');
 
     // Chat da sessão (fetch + polling) e notificações de menções.
@@ -116,7 +118,7 @@ Route::middleware('auth')->group(function (): void {
     // Painel do Mestre: abas por query string (?aba=mesa|bestiario|encontros|anotacoes|configuracoes).
     Route::prefix('/mestre/sessoes/{gameSession}')->name('gm.sessions.')->group(function (): void {
         Route::get('/', [GmSessionController::class, 'show'])->name('show');
-        Route::put('/configuracoes', [GmSessionController::class, 'update'])->name('update');
+        Route::put('/configuracoes', [GmSessionController::class, 'update'])->middleware('throttle:uploads')->name('update');
         Route::put('/anotacoes', [GmSessionController::class, 'updateNotes'])->name('notes');
         Route::delete('/', [GmSessionController::class, 'destroy'])->name('destroy');
 
@@ -200,15 +202,16 @@ Route::middleware('auth')->group(function (): void {
     // Diário de Sessão.
     Route::middleware("can:use-feature,'journal'")->group(function (): void {
         Route::resource('diario', JournalEntryController::class)->except('show')
-            ->parameters(['diario' => 'journalEntry'])->names('journal');
-        Route::post('/diario/{journalEntry}/imagens', [JournalImageController::class, 'store'])->name('journal.images.store');
+            ->parameters(['diario' => 'journalEntry'])->names('journal')
+            ->middlewareFor(['store', 'update'], 'throttle:uploads');
+        Route::post('/diario/{journalEntry}/imagens', [JournalImageController::class, 'store'])->middleware('throttle:uploads')->name('journal.images.store');
         Route::delete('/diario/{journalEntry}/imagens/{image}', [JournalImageController::class, 'destroy'])->name('journal.images.destroy');
     });
 
     // Criação de Personagem e sugestões dos jogadores (enviadas pelo assistente via fetch).
     Route::middleware("can:use-feature,'characterCreation'")->group(function (): void {
         Route::get('/personagens/criar', [CharacterCreationController::class, 'create'])->name('characters.create');
-        Route::post('/personagens', [CharacterCreationController::class, 'store'])->name('characters.store');
+        Route::post('/personagens', [CharacterCreationController::class, 'store'])->middleware('throttle:uploads')->name('characters.store');
     });
     Route::post('/sugestoes', [SuggestionSubmissionController::class, 'store'])->middleware('throttle:20,1')->name('suggestions.store');
 
@@ -219,11 +222,11 @@ Route::middleware('auth')->group(function (): void {
     Route::middleware("can:use-feature,'characterSheet'")->prefix('ficha')->group(function (): void {
         Route::get('/', [CharacterSheetController::class, 'index'])->name('characters.sheet');
         Route::get('/{character}', [CharacterSheetController::class, 'show'])->name('characters.show');
-        Route::post('/{character}/teste', [CharacterSheetController::class, 'test'])->name('characters.test');
+        Route::post('/{character}/teste', [CharacterSheetController::class, 'test'])->middleware('throttle:rolls')->name('characters.test');
         Route::put('/{character}/estado', [CharacterSheetController::class, 'updateVitals'])->name('characters.vitals');
 
         // Edição (mestre da campanha ou dono com a edição liberada).
-        Route::put('/{character}/dados', [CharacterEditController::class, 'updateDetails'])->name('characters.details');
+        Route::put('/{character}/dados', [CharacterEditController::class, 'updateDetails'])->middleware('throttle:uploads')->name('characters.details');
         Route::put('/{character}/liberar', [CharacterEditController::class, 'toggleUnlock'])->name('characters.unlock');
         Route::put('/{character}/talentos', [CharacterEditController::class, 'updateTalentMods'])->name('characters.talent-mods');
         Route::put('/{character}/campanha', [CharacterEditController::class, 'updateCampaign'])->name('characters.campaign');
@@ -265,7 +268,7 @@ Route::middleware('auth')->group(function (): void {
             Route::post('/{character}/itens/{item}/usar', [InventoryItemController::class, 'consume'])->name('inventory.items.consume');
             Route::post('/{character}/itens/{item}/equipar', [InventoryItemController::class, 'toggleEquip'])->name('inventory.items.equip');
             Route::post('/{character}/itens/{item}/mover', [InventoryItemController::class, 'move'])->name('inventory.items.move');
-            Route::post('/{character}/itens/{item}/rolar', [InventoryItemController::class, 'roll'])->name('inventory.items.roll');
+            Route::post('/{character}/itens/{item}/rolar', [InventoryItemController::class, 'roll'])->middleware('throttle:rolls')->name('inventory.items.roll');
         });
 
         Route::get('/{character}/loja', [ShopController::class, 'index'])->name('inventory.shop');
@@ -280,10 +283,10 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/{gameSession}/estudio', [MapStudioController::class, 'show'])->name('studio');
         Route::post('/{gameSession}/estudio/renderizar', [MapStudioController::class, 'render'])->middleware('throttle:6,1')->name('studio.render');
         Route::get('/{gameSession}/estudio/renderizacoes/{render}', [MapStudioController::class, 'status'])->name('studio.status');
-        Route::post('/{gameSession}/estudio/salvar', [MapStudioController::class, 'save'])->name('studio.save');
+        Route::post('/{gameSession}/estudio/salvar', [MapStudioController::class, 'save'])->middleware('throttle:uploads')->name('studio.save');
 
-        Route::post('/{gameSession}', [MapManagerController::class, 'store'])->name('store');
-        Route::put('/{gameSession}/{campaignMap}', [MapManagerController::class, 'update'])->name('update');
+        Route::post('/{gameSession}', [MapManagerController::class, 'store'])->middleware('throttle:uploads')->name('store');
+        Route::put('/{gameSession}/{campaignMap}', [MapManagerController::class, 'update'])->middleware('throttle:uploads')->name('update');
         Route::delete('/{gameSession}/{campaignMap}', [MapManagerController::class, 'destroy'])->name('destroy');
         Route::put('/{gameSession}/{campaignMap}/ativo', [MapManagerController::class, 'toggleActive'])->name('active');
         Route::get('/{gameSession}/{campaignMap}/camadas', [MapManagerController::class, 'layers'])->name('layers');
