@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\TraitType;
 use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CharacterItem;
+use App\Models\CharacterTrait;
 use App\Models\GameSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -159,6 +161,27 @@ class InventoryTest extends TestCase
             ->assertSessionHas('roll', fn (array $roll): bool => str_contains((string) $roll['ammo'], 'ESGOTADA'));
 
         $this->assertModelMissing($arrows);
+    }
+
+    public function test_damage_roll_uses_the_total_attribute_of_the_sheet(): void
+    {
+        // FOR base 5 + 2 de traço = 7 (como na ficha): "1D4 + 4 + FOR" vai de 12 a 15.
+        $this->character->forceFill(['stats' => ['for' => 5], 'stats_mods' => []])->save();
+        $strength = CharacterTrait::query()->create(['name' => 'Força Bruta', 'type' => TraitType::Advantage, 'modifier' => 2, 'modifier_attribute' => 'for']);
+        $this->character->traits()->attach($strength);
+
+        $weapon = $this->item(['name' => 'Adaga', 'category' => 'weapons', 'damage' => '1D4 + 4 + FOR']);
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->actingAs($this->player)->post(route('inventory.items.roll', [$this->character, $weapon]))
+                ->assertSessionHas('roll', fn (array $roll): bool => $roll['total'] >= 12 && $roll['total'] <= 15);
+        }
+
+        // Itens equipados e ajustes do mestre também entram: 7 + 1 + 3 = 11.
+        $this->item(['name' => 'Anel da Força', 'category' => 'misc', 'equipped' => true, 'stats' => ['for' => 1]]);
+        $this->character->forceFill(['gm_modifiers' => ['for' => [['id' => 'a1', 'value' => 3, 'justification' => 'Bênção']]]])->save();
+
+        $this->assertSame(11, $this->character->fresh()->rollStats()['FOR']);
     }
 
     public function test_damage_roll_answers_json_for_the_roll_dialog(): void

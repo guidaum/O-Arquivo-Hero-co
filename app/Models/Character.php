@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Game\CharacterSheet;
+use App\Game\FormulaEvaluator;
+use App\Game\GameRules;
 use App\Models\Concerns\HasPublicFiles;
 use App\Support\BoardVersion;
+use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -63,21 +67,31 @@ class Character extends Model
     }
 
     /**
-     * Variáveis das rolagens livres (dano de itens, "/r" no chat): valor
-     * base + modificador de cada atributo, em maiúsculas, como no sistema antigo.
+     * Variáveis das rolagens (dano de itens, "/r" no chat, iniciativa na
+     * masmorra): o valor TOTAL de cada atributo, o mesmo da ficha (base, mod,
+     * traços, itens equipados e ajustes do mestre, pelas regras da campanha),
+     * mais as demais variáveis das fórmulas da ficha (LUTA, SKILLS...).
+     * Ex.: FOR base 5 + 2 de traços => "1D4 + 4 + FOR" rola 1D4 + 4 + 7.
+     *
+     * Chaves gravadas em stats fora da lista de atributos (ex.: "pv" de
+     * monstros gerados) continuam disponíveis com o valor base.
      *
      * @return array<string, int|float>
      */
     public function rollStats(): array
     {
-        $stats = [];
-        $mods = (array) ($this->stats_mods ?? []);
+        $extra = [];
 
         foreach ((array) ($this->stats ?? []) as $attribute => $value) {
-            $stats[strtoupper((string) $attribute)] = (is_numeric($value) ? $value + 0 : 0) + (is_numeric($mods[$attribute] ?? null) ? $mods[$attribute] + 0 : 0);
+            $extra[FormulaEvaluator::variableName((string) $attribute)] = is_numeric($value) ? $value + 0 : 0;
         }
 
-        return $stats;
+        $this->loadMissing(['gameSession', 'skills', 'powers', 'traits', 'items']);
+        $session = $this->gameSession;
+        $talents = CampaignLibrary::for($session)->entries(Talent::class)->values();
+        $sheet = CharacterSheet::for($this, GameRules::forSession($session), $talents);
+
+        return [...$extra, ...$sheet->data['formula_stats']];
     }
 
     /**

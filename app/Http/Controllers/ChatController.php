@@ -153,7 +153,8 @@ class ChatController extends Controller
             ->whereKey($characterId)
             ->where('user_id', $user->id)
             ->where('game_session_id', $session->id)
-            ->first(['id', 'name', 'stats', 'stats_mods']);
+            // Personagem completo: "/r" usa os atributos totais da ficha (Character::rollStats).
+            ->first();
     }
 
     private function created(ChatMessage $message, User $user): JsonResponse
