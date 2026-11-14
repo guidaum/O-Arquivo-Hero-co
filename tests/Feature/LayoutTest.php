@@ -267,6 +267,13 @@ class LayoutTest extends TestCase
             ->assertSee('data-modal-close', false);
     }
 
+    public function test_image_viewer_is_loaded_on_every_page(): void
+    {
+        $this->actingAs(User::factory()->create())->get('/')
+            ->assertOk()
+            ->assertSee('js/core/lightbox.js', false);
+    }
+
     public function test_static_files_are_versioned_for_caches(): void
     {
         $css = 'css/app.css?v='.filemtime(public_path('css/app.css'));

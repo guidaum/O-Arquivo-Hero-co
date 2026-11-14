@@ -228,6 +228,7 @@
         <script type="module" src="@asset('js/core/theme.js')"></script>
         <script type="module" src="@asset('js/core/layout.js')"></script>
         <script type="module" src="@asset('js/core/connection.js')"></script>
+        <script type="module" src="@asset('js/core/lightbox.js')"></script>
         <script type="module" src="@asset('js/notifications/bell.js')"></script>
         @stack('scripts')
     </body>

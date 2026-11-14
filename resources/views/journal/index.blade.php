@@ -204,7 +204,7 @@
                         <div class="gallery">
                             @foreach ($entry->images as $image)
                                 <div class="gallery__item">
-                                    <button type="button" class="gallery__open" data-modal-open="lightbox" data-modal-image="{{ $image->url }}" aria-label="Ampliar imagem {{ $loop->iteration }}">
+                                    <button type="button" class="gallery__open" data-zoom="{{ $image->url }}" aria-label="Ampliar imagem {{ $loop->iteration }}">
                                         <img src="{{ $image->url }}" alt="Imagem {{ $loop->iteration }} da galeria" loading="lazy" referrerpolicy="no-referrer">
                                     </button>
                                     @if ($canEdit)
@@ -232,10 +232,6 @@
                 </section>
             </aside>
         </div>
-
-        <x-modal id="lightbox" title="Imagem da galeria" wide>
-            <img class="lightbox__image" src="" alt="Imagem ampliada" data-modal-image referrerpolicy="no-referrer">
-        </x-modal>
 
         <x-catalog.delete-modal type="registro" warning="As imagens da galeria e dos NPCs também serão apagadas." />
     @else

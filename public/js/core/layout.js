@@ -316,13 +316,6 @@ function fillModal(dialog, data) {
         form.action = data.modalAction;
     }
 
-    // Imagem ampliada (ex.: galeria do diário): data-modal-image no botão que abre.
-    if (data.modalImage) {
-        dialog.querySelectorAll('img[data-modal-image]').forEach((image) => {
-            image.src = data.modalImage;
-        });
-    }
-
     // Campos pré-preenchidos: data-modal-value-<nome> no botão, [data-modal-value="<nome>"] no campo.
     dialog.querySelectorAll('[data-modal-value]').forEach((field) => {
         const key = 'modalValue' + field.dataset.modalValue.charAt(0).toUpperCase() + field.dataset.modalValue.slice(1);

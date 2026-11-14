@@ -100,7 +100,8 @@ function setupChat(root) {
             el('span', { class: 'chat-message__sender' }, message.sender_name),
             el('time', { datetime: message.created_at }, message.time)),
         el('div', { class: `chat-bubble${tone}` },
-            message.image_url ? el('a', { href: message.image_url, target: '_blank', rel: 'noopener noreferrer', class: 'chat-bubble__image' },
+            // Abre no visualizador (core/lightbox.js); o link fica para quem abre em nova aba.
+            message.image_url ? el('a', { href: message.image_url, target: '_blank', rel: 'noopener noreferrer', class: 'chat-bubble__image', 'data-zoom': message.image_url },
                 el('img', { src: message.image_url, alt: 'Imagem enviada', loading: 'lazy', referrerpolicy: 'no-referrer' })) : null,
             message.text ? el('p', { class: 'chat-bubble__text' }, formatText(message.text, message.mine)) : null,
             roll ? el('div', { class: 'chat-roll' },

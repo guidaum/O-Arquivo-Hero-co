@@ -471,6 +471,7 @@ Layout conventions (phase 4):
 * shared components: `x-icon` (sprite `public/images/icons.svg`; add new icons there), `x-page-header`, `x-section`, `x-empty-state` (optional `icon`, `hint` and `action` slot with the next step), `x-modal` (native `<dialog>`), `x-view-mode-toggle`, `x-role-badge`, `x-avatar`, `x-character-card`, `x-campaign-card`, `x-form.field`, `x-alert`;
 * every legacy module now has its own controller (the last `coming-soon` route, `/dungeon`, was replaced in phase 9a); the `coming-soon` view remains available for future modules, protected by `can:use-feature,'<feature>'`;
 * fonts are self-hosted in `public/fonts/` (no Google Fonts); `public/js/core/layout.js` handles the sidebar, dropdowns (`<details data-dropdown>`), modals (`data-modal-open` / `data-modal-close`) and copy buttons (`data-copy="<text>"`).
+* image viewer: `public/js/core/lightbox.js` (loaded by the app layout) opens any `<img>` of the content (`main` or a modal, at least 48 px, outside links, buttons and labels) full screen with zoom (wheel, pinch, double tap, + / - / 0) and drag; elements with `data-zoom="<url>"` open that image even when they are links or buttons (journal gallery, chat images); `data-no-zoom` opts out, and screens with their own camera (`[data-viewport]`, `[data-stage]`) are never captured.
 
 List and admin patterns (phase 5a, reference: `app/Http/Controllers/Admin/` and `resources/views/admin/`):
 
