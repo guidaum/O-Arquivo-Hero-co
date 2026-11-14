@@ -51,6 +51,49 @@
 <x-layouts.app :title="$definition['label'].' · '.$session->name">
     @include('gm.sessions.library.header', ['session' => $session, 'current' => $type])
 
+    {{-- Itens que os jogadores têm no inventário e sugeriram para a loja da campanha. --}}
+    @if ($playerSuggestions->isNotEmpty())
+        <section class="library-suggestions library-suggestions--rules glass" aria-labelledby="player-suggestions-title">
+            <div>
+                <h2 class="library-suggestions__title" id="player-suggestions-title">
+                    <x-icon name="backpack" :size="20" /> {{ $playerSuggestions->count() }} {{ $playerSuggestions->count() === 1 ? 'item sugerido' : 'itens sugeridos' }} pelos jogadores
+                </h2>
+                <p class="muted">Itens do inventário que ainda não existem na loja. Revise para adicioná-los à loja desta campanha, ou recuse.</p>
+            </div>
+
+            <div class="row-list">
+                @foreach ($playerSuggestions as $suggestion)
+                    @php($data = (array) $suggestion->data)
+                    <article class="row-card glass library-row library-row--pending">
+                        <div class="row-card__main">
+                            <span class="row-card__media"><x-icon name="backpack" :size="22" /></span>
+                            <div>
+                                <h3 class="row-card__title">{{ $suggestion->name() }}</h3>
+                                <p class="row-card__meta">
+                                    <span>{{ \App\Models\CatalogItem::CATEGORIES[$data['category'] ?? 'misc'] ?? 'Diversos' }}</span>
+                                    <span>{{ \App\Models\CatalogItem::RARITIES[$data['rarity'] ?? 'Common'] ?? '' }}</span>
+                                    <span>{{ (int) ($data['value'] ?? 0) }} MO</span>
+                                    @if (! empty($data['damage'])) <span>Dano {{ $data['damage'] }}</span> @endif
+                                    <span>
+                                        Por {{ $suggestion->user?->name ?? 'jogador removido' }}@if ($suggestion->characterItem?->character) · {{ $suggestion->characterItem->character->name }}@endif
+                                    </span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="row-card__actions">
+                            <form method="POST" action="{{ route('gm.sessions.library.player-suggestions.reject', [$session, $suggestion]) }}">
+                                @csrf @method('PUT')
+                                <button type="submit" class="button button--secondary button--small">Recusar</button>
+                            </form>
+                            <a class="button button--gold button--small" href="{{ route('gm.sessions.library.itens.create', [$session, 'sugestao' => $suggestion->id]) }}"><x-icon name="check" :size="16" /> Revisar e adicionar</a>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
+
     @if ($pending > 0)
         <section class="library-suggestions glass" aria-labelledby="library-suggestions-title">
             <div>

@@ -28,6 +28,13 @@ class SuggestionController extends Controller
             return back()->withErrors(['suggestion' => 'Esta sugestão já foi revisada.']);
         }
 
+        // Item do inventário: entra na loja da campanha, pelo formulário da biblioteca dela.
+        if ($suggestion->type === SuggestionType::Item) {
+            abort_if($suggestion->game_session_id === null, 404);
+
+            return redirect()->route('gm.sessions.library.itens.create', [$suggestion->game_session_id, 'sugestao' => $suggestion->id]);
+        }
+
         $route = match ($suggestion->type) {
             SuggestionType::Skill => 'catalog.skills.create',
             SuggestionType::Power => 'catalog.powers.create',

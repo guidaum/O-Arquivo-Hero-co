@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Catalog\Concerns;
 
+use App\Enums\SuggestionStatus;
 use App\Models\GameSession;
+use App\Models\Suggestion;
 use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -59,27 +61,63 @@ trait ManagesCampaignEntries
     {
     }
 
-    public function campaignCreate(GameSession $gameSession): View
+    /**
+     * Sugestão de jogador pendente para esta campanha (?sugestao= ou o campo
+     * suggestion_id do formulário). Só itens têm sugestões por campanha.
+     */
+    protected function campaignSuggestion(Request $request, GameSession $session): ?Suggestion
+    {
+        return null;
+    }
+
+    /**
+     * Valores iniciais do formulário a partir da sugestão.
+     *
+     * @return array<string, mixed>
+     */
+    protected function suggestionDefaults(Suggestion $suggestion): array
+    {
+        return $suggestion->formData();
+    }
+
+    /**
+     * Ao salvar o cadastro feito a partir da sugestão: aprova com os dados revisados.
+     */
+    protected function approveCampaignSuggestion(Suggestion $suggestion, Model $entry): void
+    {
+        $suggestion->status = SuggestionStatus::Approved;
+        $suggestion->save();
+    }
+
+    public function campaignCreate(Request $request, GameSession $gameSession): View
     {
         Gate::authorize('update', $gameSession);
 
-        return $this->form($this->newEntry(), [
+        $suggestion = $this->campaignSuggestion($request, $gameSession);
+        $entry = $this->newEntry();
+
+        if ($suggestion !== null) {
+            $entry->fill($this->suggestionDefaults($suggestion));
+        }
+
+        return $this->form($entry, [
             'action' => route('gm.sessions.library.'.$this->libraryType().'.store', $gameSession),
             'method' => 'POST',
             'cancel' => $this->libraryUrl($gameSession),
             'session' => $gameSession,
             'notice' => 'Este cadastro existe só nesta campanha; o catálogo base não muda. O administrador o recebe como sugestão para a base.',
             'version' => false,
-        ]);
+        ], $suggestion?->id);
     }
 
     public function campaignStore(Request $request, GameSession $gameSession): RedirectResponse
     {
         Gate::authorize('update', $gameSession);
 
+        $suggestion = $this->campaignSuggestion($request, $gameSession);
         $data = $this->validatedEntry($request, $gameSession, null);
 
-        $entry = DB::transaction(function () use ($request, $gameSession, $data): Model {
+        $entry = DB::transaction(function () use ($request, $gameSession, $data, $suggestion): Model {
             $entry = $this->newEntry();
             $entry->setAttribute('game_session_id', $gameSession->id);
 
@@ -93,11 +131,17 @@ trait ManagesCampaignEntries
             $entry->save();
             $this->afterEntrySaved($entry, $data, false);
 
+            if ($suggestion !== null) {
+                $this->approveCampaignSuggestion($suggestion, $entry);
+            }
+
             return $entry;
         });
 
         return redirect()->to($this->libraryUrl($gameSession))
-            ->with('status', '"'.$entry->getAttribute('name').'" criado só para esta campanha!');
+            ->with('status', $suggestion !== null
+                ? 'Sugestão aprovada: "'.$entry->getAttribute('name').'" entrou na loja desta campanha!'
+                : '"'.$entry->getAttribute('name').'" criado só para esta campanha!');
     }
 
     public function campaignEdit(GameSession $gameSession, string $entry): View

@@ -29,12 +29,15 @@ class SuggestionPolicy
     }
 
     /**
-     * Aprovar, recusar ou ajustar os dados da sugestão: só o administrador
-     * (liberado pelo Gate::before), pois a sugestão aprovada entra na base.
+     * Aprovar, recusar ou ajustar os dados da sugestão: o administrador
+     * (liberado pelo Gate::before), pois a sugestão aprovada entra na base;
+     * sugestões de item da campanha também pelo mestre dela (entram na loja da campanha).
      */
     public function review(User $user, Suggestion $suggestion): bool
     {
-        return false;
+        return $suggestion->game_session_id !== null
+            && $suggestion->gameSession !== null
+            && $user->can('update', $suggestion->gameSession);
     }
 
     /**

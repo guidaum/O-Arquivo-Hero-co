@@ -25,7 +25,7 @@
                 <x-icon :name="$icon" :size="18" />
                 {{ $label }}
                 {{-- Pendências: propostas das campanhas + sugestões dos jogadores. --}}
-                @if ($route === 'admin.suggestions.index' && ($pendingSuggestions = \App\Support\CampaignLibrary::proposals()->count() + \App\Models\Suggestion::query()->where('status', \App\Enums\SuggestionStatus::Pending)->count()) > 0)
+                @if ($route === 'admin.suggestions.index' && ($pendingSuggestions = \App\Support\CampaignLibrary::proposals()->count() + \App\Models\Suggestion::query()->forAdmin()->where('status', \App\Enums\SuggestionStatus::Pending)->count()) > 0)
                     <span class="tabs__count">{{ $pendingSuggestions }}</span>
                 @endif
             </a>

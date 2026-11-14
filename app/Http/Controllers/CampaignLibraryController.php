@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\SuggestionStatus;
+use App\Enums\SuggestionType;
 use App\Models\CatalogItem;
 use App\Models\GameSession;
 use App\Models\RuleSet;
+use App\Models\Suggestion;
 use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -62,7 +65,35 @@ class CampaignLibraryController extends Controller
             'rows' => CampaignLibrary::paginate($rows, $request),
             'pendingCounts' => $library->pendingCounts(),
             'rulesPending' => $ruleSet !== null ? count($ruleSet->pendingBaseChanges(RuleSet::query()->global()->first())) : 0,
+            // Itens do inventário que os jogadores sugeriram para a loja da campanha.
+            'playerSuggestions' => $type === 'itens'
+                ? Suggestion::query()
+                    ->with(['user:id,name', 'characterItem.character:id,name'])
+                    ->where('type', SuggestionType::Item)
+                    ->where('game_session_id', $gameSession->id)
+                    ->where('status', SuggestionStatus::Pending)
+                    ->oldest()
+                    ->get()
+                : collect(),
         ]);
+    }
+
+    /**
+     * Recusa a sugestão de item de um jogador: o item continua só no inventário dele.
+     */
+    public function rejectPlayerSuggestion(GameSession $gameSession, Suggestion $suggestion): RedirectResponse
+    {
+        abort_unless($suggestion->game_session_id === $gameSession->id && $suggestion->type === SuggestionType::Item, 404);
+        Gate::authorize('review', $suggestion);
+
+        if ($suggestion->status !== SuggestionStatus::Pending) {
+            return $this->back($gameSession, 'itens', 'Esta sugestão já foi revisada.');
+        }
+
+        $suggestion->status = SuggestionStatus::Rejected;
+        $suggestion->save();
+
+        return $this->back($gameSession, 'itens', 'Sugestão de "'.$suggestion->name().'" recusada; o item continua só no inventário do jogador.');
     }
 
     /**

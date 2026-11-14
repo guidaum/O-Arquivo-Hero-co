@@ -150,6 +150,8 @@ Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
     Route::prefix('/mestre/sessoes/{gameSession}/biblioteca')->name('gm.sessions.library.')->group(function (): void {
         Route::get('/', [CampaignLibraryController::class, 'index'])->name('index');
         Route::post('/sugestoes', [CampaignLibraryController::class, 'bulk'])->name('bulk');
+        // Itens sugeridos pelos jogadores: aprovar abre "Criar na campanha" com ?sugestao=.
+        Route::put('/jogadores/{suggestion}/recusar', [CampaignLibraryController::class, 'rejectPlayerSuggestion'])->whereNumber('suggestion')->name('player-suggestions.reject');
 
         foreach ([
             'talentos' => TalentController::class,
@@ -269,6 +271,7 @@ Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
             Route::post('/{character}/itens/{item}/equipar', [InventoryItemController::class, 'toggleEquip'])->name('inventory.items.equip');
             Route::post('/{character}/itens/{item}/mover', [InventoryItemController::class, 'move'])->name('inventory.items.move');
             Route::post('/{character}/itens/{item}/rolar', [InventoryItemController::class, 'roll'])->middleware('throttle:rolls')->name('inventory.items.roll');
+            Route::post('/{character}/itens/{item}/sugerir', [InventoryItemController::class, 'suggest'])->middleware('throttle:20,1')->name('inventory.items.suggest');
         });
 
         Route::get('/{character}/loja', [ShopController::class, 'index'])->name('inventory.shop');

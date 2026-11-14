@@ -8,12 +8,15 @@ use App\Enums\SuggestionStatus;
 use App\Enums\SuggestionType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Sugestão de traço, perícia ou poder feita por um jogador.
- * O status é alterado apenas pela moderação, fora do $fillable.
+ * Sugestão de traço, perícia ou poder (para a base, revisada pelo
+ * administrador) ou de item do inventário (para a loja da campanha,
+ * revisada pelo mestre: game_session_id e character_item_id).
+ * Status, campanha e item de origem ficam fora do $fillable.
  */
 #[Fillable(['type', 'data'])]
 #[Hidden(['firestore_id'])]
@@ -79,10 +82,57 @@ class Suggestion extends Model
     }
 
     /**
+     * Dados de uma sugestão de item a partir do item do inventário, com os
+     * nomes dos campos do formulário do catálogo de itens.
+     *
+     * @return array<string, mixed>
+     */
+    public static function itemData(CharacterItem $item): array
+    {
+        return [
+            'name' => $item->name,
+            'category' => $item->categoryKey(),
+            'rarity' => $item->rarityKey(),
+            'weight' => (float) $item->weight,
+            'value' => (int) $item->value,
+            'damage' => $item->damage,
+            'defense' => (int) $item->defense,
+            'description' => $item->description,
+            'stats' => array_filter((array) $item->stats, static fn (mixed $bonus): bool => is_numeric($bonus) && (int) $bonus !== 0),
+        ];
+    }
+
+    /**
+     * Sugestões revisadas pelo administrador (as de item ficam com o mestre da campanha).
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeForAdmin(Builder $query): void
+    {
+        $query->whereNull('game_session_id');
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * @return BelongsTo<GameSession, $this>
+     */
+    public function gameSession(): BelongsTo
+    {
+        return $this->belongsTo(GameSession::class);
+    }
+
+    /**
+     * @return BelongsTo<CharacterItem, $this>
+     */
+    public function characterItem(): BelongsTo
+    {
+        return $this->belongsTo(CharacterItem::class);
     }
 }

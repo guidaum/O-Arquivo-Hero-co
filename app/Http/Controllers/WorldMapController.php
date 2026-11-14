@@ -12,6 +12,7 @@ use App\Models\MapDrawing;
 use App\Models\MapPin;
 use App\Models\MapPing;
 use App\Models\User;
+use App\Support\BoardVersion;
 use App\Support\Navigation;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -28,7 +29,7 @@ class WorldMapController extends Controller
     use AuthorizesMapAccess;
 
     /** Sinais somem depois de alguns segundos, como no sistema antigo. */
-    public const PING_SECONDS = 6;
+    public const PING_SECONDS = MapPing::SECONDS;
 
     public function index(Request $request): View
     {
@@ -75,6 +76,19 @@ class WorldMapController extends Controller
         $isGm = $this->authorizeMap($request, $gameSession, $campaignMap);
         $user = $request->user();
 
+        // Pins e desenhos trocam a versão do tabuleiro no cache a cada escrita
+        // (App\Support\BoardVersion), então "nada mudou" não lê essas tabelas.
+        $version = md5(implode('|', [
+            BoardVersion::fingerprint($gameSession->id, $campaignMap->id),
+            $isGm ? 'gm' : 'player',
+        ]));
+
+        $pings = MapPing::recentFor($gameSession->id, $campaignMap->id, $user);
+
+        if ($request->query('versao') === $version) {
+            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);
+        }
+
         $pins = MapPin::query()
             ->where('game_session_id', $gameSession->id)
             ->where('campaign_map_id', $campaignMap->id)
@@ -82,31 +96,6 @@ class WorldMapController extends Controller
         $drawings = MapDrawing::query()
             ->where('game_session_id', $gameSession->id)
             ->where('campaign_map_id', $campaignMap->id);
-
-        $version = md5(implode('|', [
-            (clone $pins)->count(), (clone $pins)->max('updated_at'),
-            (clone $drawings)->count(), (clone $drawings)->max('updated_at'),
-            $isGm ? 'gm' : 'player',
-        ]));
-
-        $pings = MapPing::query()
-            ->with('user:id,name')
-            ->where('game_session_id', $gameSession->id)
-            ->where('campaign_map_id', $campaignMap->id)
-            ->where('created_at', '>=', now()->subSeconds(self::PING_SECONDS))
-            ->get()
-            ->map(static fn (MapPing $ping): array => [
-                'id' => $ping->id,
-                'x' => $ping->x,
-                'y' => $ping->y,
-                'color' => $ping->color,
-                'user_name' => $ping->user?->name ?? 'Aventureiro',
-                'mine' => $ping->user_id === $user->id,
-            ]);
-
-        if ($request->query('versao') === $version) {
-            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);
-        }
 
         return response()->json([
             'version' => $version,

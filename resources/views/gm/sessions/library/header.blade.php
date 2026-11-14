@@ -11,6 +11,12 @@
     $library = \App\Support\CampaignLibrary::for($session);
     $counts = $pendingCounts ?? $library->pendingCounts();
     $rulesCount = $rulesPending ?? (($rules = $session->ruleSet) ? count($rules->pendingBaseChanges(\App\Models\RuleSet::query()->global()->first())) : 0);
+    // Itens do inventário sugeridos pelos jogadores para a loja da campanha.
+    $playerItemCount = \App\Models\Suggestion::query()
+        ->where('type', \App\Enums\SuggestionType::Item)
+        ->where('game_session_id', $session->id)
+        ->where('status', \App\Enums\SuggestionStatus::Pending)
+        ->count();
 @endphp
 
 <x-page-header :title="$session->name" subtitle="Configurações da Campanha" :back="route('gm.sessions.show', $session)" back-label="Voltar ao Painel do Mestre">
@@ -39,6 +45,7 @@
         <a class="tabs__link" href="{{ route('gm.sessions.library.index', [$session, 'tipo' => $key]) }}" @if ($current === $key) aria-current="page" @endif>
             <x-icon :name="$definition['icon']" :size="18" /> {{ $definition['label'] }}
             @if (($counts[$key] ?? 0) > 0) <span class="tabs__count" title="Sugestões da base">{{ $counts[$key] }}</span> @endif
+            @if ($key === 'itens' && $playerItemCount > 0) <span class="tabs__count" title="Sugestões dos jogadores">{{ $playerItemCount }}</span> @endif
         </a>
     @endforeach
 </nav>

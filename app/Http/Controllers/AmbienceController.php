@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\CustomSound;
 use App\Models\DungeonAtmosphere;
 use App\Models\GameSession;
+use App\Support\BoardVersion;
 use App\Support\Sounds;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,14 +29,15 @@ class AmbienceController extends Controller
     {
         Gate::authorize('view', $gameSession);
 
-        $atmosphere = self::campaignRow($gameSession);
-        $version = md5(($atmosphere?->updated_at?->format('Y-m-d H:i:s.u') ?? '').'|'.($atmosphere?->effect_at?->format('Y-m-d H:i:s.v') ?? ''));
+        // Cada gravação da linha da campanha troca a versão no cache
+        // (DungeonAtmosphere -> App\Support\BoardVersion), então "nada mudou" não lê a tabela.
+        $version = md5(BoardVersion::fingerprint($gameSession->id, DungeonAtmosphere::CAMPAIGN_BOARD));
 
         if ($request->query('versao') === $version) {
             return response()->json(['version' => $version, 'changed' => false]);
         }
 
-        return response()->json(['version' => $version, 'changed' => true, ...self::payload($atmosphere)]);
+        return response()->json(['version' => $version, 'changed' => true, ...self::payload(self::campaignRow($gameSession))]);
     }
 
     /**

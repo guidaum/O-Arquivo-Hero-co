@@ -14,6 +14,7 @@ use App\Models\MapPing;
 use App\Models\User;
 use App\Support\Navigation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -180,6 +181,21 @@ class WorldMapTest extends TestCase
         $this->actingAs($this->player)->getJson($this->url('world-map.state', ['versao' => $version]))
             ->assertJsonPath('changed', true)
             ->assertJsonCount(1, 'pins');
+    }
+
+    public function test_unchanged_poll_does_not_read_pins_drawings_or_pings(): void
+    {
+        $this->actingAs($this->gm)->postJson($this->url('world-map.pins.store'), $this->pinData())->assertCreated();
+        $version = $this->actingAs($this->player)->getJson($this->url('world-map.state'))->json('version');
+
+        DB::enableQueryLog();
+        $this->actingAs($this->player)->getJson($this->url('world-map.state', ['versao' => $version]))->assertJsonPath('changed', false);
+        $tables = collect(DB::getQueryLog())->pluck('query')->filter(
+            static fn (string $sql): bool => str_contains($sql, 'map_pins') || str_contains($sql, 'map_drawings') || str_contains($sql, 'map_pings'),
+        );
+        DB::disableQueryLog();
+
+        $this->assertSame([], $tables->values()->all());
     }
 
     public function test_drawings_belong_to_their_author(): void

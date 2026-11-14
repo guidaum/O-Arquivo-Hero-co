@@ -115,10 +115,7 @@ class DungeonController extends Controller
             $isGm ? 'gm' : 'player',
         ]));
 
-        $pings = MapPing::query()->tap($scope)->with('user:id,name')
-            ->where('created_at', '>=', now()->subSeconds(WorldMapController::PING_SECONDS))
-            ->get()
-            ->map(static fn (MapPing $ping): array => ['id' => $ping->id, 'x' => $ping->x, 'y' => $ping->y, 'color' => $ping->color, 'user_name' => $ping->user?->name ?? 'Aventureiro', 'mine' => $ping->user_id === $user->id]);
+        $pings = MapPing::recentFor($gameSession->id, $campaignMap->id, $user);
 
         if ($request->query('versao') === $version) {
             return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);

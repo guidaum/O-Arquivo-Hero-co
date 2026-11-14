@@ -50,8 +50,8 @@
         </div>
     </header>
 
-    @if ($errors->has('roll') || $errors->has('purchase') || $errors->has('amount'))
-        <div class="alert alert--error" role="alert">{{ $errors->first('roll') ?: $errors->first('purchase') ?: $errors->first('amount') }}</div>
+    @if ($errors->has('roll') || $errors->has('purchase') || $errors->has('amount') || $errors->has('suggestion'))
+        <div class="alert alert--error" role="alert">{{ $errors->first('roll') ?: $errors->first('purchase') ?: $errors->first('amount') ?: $errors->first('suggestion') }}</div>
     @endif
 
     @if ($roll)
@@ -133,6 +133,12 @@
                                     <span class="badge badge--pill rarity rarity--{{ strtolower($item->rarityKey()) }}">{{ $item->rarityLabel() }}</span>
                                     @if ($item->equipped) <span class="badge badge--pill badge--gm">Equipado</span> @endif
                                     @if ($item->quantity > 1 || $item->isStackable()) <span class="badge badge--pill badge--admin" data-item-quantity>x{{ $item->quantity }}</span> @endif
+                                    @php($suggestion = $itemSuggestions[$item->id] ?? null)
+                                    @if ($suggestion?->status === \App\Enums\SuggestionStatus::Pending)
+                                        <span class="badge badge--pill badge--player" title="O mestre ainda vai revisar">Sugerido ao mestre</span>
+                                    @elseif ($suggestion?->status === \App\Enums\SuggestionStatus::Rejected && $item->catalog_item_id === null)
+                                        <span class="badge badge--pill" title="O mestre não adicionou este item à loja">Sugestão recusada</span>
+                                    @endif
                                 </div>
                             </div>
                         </div>
@@ -175,6 +181,13 @@
                                 @endif
 
                                 <span class="item-card__tools">
+                                    {{-- Item que não veio da loja: o dono pode sugeri-lo ao mestre (uma sugestão pendente por vez). --}}
+                                    @if ($canSuggest && $item->catalog_item_id === null && ($itemSuggestions[$item->id] ?? null)?->status !== \App\Enums\SuggestionStatus::Pending)
+                                        <form method="POST" action="{{ route('inventory.items.suggest', [$character, $item]) }}">
+                                            @csrf
+                                            <button type="submit" class="icon-button" title="Sugerir ao mestre para a loja" aria-label="Sugerir {{ $item->name }} ao mestre para a loja"><x-icon name="store" :size="16" /></button>
+                                        </form>
+                                    @endif
                                     @if ($sort === 'manual' && $rarity === '')
                                         @foreach (['up' => ['chevron-up', 'Mover para cima'], 'down' => ['chevron-down', 'Mover para baixo']] as $direction => [$icon, $label])
                                             <form method="POST" action="{{ route('inventory.items.move', [$character, $item]) }}">

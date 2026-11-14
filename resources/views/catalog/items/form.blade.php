@@ -10,8 +10,16 @@
     <form class="catalog-form glass" method="POST" enctype="multipart/form-data" action="{{ $form['action'] }}">
         @csrf
         @if ($form['method'] === 'PUT') @method('PUT') @endif
+        @if ($suggestion) <input type="hidden" name="suggestion_id" value="{{ $suggestion->id }}"> @endif
 
-        <h2 class="catalog-form__title">{{ $editing ? 'Editar Item' : 'Novo Item' }}</h2>
+        <h2 class="catalog-form__title">{{ $editing ? 'Editar Item' : ($suggestion ? 'Revisar Sugestão de Item' : 'Novo Item') }}</h2>
+
+        @if ($suggestion)
+            <p class="alert">
+                Sugerido por {{ $suggestion->user?->name ?? 'um jogador' }}@if ($suggestion->characterItem?->character) ({{ $suggestion->characterItem->character->name }})@endif,
+                a partir do inventário. Revise os dados: ao salvar, o item entra na loja desta campanha e o item do jogador passa a ser o da loja.
+            </p>
+        @endif
 
         <div class="form-grid">
             <x-form.field name="name" label="Nome" :value="$item->name" required maxlength="255" />
@@ -79,7 +87,7 @@
 
         <div class="form-actions">
             <a class="button button--secondary" href="{{ $form['cancel'] }}">Cancelar</a>
-            <button type="submit" class="button"><x-icon name="save" :size="16" /> {{ $editing ? 'Salvar Item' : 'Criar Item' }}</button>
+            <button type="submit" class="button"><x-icon name="save" :size="16" /> {{ $editing ? 'Salvar Item' : ($suggestion ? 'Aprovar e Adicionar à Loja' : 'Criar Item') }}</button>
         </div>
     </form>
 </x-layouts.app>

@@ -24,7 +24,8 @@ class SuggestionSubmissionController extends Controller
         Gate::authorize('create', Suggestion::class);
 
         $data = $request->validate([
-            'type' => ['required', Rule::enum(SuggestionType::class)],
+            // Itens são sugeridos do inventário (InventoryItemController::suggest).
+            'type' => ['required', Rule::enum(SuggestionType::class)->except([SuggestionType::Item])],
             'name' => ['required', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:64'],
             'description' => ['nullable', 'string', 'max:5000'],

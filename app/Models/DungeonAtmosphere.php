@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\BoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +25,24 @@ class DungeonAtmosphere extends Model
      * banco descarta a fração).
      */
     protected $dateFormat = 'Y-m-d H:i:s.v';
+
+    /**
+     * "Mapa" da linha da campanha (sem mapa) na App\Support\BoardVersion:
+     * IDs de mapa começam em 1, então 0 não colide.
+     */
+    public const CAMPAIGN_BOARD = 0;
+
+    protected static function booted(): void
+    {
+        // Ambientação da campanha (polling do menu de ações) e combate/clima da
+        // masmorra: cada gravação troca a versão no cache depois do commit.
+        $bump = static function (self $atmosphere): void {
+            BoardVersion::bump($atmosphere->game_session_id, $atmosphere->campaign_map_id ?? self::CAMPAIGN_BOARD);
+        };
+
+        static::saved($bump);
+        static::deleted($bump);
+    }
 
     /**
      * @return array<string, string>

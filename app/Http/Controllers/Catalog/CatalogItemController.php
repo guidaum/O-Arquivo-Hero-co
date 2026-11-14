@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Catalog;
 
+use App\Enums\SuggestionStatus;
+use App\Enums\SuggestionType;
 use App\Game\GameRules;
 use App\Http\Controllers\Catalog\Concerns\ManagesCampaignEntries;
 use App\Http\Controllers\Controller;
 use App\Models\CatalogItem;
+use App\Models\CharacterItem;
 use App\Models\GameSession;
+use App\Models\Suggestion;
 use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -142,6 +146,52 @@ class CatalogItemController extends Controller
     }
 
     /**
+     * Item do inventário sugerido por um jogador desta campanha (InventoryItemController::suggest).
+     */
+    protected function campaignSuggestion(Request $request, GameSession $session): ?Suggestion
+    {
+        $id = $request->input('sugestao', $request->input('suggestion_id'));
+
+        if (! is_numeric($id)) {
+            return null;
+        }
+
+        return Suggestion::query()
+            ->whereKey((int) $id)
+            ->where('type', SuggestionType::Item)
+            ->where('game_session_id', $session->id)
+            ->where('status', SuggestionStatus::Pending)
+            ->first();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function suggestionDefaults(Suggestion $suggestion): array
+    {
+        $data = is_array($suggestion->data) ? $suggestion->data : [];
+
+        return collect($data)
+            ->only(['name', 'category', 'rarity', 'weight', 'value', 'damage', 'defense', 'description', 'stats'])
+            ->all();
+    }
+
+    /**
+     * Aprova a sugestão e liga o item do inventário de origem ao novo item da
+     * loja, que passa a contar como "vindo da loja".
+     */
+    protected function approveCampaignSuggestion(Suggestion $suggestion, Model $entry): void
+    {
+        $suggestion->status = SuggestionStatus::Approved;
+        $suggestion->save();
+
+        CharacterItem::query()
+            ->whereKey($suggestion->character_item_id)
+            ->whereNull('catalog_item_id')
+            ->update(['catalog_item_id' => $entry->getKey()]);
+    }
+
+    /**
      * @param  array{action: string, method: string, cancel: string, session: ?GameSession, notice: ?string, version: bool}  $form
      */
     protected function form(Model $entry, array $form, ?int $suggestionId = null): View
@@ -157,6 +207,7 @@ class CatalogItemController extends Controller
             'weapons' => $form['version'] ? collect() : $weapons->reject(static fn (CatalogItem $weapon): bool => $entry->exists && $weapon->id === $entry->getKey())->values(),
             'related' => $entry->exists ? $entry->relatedItems()->pluck('catalog_items.id')->all() : [],
             'form' => $form,
+            'suggestion' => $suggestionId !== null ? Suggestion::query()->with(['user:id,name', 'characterItem.character:id,name'])->find($suggestionId) : null,
         ]);
     }
 

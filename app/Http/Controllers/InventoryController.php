@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\SuggestionType;
 use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CharacterItem;
+use App\Models\Suggestion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -60,7 +62,22 @@ class InventoryController extends Controller
 
         $visible = $visible->values();
 
+        // Sugestão ao mestre: o dono, numa campanha que não mestra, para itens que não vieram da loja.
+        $user = $request->user();
+        $session = $character->gameSession;
+        $canSuggest = $session !== null && $character->user_id === $user->id && ! $user->can('update', $session);
+
         return view('inventory.show', [
+            'canSuggest' => $canSuggest,
+            // Situação da última sugestão de cada item (pendente, aprovada ou recusada).
+            'itemSuggestions' => $canSuggest
+                ? Suggestion::query()
+                    ->where('type', SuggestionType::Item)
+                    ->whereIn('character_item_id', $visible->modelKeys())
+                    ->orderBy('id')
+                    ->get(['id', 'character_item_id', 'status'])
+                    ->keyBy('character_item_id')
+                : collect(),
             'character' => $character,
             'items' => $visible,
             'counts' => $items->countBy(static fn (CharacterItem $item): string => $item->categoryKey()),

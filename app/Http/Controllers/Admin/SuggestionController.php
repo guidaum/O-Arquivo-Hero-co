@@ -36,11 +36,11 @@ class SuggestionController extends Controller
             'status' => $status,
             'proposals' => $origin === 'campanhas' ? CampaignLibrary::paginate($proposals, $request) : null,
             'suggestions' => $origin === 'jogadores'
-                ? Suggestion::query()->with('user:id,name')->where('status', $status)->latest()->paginate(20)->withQueryString()
+                ? Suggestion::query()->forAdmin()->with('user:id,name')->where('status', $status)->latest()->paginate(20)->withQueryString()
                 : null,
             'counts' => [
                 'campanhas' => $proposals->count(),
-                'jogadores' => Suggestion::query()->where('status', SuggestionStatus::Pending)->count(),
+                'jogadores' => Suggestion::query()->forAdmin()->where('status', SuggestionStatus::Pending)->count(),
             ],
         ]);
     }

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\SuggestionStatus;
+use App\Enums\SuggestionType;
 use App\Game\DiceRoller;
 use App\Game\GameRules;
 use App\Models\CatalogItem;
 use App\Models\Character;
 use App\Models\CharacterItem;
 use App\Models\ChatMessage;
+use App\Models\Suggestion;
+use App\Support\CampaignLibrary;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -119,6 +123,57 @@ class InventoryItemController extends Controller
         self::deleteFile($item->image_path);
 
         return back()->with('status', 'Item "'.$item->name.'" removido.');
+    }
+
+    /**
+     * O dono do personagem sugere ao mestre da campanha um item do inventário
+     * que não existe na loja. O mestre revisa na biblioteca da campanha
+     * (CatalogItemController, "Criar na campanha" com ?sugestao=).
+     */
+    public function suggest(Request $request, Character $character, CharacterItem $item): RedirectResponse
+    {
+        Gate::authorize('update', $character);
+
+        $user = $request->user();
+        abort_unless($character->user_id === $user->id, 403, 'Só o dono do personagem pode sugerir os itens dele.');
+
+        $session = $character->gameSession;
+
+        $error = match (true) {
+            $session === null => 'O personagem precisa estar em uma campanha para sugerir itens ao mestre.',
+            $user->can('update', $session) => 'Você é o mestre desta campanha: cadastre o item direto na biblioteca da campanha.',
+            $item->catalog_item_id !== null => 'Este item já veio da loja.',
+            self::hasPendingSuggestion($item) => 'A sugestão deste item já está com o mestre.',
+            CampaignLibrary::for($session)->entries(CatalogItem::class)
+                ->contains(static fn (CatalogItem $entry): bool => mb_strtolower($entry->name) === mb_strtolower($item->name))
+                => 'Já existe um item com esse nome na loja da campanha.',
+            default => null,
+        };
+
+        if ($error !== null) {
+            return back()->withErrors(['suggestion' => $error]);
+        }
+
+        $suggestion = new Suggestion([
+            'type' => SuggestionType::Item,
+            'data' => Suggestion::itemData($item),
+        ]);
+        $suggestion->user_id = $user->id;
+        $suggestion->game_session_id = $session->id;
+        $suggestion->character_item_id = $item->id;
+        $suggestion->status = SuggestionStatus::Pending;
+        $suggestion->save();
+
+        return back()->with('status', 'Sugestão de "'.$item->name.'" enviada ao mestre da campanha.');
+    }
+
+    private static function hasPendingSuggestion(CharacterItem $item): bool
+    {
+        return Suggestion::query()
+            ->where('type', SuggestionType::Item)
+            ->where('character_item_id', $item->id)
+            ->where('status', SuggestionStatus::Pending)
+            ->exists();
     }
 
     /**
