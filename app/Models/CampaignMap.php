@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\MapType;
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\BoardVersion;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,6 +28,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class CampaignMap extends Model
 {
     use HasPublicFiles;
+
+    protected static function booted(): void
+    {
+        // Mapa da campanha editado (grade, entrada, imagem): o tabuleiro dela
+        // muda de versão. Mapas prontos (presets) não são editados.
+        static::saved(static function (self $map): void {
+            BoardVersion::bump($map->game_session_id, $map->id);
+        });
+    }
 
     /**
      * @return array<string, string>

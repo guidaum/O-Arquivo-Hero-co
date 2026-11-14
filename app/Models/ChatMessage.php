@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\Pulse;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -30,6 +31,20 @@ class ChatMessage extends Model
 
     /** Mensagens entregues na primeira leitura do chat (como no sistema antigo). */
     public const HISTORY_LIMIT = 100;
+
+    protected static function booted(): void
+    {
+        // Mensagem nova ou apagada: o pulso do chat da campanha muda (App\Support\Pulse).
+        // A limpeza em massa (ChatController::clear) troca o pulso por conta própria.
+        $bump = static function (self $message): void {
+            if ($message->game_session_id !== null) {
+                Pulse::bump(Pulse::chat((int) $message->game_session_id));
+            }
+        };
+
+        static::created($bump);
+        static::deleted($bump);
+    }
 
     /**
      * @return array<string, string>

@@ -32,6 +32,7 @@ use App\Http\Controllers\MapPingController;
 use App\Http\Controllers\WorldMapController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PublicStorageController;
+use App\Http\Controllers\PulseController;
 use App\Http\Controllers\Catalog\PowerController;
 use App\Http\Controllers\Catalog\SkillController;
 use App\Http\Controllers\Catalog\SuggestionController;
@@ -367,6 +368,12 @@ Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
 
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
 });
+
+// Polling leve do tempo real: só as versões dos canais, sem sessão nem banco
+// (a hospedagem limita as conexões ao banco por hora). Ver App\Support\Pulse.
+Route::get('/pulso', PulseController::class)
+    ->withoutMiddleware('web')
+    ->name('pulse');
 
 // Arquivos do disco "public" sem o link public/storage (hospedagens que bloqueiam symlink).
 // Sem sessão nem cookies, para a CDN poder guardar a resposta.

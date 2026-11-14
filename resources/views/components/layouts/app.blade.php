@@ -27,6 +27,8 @@
         <meta name="theme-color" content="#161311">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="icon-sprite" content="@asset('images/icons.svg')">
+        {{-- Polling leve do tempo real, sem banco (core/realtime.js, App\Support\Pulse). --}}
+        <meta name="pulse-url" content="{{ route('pulse') }}">
 
         <title>{{ $title }} · {{ config('app.name') }}</title>
 

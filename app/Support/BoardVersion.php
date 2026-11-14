@@ -4,24 +4,22 @@ declare(strict_types=1);
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-
 /**
  * Versão do tabuleiro de um mapa numa campanha (tokens, AoEs, marcadores,
- * desenhos e névoa), guardada no cache.
+ * desenhos, névoa, pins, sinais, camadas, combate e clima). É a senha do
+ * canal do tabuleiro no pulso (App\Support\Pulse): a mesma troca avisa o
+ * polling leve (/pulso, sem banco) e o endpoint completo do estado.
  *
- * O estado da masmorra é consultado a cada 2,5 s por participante. Em vez de
- * recalcular a versão lendo todas essas tabelas a cada consulta, cada escrita
- * troca este valor (Models\Concerns\BumpsBoardVersion, ou bump() direto nas
- * exclusões em massa) e a consulta só compara.
+ * Em vez de recalcular a versão lendo todas essas tabelas a cada consulta,
+ * cada escrita troca este valor (Models\Concerns\BumpsBoardVersion, ou bump()
+ * direto nas exclusões em massa) e a consulta só compara.
  *
  * A troca acontece depois do commit: antes dele, uma consulta poderia ler a
  * versão nova com os dados antigos e o navegador ficaria sem a mudança.
  * Como rede de segurança (cache limpo, retrato trocado na ficha, escrita
  * futura sem bump), quem usa a versão também mistura a janela de
- * SAFETY_SECONDS: no pior caso, a mudança chega nesse intervalo.
+ * SAFETY_SECONDS: no pior caso, a mudança chega nesse intervalo (ou na
+ * conferência periódica do realtime.js, para quem só acompanha o pulso).
  */
 final class BoardVersion
 {
@@ -29,7 +27,7 @@ final class BoardVersion
 
     public static function current(int $sessionId, int $mapId): string
     {
-        return (string) Cache::rememberForever(self::key($sessionId, $mapId), static fn (): string => Str::random(16));
+        return Pulse::token(Pulse::board($sessionId, $mapId));
     }
 
     public static function bump(int|string|null $sessionId, int|string|null $mapId): void
@@ -38,9 +36,7 @@ final class BoardVersion
             return;
         }
 
-        $key = self::key((int) $sessionId, (int) $mapId);
-
-        DB::afterCommit(static fn () => Cache::forever($key, Str::random(16)));
+        Pulse::bump(Pulse::board((int) $sessionId, (int) $mapId));
     }
 
     /**
@@ -49,10 +45,5 @@ final class BoardVersion
     public static function fingerprint(int $sessionId, int $mapId): string
     {
         return self::current($sessionId, $mapId).'@'.intdiv(now()->getTimestamp(), self::SAFETY_SECONDS);
-    }
-
-    private static function key(int $sessionId, int $mapId): string
-    {
-        return 'board-version:'.$sessionId.':'.$mapId;
     }
 }

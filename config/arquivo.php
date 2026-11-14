@@ -46,6 +46,23 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tempo real (App\Support\Pulse)
+    |--------------------------------------------------------------------------
+    |
+    | As versões dos canais (masmorra, mapa, chat, ambientação, notificações)
+    | ficam neste store de cache, lido pela rota /pulso sem sessão nem banco:
+    | o polling só usa o banco quando algo mudou (a hospedagem limita as
+    | conexões por hora). Precisa ser um store que não use o banco ("file"
+    | serve para um único servidor; com vários, um compartilhado como redis).
+    |
+    */
+
+    'realtime' => [
+        'store' => 'file',
+    ],
+
     'privacy' => [
         'controller' => '[NOME DO RESPONSÁVEL OU EMPRESA]',
         'contact_email' => 'guilherme.higino@gmail.com',

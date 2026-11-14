@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\MapType;
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\BoardVersion;
 use App\Support\CampaignLibrary;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -101,6 +102,9 @@ class GameSession extends Model
         } else {
             $this->maps()->attach($map->id, ['active' => $active]);
         }
+
+        // Quem está no mapa percebe pelo pulso (ex.: jogadores perdem o acesso).
+        BoardVersion::bump($this->id, $map->id);
     }
 
     /**

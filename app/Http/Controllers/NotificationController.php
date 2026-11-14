@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ChatMessage;
 use App\Models\User;
+use App\Support\Pulse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,8 @@ class NotificationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        // Lido antes das menções: uma menção nova no meio troca o pulso e o sininho busca de novo.
+        $pulse = Pulse::for(Pulse::notifications($user->id));
         $mentions = static fn (Builder $query) => $query->whereKey($user->id);
 
         $messages = ChatMessage::query()
@@ -51,12 +54,15 @@ class NotificationController extends Controller
                 'time' => $message->created_at?->timezone(config('app.timezone'))->format('d/m H:i'),
                 'url' => $this->chatUrl($message, $user, $characters->get($message->game_session_id)),
             ])->all(),
+            'pulse' => $pulse,
         ]);
     }
 
     public function markRead(Request $request): JsonResponse
     {
         $request->user()->forceFill(['notifications_seen_at' => now()])->save();
+        // Outras abas do mesmo usuário zeram o contador pelo pulso.
+        Pulse::bump(Pulse::notifications($request->user()->id));
 
         return response()->json(['unread' => 0]);
     }

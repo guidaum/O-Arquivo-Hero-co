@@ -9,6 +9,7 @@ use App\Models\Character;
 use App\Models\ChatMessage;
 use App\Models\GameSession;
 use App\Models\User;
+use App\Support\Pulse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,8 @@ class ChatController extends Controller
         Gate::authorize('view', $gameSession);
 
         $user = $request->user();
+        // Lido antes das mensagens: uma mensagem nova no meio troca o pulso e o navegador busca de novo.
+        $pulse = Pulse::for(Pulse::chat($gameSession->id));
         $after = max(0, $request->integer('depois'));
         $query = $gameSession->chatMessages()
             ->withExists(['mentions as mentions_me' => static fn (Builder $query) => $query->whereKey($user->id)]);
@@ -43,6 +46,7 @@ class ChatController extends Controller
             'messages' => $messages->map(static fn (ChatMessage $message): array => $message->toChatArray($user))->all(),
             'cursor' => $messages->last()?->id ?? $after,
             'cleared_at' => $gameSession->chat_cleared_at?->toIso8601String(),
+            'pulse' => $pulse,
         ]);
     }
 
@@ -103,6 +107,11 @@ class ChatController extends Controller
             ]);
             $message->mentions()->attach($mentions);
 
+            // O sininho de quem foi mencionado percebe pelo pulso.
+            foreach ($mentions as $mentionedId) {
+                Pulse::bump(Pulse::notifications((int) $mentionedId));
+            }
+
             return $message;
         });
 
@@ -128,6 +137,8 @@ class ChatController extends Controller
 
             $gameSession->chatMessages()->delete();
             $gameSession->forceFill(['chat_cleared_at' => now()])->save();
+            // Exclusão em massa não dispara os eventos do model: troca o pulso aqui.
+            Pulse::bump(Pulse::chat($gameSession->id));
         });
 
         if ($files !== []) {

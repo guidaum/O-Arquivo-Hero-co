@@ -18,6 +18,7 @@ use App\Models\MapDrawing;
 use App\Models\MapPing;
 use App\Models\User;
 use App\Support\BoardVersion;
+use App\Support\Pulse;
 use App\Support\Navigation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -99,6 +100,8 @@ class DungeonController extends Controller
         $isGm = $this->authorizeDungeon($request, $gameSession, $campaignMap);
         $user = $request->user();
         $scope = static fn ($query) => $query->where('game_session_id', $gameSession->id)->where('campaign_map_id', $campaignMap->id);
+        // Pulso lido antes dos dados (realtime.js só busca de novo quando ele muda).
+        $pulse = Pulse::for(Pulse::board($gameSession->id, $campaignMap->id));
 
         $pivot = $gameSession->maps()->whereKey($campaignMap->id)->first()?->pivot;
         $atmosphere = DungeonAtmosphere::query()->tap($scope)->first();
@@ -118,7 +121,7 @@ class DungeonController extends Controller
         $pings = MapPing::recentFor($gameSession->id, $campaignMap->id, $user);
 
         if ($request->query('versao') === $version) {
-            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);
+            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings, 'pulse' => $pulse]);
         }
 
         $fog = $campaignMap->fogIn($gameSession, $pivot?->layer_settings);
@@ -152,6 +155,7 @@ class DungeonController extends Controller
         return response()->json([
             'version' => $version,
             'changed' => true,
+            'pulse' => $pulse,
             'layers' => GameSessionMap::normalizeLayers($pivot?->layer_settings),
             'fog' => $fog,
             'tokens' => $tokens->map(static fn (DungeonToken $token): array => $token->toBoardArray($user, $isGm))->values(),

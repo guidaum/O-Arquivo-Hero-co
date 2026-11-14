@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\BoardVersion;
+use App\Support\Pulse;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,7 +29,9 @@ class MapPing extends Model
     {
         static::created(static function (self $ping): void {
             $key = self::cacheKey((int) $ping->game_session_id, (int) $ping->campaign_map_id);
-            DB::afterCommit(static fn () => Cache::put($key, now()->getTimestamp(), self::SECONDS * 2));
+            DB::afterCommit(static fn () => Pulse::store()->put($key, now()->getTimestamp(), self::SECONDS * 2));
+            // Quem só acompanha o pulso (realtime.js) busca o estado e recebe o sinal.
+            BoardVersion::bump($ping->game_session_id, $ping->campaign_map_id);
         });
     }
 
@@ -39,7 +42,7 @@ class MapPing extends Model
      */
     public static function recentFor(int $sessionId, int $mapId, User $viewer): array
     {
-        $last = Cache::get(self::cacheKey($sessionId, $mapId));
+        $last = Pulse::store()->get(self::cacheKey($sessionId, $mapId));
 
         if (! is_int($last) || $last < now()->getTimestamp() - self::SECONDS) {
             return [];

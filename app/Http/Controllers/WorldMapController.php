@@ -13,6 +13,7 @@ use App\Models\MapPin;
 use App\Models\MapPing;
 use App\Models\User;
 use App\Support\BoardVersion;
+use App\Support\Pulse;
 use App\Support\Navigation;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -76,8 +77,10 @@ class WorldMapController extends Controller
         $isGm = $this->authorizeMap($request, $gameSession, $campaignMap);
         $user = $request->user();
 
-        // Pins e desenhos trocam a versão do tabuleiro no cache a cada escrita
+        // Pins, desenhos e sinais trocam a versão do tabuleiro no cache a cada escrita
         // (App\Support\BoardVersion), então "nada mudou" não lê essas tabelas.
+        // O pulso é lido antes dos dados (realtime.js só busca de novo quando ele muda).
+        $pulse = Pulse::for(Pulse::board($gameSession->id, $campaignMap->id));
         $version = md5(implode('|', [
             BoardVersion::fingerprint($gameSession->id, $campaignMap->id),
             $isGm ? 'gm' : 'player',
@@ -86,7 +89,7 @@ class WorldMapController extends Controller
         $pings = MapPing::recentFor($gameSession->id, $campaignMap->id, $user);
 
         if ($request->query('versao') === $version) {
-            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings]);
+            return response()->json(['version' => $version, 'changed' => false, 'pings' => $pings, 'pulse' => $pulse]);
         }
 
         $pins = MapPin::query()
@@ -103,6 +106,7 @@ class WorldMapController extends Controller
             'pins' => $pins->orderBy('id')->get()->map(static fn (MapPin $pin): array => $pin->toMapArray($user, $isGm)),
             'drawings' => self::drawingsFor($drawings->orderBy('id')->get(), $user, $isGm),
             'pings' => $pings,
+            'pulse' => $pulse,
         ]);
     }
 
