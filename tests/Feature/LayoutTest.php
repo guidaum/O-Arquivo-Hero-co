@@ -151,6 +151,21 @@ class LayoutTest extends TestCase
             ->assertSee(route('gm.sessions.show', $session), false);
     }
 
+    public function test_character_card_shows_the_sheet_totals(): void
+    {
+        $player = User::factory()->create();
+
+        // Formato importado (chave maiúscula) + modificador e ajuste do mestre: a ficha soma tudo.
+        $character = new Character(['name' => 'Alden', 'stats' => ['FOR' => 4, 'con' => 3], 'stats_mods' => ['for' => 2]]);
+        $character->user_id = $player->id;
+        $character->gm_modifiers = ['con' => [['id' => 'a1', 'value' => 1, 'justification' => 'Bênção']]];
+        $character->save();
+
+        $this->actingAs($player)->get('/')
+            ->assertOk()
+            ->assertSeeInOrder(['FOR', '6', 'CON', '4', 'AGI', '0'], false);
+    }
+
     public function test_player_dashboard_lists_joined_campaigns_with_gm(): void
     {
         $gm = User::factory()->gm()->create(['name' => 'Mestre Exemplo']);

@@ -151,7 +151,7 @@
                     <div><dt>Pontos de atributo</dt><dd>{{ $character->attribute_points }}</dd></div>
                     <div><dt>Pontos de perícia</dt><dd>{{ $character->skill_points }}</dd></div>
                     <div><dt>Pontos de poder</dt><dd>{{ $character->power_points }}</dd></div>
-                    <div><dt>XP</dt><dd>{{ number_format($character->xp, 0, ',', '.') }}</dd></div>
+                    <div><dt>XP</dt><dd>{{ number_format($character->xp, 0, ',', '.') }}@if ($character->xp_max > 0)<small> / {{ number_format($character->xp_max, 0, ',', '.') }}</small>@endif</dd></div>
                 </dl>
 
                 @if ($canEditStats)

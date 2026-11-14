@@ -109,7 +109,7 @@
     <x-section :title="$gmView ? 'Minhas Lendas (DMPCs/NPCs)' : 'Lendas Ativas'" :icon="$gmView ? 'sword' : 'users'" :tone="$gmView ? 'ember' : 'arcane'">
         <div class="card-grid">
             @forelse ($characters as $character)
-                <x-character-card :character="$character" :stat-attributes="$cardAttributes" :deletable="$user->can('delete', $character)" />
+                <x-character-card :character="$character" :stats="$cardStats[$character->id] ?? []" :deletable="$user->can('delete', $character)" />
             @empty
                 <x-empty-state icon="sparkles" hint="Escolha traços, distribua atributos e compre perícias e poderes em poucos passos.">
                     Nenhum personagem criado ainda.

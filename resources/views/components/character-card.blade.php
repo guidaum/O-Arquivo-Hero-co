@@ -1,4 +1,4 @@
-@props(['character', 'statAttributes' => [], 'deletable' => false])
+@props(['character', 'stats' => [], 'deletable' => false])
 
 @php
     // Ícones que o sistema antigo permitia escolher para o personagem.
@@ -10,11 +10,11 @@
     $arcane = $character->color === 'arcane';
     $icon = $icons[$character->icon] ?? ($arcane ? 'shield' : 'sword');
     $xpPercent = $character->xp_max > 0 ? min(100, round($character->xp / $character->xp_max * 100, 1)) : 0;
-    $stats = is_array($character->stats) ? $character->stats : [];
 @endphp
 
 {{--
-    Cartão de personagem ("lenda") da página inicial. $statAttributes: primeiros atributos das regras.
+    Cartão de personagem ("lenda") da página inicial. $stats: primeiros atributos com o total da
+    ficha ([id, total], DashboardController::cardStats), o mesmo número que a ficha mostra.
     deletable: mostra a lixeira, que abre o modal "delete-character" da página (data-modal-action).
 --}}
 <div class="character-card-shell">
@@ -58,12 +58,12 @@
                 </div>
             </div>
 
-            @if ($statAttributes !== [])
+            @if ($stats !== [])
                 <div class="stat-tiles">
-                    @foreach ($statAttributes as $attribute)
+                    @foreach ($stats as $attribute)
                         <div class="stat-tile glass">
                             <p class="stat-tile__label">{{ strtoupper($attribute['id']) }}</p>
-                            <p class="stat-tile__value">{{ $stats[$attribute['id']] ?? 0 }}</p>
+                            <p class="stat-tile__value">{{ $attribute['total'] }}</p>
                         </div>
                     @endforeach
                 </div>
