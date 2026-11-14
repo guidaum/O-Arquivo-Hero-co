@@ -62,6 +62,19 @@ if (menu) {
         });
     });
 
+    // No celular o botão flutua sobre o conteúdo (valores e lixeiras à direita):
+    // enquanto a página rola ele fica translúcido e não recebe toques.
+    const compact = window.matchMedia('(max-width: 1023px)');
+    let scrollTimer = null;
+
+    document.addEventListener('scroll', () => {
+        if (!compact.matches || !options.hidden || openTools.size > 0) return;
+
+        menu.classList.add('action-menu--scrolling');
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(() => menu.classList.remove('action-menu--scrolling'), 700);
+    }, { capture: true, passive: true });
+
     // Fecha o leque ao clicar fora; Esc fecha o leque ou a ferramenta aberta.
     document.addEventListener('click', (event) => {
         if (!options.hidden && !menu.querySelector('[data-action-fab]').contains(event.target)) setExpanded(false);

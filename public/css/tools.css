@@ -777,6 +777,13 @@
     .action-menu__fab {
         right: max(1rem, var(--safe-right));
         bottom: calc(var(--bottom-nav-space) + 0.75rem);
+        transition: opacity 0.2s;
+    }
+
+    /* Rolando a página: o botão não esconde o que passa por baixo (action-menu.js). */
+    .action-menu--scrolling .action-menu__fab {
+        opacity: 0.3;
+        pointer-events: none;
     }
 
     .tool-panel,

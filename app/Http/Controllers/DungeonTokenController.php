@@ -131,7 +131,7 @@ class DungeonTokenController extends Controller
         $this->ensureOnMap($token, $gameSession, $campaignMap);
         $user = $request->user();
         $isGm = $user->can('update', $gameSession);
-        abort_unless($isGm || $token->user_id === $user->id, 403, 'Você só controla o seu próprio token.');
+        abort_unless($isGm || $token->isControlledBy($user), 403, 'Você só controla o seu próprio token.');
 
         $data = $request->validate([
             'x' => ['sometimes', 'numeric', 'min:0', 'max:100'],
@@ -192,7 +192,7 @@ class DungeonTokenController extends Controller
         $this->authorizeDungeon($request, $gameSession, $campaignMap);
         $this->ensureOnMap($token, $gameSession, $campaignMap);
         $user = $request->user();
-        abort_unless($user->can('update', $gameSession) || $token->user_id === $user->id, 403, 'Você só pode remover o seu próprio token.');
+        abort_unless($user->can('update', $gameSession) || $token->isControlledBy($user), 403, 'Você só pode remover o seu próprio token.');
 
         $token->delete();
 

@@ -126,6 +126,34 @@ class DungeonTest extends TestCase
         $this->assertSame(40.0, DungeonTokenController::snap(41, 10, 2));
     }
 
+    public function test_player_controls_own_character_token_placed_with_the_gm_as_owner(): void
+    {
+        // Formato importado do sistema antigo: o mestre colocou o personagem e
+        // ficou como dono do token; quem controla é o dono da ficha.
+        $token = new DungeonToken(['name' => 'Alden', 'type' => 'player', 'hp' => 12, 'max_hp' => 12, 'size' => 1, 'initiative' => 5, 'is_hidden' => false]);
+        $token->forceFill([
+            'game_session_id' => $this->session->id,
+            'campaign_map_id' => $this->map->id,
+            'user_id' => $this->gm->id,
+            'character_id' => $this->character->id,
+            'x' => 15,
+            'y' => 50,
+            'conditions' => [],
+        ])->save();
+
+        $state = $this->actingAs($this->player)->getJson($this->url('dungeon.state'))->assertOk()->json('tokens');
+        $this->assertTrue($state[0]['can_control']);
+
+        $this->actingAs($this->player)->putJson($this->url('dungeon.tokens.update', ['token' => $token->id]), ['x' => 55, 'y' => 30])
+            ->assertOk()
+            ->assertJsonPath('token.x', 55);
+
+        // Outro jogador da campanha não controla o personagem alheio.
+        $other = User::factory()->create();
+        $this->session->players()->attach($other);
+        $this->actingAs($other)->putJson($this->url('dungeon.tokens.update', ['token' => $token->id]), ['x' => 75])->assertForbidden();
+    }
+
     public function test_hidden_and_fogged_creatures_are_not_sent_to_players(): void
     {
         $this->actingAs($this->gm)->postJson($this->url('dungeon.tokens.store'), ['mode' => 'preset', 'preset' => 'orc', 'is_hidden' => true])->assertCreated();

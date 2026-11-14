@@ -342,7 +342,7 @@
                 @endif
             </section>
 
-            @foreach (['skills' => ['pericias', 'Perícias', 'sword', 'skill'], 'powers' => ['poderes', 'Poderes', 'zap', 'power']] as $list => [$anchor, $title, $icon, $prefix])
+            @foreach (['skills' => ['pericias', 'Perícias', 'sword', 'skill', 'Nenhuma perícia na ficha.'], 'powers' => ['poderes', 'Poderes', 'zap', 'power', 'Nenhum poder na ficha.']] as $list => [$anchor, $title, $icon, $prefix, $emptyText])
                 @php
                     $routeBase = $list === 'skills' ? 'characters.skills' : 'characters.powers';
                     $points = $list === 'skills' ? $character->skill_points : $character->power_points;
@@ -406,7 +406,7 @@
                             @endif
                         </article>
                     @empty
-                        <p class="muted">Nenhum(a) {{ mb_strtolower($title) }} na ficha.</p>
+                        <p class="muted">{{ $emptyText }}</p>
                     @endforelse
                 </section>
             @endforeach

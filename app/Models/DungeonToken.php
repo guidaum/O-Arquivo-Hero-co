@@ -61,7 +61,7 @@ class DungeonToken extends Model
      */
     public function toBoardArray(User $viewer, bool $isGm): array
     {
-        $mine = $this->user_id !== null && $this->user_id === $viewer->id;
+        $mine = $this->isControlledBy($viewer);
         $type = $this->typeKey();
         $character = $this->relationLoaded('character') ? $this->character : null;
 
@@ -100,10 +100,31 @@ class DungeonToken extends Model
         return $this->type instanceof \BackedEnum ? $this->type->value : (string) $this->type;
     }
 
-    /** Token de jogador controlado por este usuário (o próprio personagem). */
+    /**
+     * Token de jogador deste usuário (o próprio personagem): o dono do token
+     * ou o dono da ficha. O sistema antigo gravava o mestre como dono quando
+     * ele colocava o personagem no mapa, então a ficha também vale.
+     */
     public function isPlayerTokenOf(User $user): bool
     {
-        return $this->typeKey() === TokenType::Player->value && $this->user_id !== null && $this->user_id === $user->id;
+        if ($this->typeKey() !== TokenType::Player->value) {
+            return false;
+        }
+
+        if ($this->user_id !== null && $this->user_id === $user->id) {
+            return true;
+        }
+
+        return $this->character_id !== null && $this->character?->user_id === $user->id;
+    }
+
+    /**
+     * Quem move o token e muda PV, condições e iniciativa sem ser o mestre:
+     * o dono do token ou o jogador dono do personagem.
+     */
+    public function isControlledBy(User $user): bool
+    {
+        return ($this->user_id !== null && $this->user_id === $user->id) || $this->isPlayerTokenOf($user);
     }
 
     /**
