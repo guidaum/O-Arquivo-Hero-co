@@ -34,6 +34,8 @@
         <div class="world-map" data-world-map data-config="{{ json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}">
             {{-- Barra superior --}}
             <header class="world-map__bar glass">
+                {{-- Aberto pela ficha ("?ficha="): volta para ela. --}}
+                <x-sheet-back compact />
                 <details class="dropdown world-map__selector" data-dropdown>
                     <summary aria-haspopup="menu">
                         <span class="icon-tile"><x-icon name="map" :size="18" /></span>

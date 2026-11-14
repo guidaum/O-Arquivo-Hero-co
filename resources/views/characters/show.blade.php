@@ -9,6 +9,12 @@
         'Brain' => 'brain', 'Heart' => 'heart', 'Activity' => 'activity', 'Scroll' => 'scroll',
         'Dice6' => 'dice', 'Sparkles' => 'sparkles',
     ];
+    // Rolar dano dos itens usa a rota do inventário (mesma permissão e recurso).
+    $canRollItems = $canEdit && auth()->user()->can('use-feature', 'inventory');
+    // Itens de combate equipados (armas e armaduras) também aparecem no Status de Combate.
+    $combatItems = collect($sheet['equipped'])->filter(static fn ($item): bool => in_array($item->categoryKey(), ['weapons', 'armor'], true))->values();
+    // Links que saem da ficha levam "?ficha=": a tela de destino mostra "Voltar à ficha" (x-sheet-back).
+    $fromSheet = ['ficha' => $character->id];
 @endphp
 
 <x-layouts.app :title="'Ficha · '.$character->name">
@@ -235,6 +241,26 @@
                         </li>
                     @endforeach
                 </ul>
+
+                {{-- Armas e armaduras equipadas, com a rolagem de dano. --}}
+                <h3 class="sheet-card__subtitle"><x-icon name="sword" :size="18" /> Armas e proteções equipadas</h3>
+                @forelse ($combatItems as $item)
+                    <article class="combat-item">
+                        <div class="combat-item__text">
+                            <strong>{{ $item->name }}</strong>
+                            <span class="muted">
+                                @if ($item->damage) Dano {{ $item->damage }} @endif
+                                @if ($item->damage && $item->defense) · @endif
+                                @if ($item->defense) Defesa +{{ $item->defense }} @endif
+                            </span>
+                        </div>
+                        @if ($canRollItems)
+                            <x-sheet.item-roll :character="$character" :item="$item" />
+                        @endif
+                    </article>
+                @empty
+                    <p class="muted">Nenhuma arma ou armadura equipada.@if ($canRollItems) <a href="{{ route('inventory.show', [$character, 'categoria' => 'weapons']) }}">Equipar no inventário</a>@endif</p>
+                @endforelse
             </section>
         </div>
 
@@ -480,6 +506,9 @@
                                     @endforeach
                                 </p>
                             </div>
+                            @if ($canRollItems)
+                                <x-sheet.item-roll :character="$character" :item="$item" />
+                            @endif
                         </div>
                     </article>
                 @empty
@@ -494,7 +523,7 @@
         <x-section title="Mapas da Campanha" icon="map">
             <x-slot:action>
                 @if ($mapsAsGm && auth()->user()->can('use-feature', 'mapManager'))
-                    <a class="button button--link" href="{{ route('map-manager.index', ['campanha' => $character->game_session_id]) }}">Gerenciar mapas</a>
+                    <a class="button button--link" href="{{ route('map-manager.index', ['campanha' => $character->game_session_id, ...$fromSheet]) }}">Gerenciar mapas</a>
                 @endif
             </x-slot:action>
             <div class="campaign-maps">
@@ -502,8 +531,8 @@
                     @php
                         $isWorld = $map->type === App\Enums\MapType::World;
                         $mapUrl = $isWorld
-                            ? (auth()->user()->can('use-feature', 'worldMap') ? route('world-map.index', ['campanha' => $character->game_session_id, 'mapa' => $map->id]) : null)
-                            : (auth()->user()->can('use-feature', 'dungeon') ? route('dungeon.index', ['campanha' => $character->game_session_id, 'mapa' => $map->id]) : null);
+                            ? (auth()->user()->can('use-feature', 'worldMap') ? route('world-map.index', ['campanha' => $character->game_session_id, 'mapa' => $map->id, ...$fromSheet]) : null)
+                            : (auth()->user()->can('use-feature', 'dungeon') ? route('dungeon.index', ['campanha' => $character->game_session_id, 'mapa' => $map->id, ...$fromSheet]) : null);
                     @endphp
                     <{{ $mapUrl ? 'a' : 'div' }} class="campaign-map glass" @if ($mapUrl) href="{{ $mapUrl }}" @endif>
                         <img src="{{ $map->thumbnailUrl($mapsAsGm) }}" alt="" loading="lazy">

@@ -16,6 +16,9 @@
         <link rel="stylesheet" href="@asset('css/map-manager.css')">
     @endpush
 
+    {{-- Aberto pela ficha ("?ficha="): volta para ela. --}}
+    <x-sheet-back />
+
     <x-page-header title="Forja Cartográfica" subtitle="Gerenciador de Mapas da Campanha">
         <x-slot:badges>
             <span class="badge badge--pill badge--gm"><x-icon name="shield" :size="12" /> Mestre</span>

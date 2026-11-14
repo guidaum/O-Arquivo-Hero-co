@@ -985,3 +985,40 @@ details > .attribute__summary {
     color: var(--text-secondary);
     font-size: 0.7rem;
 }
+
+/* Armas e proteções equipadas no Status de Combate (rolagem de dano na ficha). */
+
+.sheet-card__subtitle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0;
+    font-family: var(--font-serif);
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.sheet-card__subtitle .icon {
+    color: var(--ember);
+}
+
+.combat-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--radius);
+    background: var(--surface-low);
+}
+
+.combat-item__text {
+    display: grid;
+    min-width: 0;
+    gap: 0.15rem;
+}
+
+.combat-item__text .muted {
+    font-size: 0.8rem;
+}

@@ -15,6 +15,9 @@
         <link rel="stylesheet" href="@asset('css/inventory.css')">
     @endpush
 
+    {{-- O inventário é sempre de um personagem: volta para a ficha dele. --}}
+    <x-sheet-back :character="$character" />
+
     <header class="inventory-header">
         <div class="inventory-header__title">
             <span class="icon-tile icon-tile--large icon-tile--gold"><x-icon name="backpack" :size="24" /></span>

@@ -33,6 +33,8 @@
     @else
         <div class="world-map dungeon" data-dungeon @if ($isGm) data-gm @endif data-config="{{ json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}">
             <header class="world-map__bar glass">
+                {{-- Aberto pela ficha ("?ficha="): volta para ela. --}}
+                <x-sheet-back compact />
                 <details class="dropdown world-map__selector" data-dropdown>
                     <summary aria-haspopup="menu">
                         <span class="icon-tile icon-tile--ember"><x-icon name="skull" :size="18" /></span>

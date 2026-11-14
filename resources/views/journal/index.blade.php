@@ -14,6 +14,9 @@
         <link rel="stylesheet" href="@asset('css/journal.css')">
     @endpush
 
+    {{-- Diário de um personagem (aberto pela ficha): volta para a ficha dele. --}}
+    <x-sheet-back :id="$currentCharacter?->id" />
+
     <header class="journal-header">
         <div class="journal-header__start">
             <h1 class="journal-header__title text-glow-arcane">Diário de Sessão</h1>
