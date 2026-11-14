@@ -133,7 +133,9 @@
                                     <span class="badge badge--pill rarity rarity--{{ strtolower($item->rarityKey()) }}">{{ $item->rarityLabel() }}</span>
                                     @if ($item->equipped) <span class="badge badge--pill badge--gm">Equipado</span> @endif
                                     @if ($item->quantity > 1 || $item->isStackable()) <span class="badge badge--pill badge--admin" data-item-quantity>x{{ $item->quantity }}</span> @endif
-                                    @php($suggestion = $itemSuggestions[$item->id] ?? null)
+                                    @php
+                                        $suggestion = $itemSuggestions[$item->id] ?? null;
+                                    @endphp
                                     @if ($suggestion?->status === \App\Enums\SuggestionStatus::Pending)
                                         <span class="badge badge--pill badge--player" title="O mestre ainda vai revisar">Sugerido ao mestre</span>
                                     @elseif ($suggestion?->status === \App\Enums\SuggestionStatus::Rejected && $item->catalog_item_id === null)

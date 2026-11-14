@@ -63,7 +63,9 @@
 
             <div class="row-list">
                 @foreach ($playerSuggestions as $suggestion)
-                    @php($data = (array) $suggestion->data)
+                    @php
+                        $data = (array) $suggestion->data;
+                    @endphp
                     <article class="row-card glass library-row library-row--pending">
                         <div class="row-card__main">
                             <span class="row-card__media"><x-icon name="backpack" :size="22" /></span>
