@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Enums\MapType;
+use App\Game\CharacterSheet;
 use App\Http\Controllers\Concerns\AuthorizesMapAccess;
 use App\Models\CampaignMap;
+use App\Models\Character;
 use App\Models\DungeonAoe;
 use App\Models\DungeonAtmosphere;
 use App\Models\DungeonFog;
@@ -63,6 +65,7 @@ class DungeonController extends Controller
             $base = [$session, $map];
             $myCharacters = $user->characters()->where('game_session_id', $session->id)->orderBy('name')->get();
             $actionCharacter = $myCharacters->first();
+            $tv = $this->tvDrawer($session, $isGm, $myCharacters, $actionCharacter, $user);
             $myCharacters = $myCharacters->map(static fn ($character): array => ['id' => $character->id, 'name' => $character->name]);
 
             $config = [
@@ -92,7 +95,51 @@ class DungeonController extends Controller
             ];
         }
 
-        return view('dungeon.index', compact('sessions', 'session', 'maps', 'map', 'isGm', 'config', 'actionCharacter'));
+        return view('dungeon.index', [
+            ...compact('sessions', 'session', 'maps', 'map', 'isGm', 'config', 'actionCharacter'),
+            'tv' => $tv ?? null,
+        ]);
+    }
+
+    /**
+     * Painel lateral do Modo TV (estilo Roll20): fichas, chat e anotações.
+     * Mestre: personagens dos jogadores e NPCs/monstros com a vida (mesma rota
+     * do Painel do Mestre) e as anotações da campanha. Jogador: as próprias
+     * fichas e as anotações do personagem.
+     *
+     * @param  Collection<int, Character>  $myCharacters
+     * @return array<string, mixed>
+     */
+    private function tvDrawer(GameSession $session, bool $isGm, Collection $myCharacters, ?Character $actionCharacter, User $user): array
+    {
+        if ($isGm) {
+            $characters = $session->characters()
+                ->with(['user:id,name', 'skills', 'powers', 'traits', 'items'])
+                ->orderBy('name')
+                ->get()
+                ->each(static function (Character $character) use ($session): void {
+                    $character->setRelation('gameSession', $session);
+                    $character->setAttribute('max_pv', CharacterSheet::maxPv($character));
+                });
+
+            return [
+                'party' => $characters->reject(static fn (Character $character): bool => (bool) $character->is_npc)->values(),
+                'npcs' => $characters->filter(static fn (Character $character): bool => (bool) $character->is_npc)->values(),
+                'sheets' => $characters,
+                'notesUrl' => route('sessions.notes.index', $session),
+                'notesLabel' => 'Anotações da campanha',
+            ];
+        }
+
+        $notesCharacter = $actionCharacter !== null && $user->can('update', $actionCharacter) ? $actionCharacter : null;
+
+        return [
+            'party' => collect(),
+            'npcs' => collect(),
+            'sheets' => $myCharacters,
+            'notesUrl' => $notesCharacter !== null ? route('characters.notes.index', $notesCharacter) : null,
+            'notesLabel' => $notesCharacter !== null ? 'Anotações de '.$notesCharacter->name : null,
+        ];
     }
 
     /**

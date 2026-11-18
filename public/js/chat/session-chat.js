@@ -28,6 +28,8 @@ function storage(key, value) {
 
 function setupChat(root) {
     const config = JSON.parse(root.dataset.config);
+    // Fixo na página (Escudo do Mestre) ou acoplado por outra tela (painel do Modo TV, evento chat:dock).
+    let docked = Boolean(config.docked);
     const panel = root.querySelector('[data-chat-panel]');
     const list = root.querySelector('[data-chat-messages]');
     const empty = root.querySelector('[data-chat-empty]');
@@ -142,6 +144,13 @@ function setupChat(root) {
 
         if (state.open && stick) scrollToBottom(!firstBatch);
         updateUnread();
+
+        // Acoplado (painel do Modo TV), o chat conta como aberto: quem o acoplou
+        // decide se avisa das mensagens novas (com o painel recolhido, por exemplo).
+        const incoming = firstBatch ? 0 : fresh.filter((message) => !message.mine).length;
+        if (docked && incoming > 0) {
+            document.dispatchEvent(new CustomEvent('chat:incoming', { detail: { sessionId: config.sessionId, count: incoming } }));
+        }
     }
 
     function resetMessages() {
@@ -211,7 +220,7 @@ function setupChat(root) {
         }
 
         // O chat fixo (Escudo do Mestre) não participa do "uma ferramenta por vez".
-        if (!config.docked) {
+        if (!docked) {
             document.dispatchEvent(new CustomEvent('tool:state', { detail: { tool: 'chat', open } }));
         }
         updateUnread();
@@ -221,10 +230,35 @@ function setupChat(root) {
 
     // Integração com o menu de ações: abrir pelo botão dele e fechar quando outra ferramenta abre.
     document.addEventListener('tool:toggle', (event) => {
-        if (!config.docked && event.detail?.tool === 'chat') setOpen(event.detail.open ?? !state.open);
+        if (!docked && event.detail?.tool === 'chat') setOpen(event.detail.open ?? !state.open);
     });
     document.addEventListener('tool:state', (event) => {
-        if (!config.docked && event.detail?.tool !== 'chat' && event.detail?.open && state.open) setOpen(false);
+        if (!docked && event.detail?.tool !== 'chat' && event.detail?.open && state.open) setOpen(false);
+    });
+
+    // Acoplar em outro lugar da página (painel do Modo TV): o mesmo chat sai do
+    // menu de ações e fica sempre aberto dentro de detail.slot; slot null devolve.
+    // Assim a página nunca tem dois chats consultando o servidor.
+    const home = { parent: root.parentNode, next: root.nextSibling, embedded: root.classList.contains('chat--embedded') };
+
+    document.addEventListener('chat:dock', (event) => {
+        if (config.docked || event.detail?.sessionId !== config.sessionId) return;
+        const slot = event.detail.slot ?? null;
+
+        if (slot) {
+            if (state.open) setOpen(false, false);
+            docked = true;
+            slot.append(root);
+            root.classList.remove('chat--embedded');
+            root.classList.add('chat--docked');
+            setOpen(true, false);
+        } else if (docked) {
+            docked = false;
+            home.parent.insertBefore(root, home.next);
+            root.classList.toggle('chat--embedded', home.embedded);
+            root.classList.remove('chat--docked');
+            setOpen(false, false);
+        }
     });
 
     root.querySelector('[data-chat-expand]')?.addEventListener('click', (event) => {
@@ -234,7 +268,7 @@ function setupChat(root) {
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !config.docked && state.open && mentionBox.hidden && !document.querySelector('dialog[open]')) setOpen(false);
+        if (event.key === 'Escape' && !docked && state.open && mentionBox.hidden && !document.querySelector('dialog[open]')) setOpen(false);
     });
 
     // Limpar (mestre): pede confirmação com um segundo clique em até 3 segundos.
@@ -458,7 +492,7 @@ function setupChat(root) {
     });
 
     // Chat fixo na tela: sempre aberto, sem roubar o foco ao carregar.
-    if (config.docked) {
+    if (docked) {
         setOpen(true, false);
     } else if (new URLSearchParams(window.location.search).get('chat') === '1') {
         // Link de notificação (?chat=1) abre o chat direto.

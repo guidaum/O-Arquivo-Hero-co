@@ -74,6 +74,18 @@
     height: calc(100vh - 8rem);
 }
 
+/* Chat fixo dentro da página (Escudo do Mestre) ou acoplado (painel do Modo TV). */
+
+.chat.chat--docked {
+    position: static;
+    z-index: auto;
+}
+
+.chat--docked [data-chat-toggle],
+.chat--docked [data-chat-expand] {
+    display: none;
+}
+
 .chat-panel__header {
     display: flex;
     align-items: center;

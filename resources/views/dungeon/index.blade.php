@@ -6,6 +6,10 @@
 <x-layouts.app title="Dungeons & Tokens" full>
     @push('styles')
         <link rel="stylesheet" href="@asset('css/world-map.css')">
+        @if ($isGm)
+            <link rel="stylesheet" href="@asset('css/gm-session.css')">
+        @endif
+        <link rel="stylesheet" href="@asset('css/gm-screen.css')">
         <link rel="stylesheet" href="@asset('css/dungeon.css')">
     @endpush
 
@@ -217,6 +221,8 @@
                         <ol class="pin-list dungeon-turns" data-turns></ol>
                     </div>
                 </aside>
+
+                @include('dungeon.partials.tv-drawer')
             </div>
         </div>
 

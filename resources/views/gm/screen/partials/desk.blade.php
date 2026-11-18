@@ -26,28 +26,7 @@
 
     {{-- Anotações rápidas da campanha (mesmas do menu de ações no Painel do Mestre). --}}
     <div class="screen-pane" role="tabpanel" id="screen-pane-anotacoes" aria-labelledby="screen-tab-anotacoes" data-screen-pane="anotacoes">
-        <div class="screen-toolbar">
-            <label class="search-field">
-                <x-icon name="search" :size="16" />
-                <span class="visually-hidden">Buscar anotações</span>
-                <input class="field__input" type="search" placeholder="Buscar anotações..." data-notes-search>
-            </label>
-            <button type="button" class="button" data-notes-new><x-icon name="plus" :size="16" /> Nova anotação</button>
-        </div>
-        <div class="chips" role="group" aria-label="Filtrar por categoria" data-notes-filter></div>
-
-        <form class="screen-editor glass" data-notes-form hidden>
-            <input class="field__input" name="title" maxlength="255" placeholder="Título (ex.: Taverna do Corvo)" aria-label="Título">
-            <textarea class="field__input" name="content" rows="5" maxlength="5000" placeholder="Ganchos, nomes, segredos, tesouros..." aria-label="Texto"></textarea>
-            <div class="chips" role="radiogroup" aria-label="Categoria" data-notes-category></div>
-            <div class="screen-editor__actions">
-                <button type="button" class="button button--secondary" data-notes-cancel>Cancelar</button>
-                <button type="submit" class="button"><x-icon name="save" :size="16" /> Salvar</button>
-            </div>
-        </form>
-
-        <ul class="screen-notes" data-notes-list aria-live="polite"></ul>
-        <p class="muted screen-pane__empty" data-notes-empty hidden></p>
+        @include('partials.notes-board')
     </div>
 
     {{-- Referências visuais: imagens para consultar e mostrar aos jogadores. --}}

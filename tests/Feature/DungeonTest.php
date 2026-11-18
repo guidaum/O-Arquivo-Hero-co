@@ -399,6 +399,34 @@ class DungeonTest extends TestCase
         $this->assertNotContains(4, $cells);
     }
 
+    public function test_tv_drawer_gives_the_gm_the_campaign_and_the_player_only_own_sheets(): void
+    {
+        $npc = new Character(['name' => 'Taverneiro Bram', 'stats' => ['for' => 2, 'con' => 1]]);
+        $npc->user_id = $this->gm->id;
+        $npc->game_session_id = $this->session->id;
+        $npc->is_npc = true;
+        $npc->save();
+
+        $this->actingAs($this->gm)->get(route('dungeon.index', ['campanha' => $this->session->id]))
+            ->assertOk()
+            ->assertSee('data-tv-drawer', false)
+            ->assertSee('data-tv-tab="campanha"', false)
+            ->assertSee('Taverneiro Bram')
+            ->assertSee(route('gm.sessions.characters.health', [$this->session, $this->character]), false)
+            ->assertSee(route('characters.show', $npc), false)
+            ->assertSee(e(json_encode(route('sessions.notes.index', $this->session), JSON_UNESCAPED_SLASHES)), false)
+            ->assertSee('data-tv-chat-slot', false);
+
+        $this->actingAs($this->player)->get(route('dungeon.index', ['campanha' => $this->session->id]))
+            ->assertOk()
+            ->assertSee('data-tv-drawer', false)
+            ->assertDontSee('data-tv-tab="campanha"', false)
+            ->assertSee(route('characters.show', $this->character), false)
+            ->assertDontSee(route('characters.show', $npc), false)
+            ->assertDontSee(route('gm.sessions.characters.health', [$this->session, $this->character]), false)
+            ->assertSee(e(json_encode(route('characters.notes.index', $this->character), JSON_UNESCAPED_SLASHES)), false);
+    }
+
     public function test_world_maps_are_not_battlemaps(): void
     {
         $world = new CampaignMap(['type' => MapType::World, 'name' => 'Continente']);

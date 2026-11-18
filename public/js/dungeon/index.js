@@ -11,6 +11,7 @@
 // - fog.js: pincel e ações da névoa;
 // - annotations.js: áreas de efeito e marcadores;
 // - spawn.js: entrada do jogador e criaturas do mestre;
+// - tv-drawer.js: painel lateral do Modo TV (fichas, chat e anotações);
 // - board.js (camadas) e weather.js (clima).
 
 import { subscribe } from '../core/realtime.js';
@@ -25,6 +26,7 @@ import { cellCenter } from '../core/maps.js';
 import { createAnnotations } from './annotations.js';
 import { createPanel } from './panel.js';
 import { createSpawn } from './spawn.js';
+import { createTvDrawer } from './tv-drawer.js';
 
 const root = document.querySelector('[data-dungeon]');
 
@@ -422,20 +424,29 @@ if (root) {
         moveToken(token.id, { x: token.x + (dx * 100) / grid.cols, y: token.y + (dy * 100) / grid.rows }).catch(ctx.fail);
     });
 
-    // Modo TV: só o mapa, em tela cheia.
+    // Modo TV: o mapa em tela cheia, com o painel lateral recolhível
+    // (fichas, chat e anotações; tv-drawer.js).
 
-    $('[data-tv]').addEventListener('click', () => {
-        const on = root.classList.toggle('dungeon--tv');
+    const tvDrawer = createTvDrawer(ctx);
+
+    function setTv(on) {
+        root.classList.toggle('dungeon--tv', on);
+        tvDrawer.setTv(on);
+        setTimeout(() => viewport.reset(), 120);
+    }
+
+    function toggleTv() {
+        const on = !root.classList.contains('dungeon--tv');
         if (on) document.documentElement.requestFullscreen?.().catch(() => {});
         else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-        setTimeout(() => viewport.reset(), 120);
-    });
+        setTv(on);
+    }
+
+    $('[data-tv]').addEventListener('click', toggleTv);
+    $('[data-tv-exit]')?.addEventListener('click', toggleTv);
 
     document.addEventListener('fullscreenchange', () => {
-        if (!document.fullscreenElement && root.classList.contains('dungeon--tv')) {
-            root.classList.remove('dungeon--tv');
-            setTimeout(() => viewport.reset(), 120);
-        }
+        if (!document.fullscreenElement && root.classList.contains('dungeon--tv')) setTv(false);
     });
 
     ready = true;

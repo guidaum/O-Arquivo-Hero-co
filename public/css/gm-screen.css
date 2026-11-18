@@ -766,14 +766,9 @@
     color: var(--arcane);
 }
 
-/* Chat fixo */
+/* Chat fixo (posição base em chat.css) */
 
-.chat.chat--docked {
-    position: static;
-    z-index: auto;
-}
-
-.chat--docked .chat-panel {
+.gm-screen .chat--docked .chat-panel {
     width: 100%;
     height: var(--screen-height);
     min-height: 26rem;
@@ -807,7 +802,7 @@
         grid-column: 1 / -1;
     }
 
-    .chat--docked .chat-panel {
+    .gm-screen .chat--docked .chat-panel {
         height: 32rem;
     }
 }
@@ -825,7 +820,7 @@
         min-width: 0;
     }
 
-    .chat--docked .chat-panel {
+    .gm-screen .chat--docked .chat-panel {
         height: min(32rem, calc(100dvh - var(--header-height) - var(--bottom-nav-space) - 2rem));
     }
 }

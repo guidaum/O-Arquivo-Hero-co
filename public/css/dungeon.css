@@ -524,6 +524,239 @@
     background: var(--bg-primary);
 }
 
+/*
+ * Painel lateral do Modo TV (estilo Roll20): ao lado do mapa, recolhível.
+ * Fichas, chat (acoplado do menu de ações) e anotações; tv-drawer.js.
+ */
+
+:root {
+    --tv-drawer-width: min(26rem, 40vw);
+}
+
+.tv-drawer {
+    position: relative;
+    z-index: 6;
+    display: none;
+    width: var(--tv-drawer-width);
+    flex-shrink: 0;
+    transition: width 0.2s ease;
+}
+
+.dungeon--tv .tv-drawer {
+    display: flex;
+}
+
+.tv-drawer.is-collapsed {
+    width: 0;
+}
+
+.tv-drawer__handle {
+    position: absolute;
+    top: 1rem;
+    left: -2.75rem;
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-right: 0;
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.tv-drawer__handle:hover,
+.tv-drawer__handle:focus-visible {
+    color: var(--arcane);
+}
+
+.tv-drawer:not(.is-collapsed) .tv-drawer__handle svg {
+    transform: scaleX(-1);
+}
+
+.tv-drawer__badge {
+    position: absolute;
+    top: -0.35rem;
+    left: -0.35rem;
+    min-width: 1.2rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.1rem;
+    text-align: center;
+}
+
+.tv-drawer__badge[hidden] {
+    display: none;
+}
+
+.tv-drawer__body {
+    display: flex;
+    width: var(--tv-drawer-width);
+    min-width: 0;
+    height: 100%;
+    flex-direction: column;
+    gap: 0.6rem;
+    overflow: hidden;
+    padding: 0.75rem;
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+}
+
+.tv-drawer.is-collapsed .tv-drawer__body {
+    visibility: hidden;
+}
+
+.tv-drawer__tabs {
+    display: flex;
+    width: 100%;
+    flex-shrink: 0;
+    align-items: center;
+    margin: 0;
+}
+
+.tv-drawer__tabs .tabs__link {
+    padding-inline: 0.6rem;
+}
+
+.tv-drawer__tabs .tabs__link.has-unread::after {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--danger);
+    content: "";
+}
+
+.tv-drawer__exit {
+    margin-left: auto;
+}
+
+.tv-drawer__pane {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.6rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.tv-drawer__pane[hidden] {
+    display: none;
+}
+
+.tv-drawer__pane .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+}
+
+.tv-drawer__campaign {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.tv-drawer__campaign > div {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.tv-drawer__group {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.tv-drawer__group .screen-npc[hidden] {
+    display: none;
+}
+
+.tv-drawer__pane--sheet,
+.tv-drawer__pane--chat {
+    overflow: hidden;
+}
+
+.tv-drawer__sheet-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.tv-drawer__sheet-bar .select {
+    min-width: 0;
+    flex: 1;
+}
+
+.tv-drawer__frame {
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+}
+
+.tv-drawer__chat,
+.tv-drawer .chat--docked {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+}
+
+.tv-drawer .chat--docked .chat-panel {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border-radius: var(--radius-md);
+    box-shadow: none;
+}
+
+/* Menu de ações (dados, ambientação) por cima do Modo TV, ao lado do painel. */
+
+.is-tv-mode .action-menu__fab,
+.is-tv-mode .tool-panel {
+    z-index: 96;
+}
+
+.is-tv-drawer-open .action-menu__fab,
+.is-tv-drawer-open .tool-panel {
+    right: calc(var(--tv-drawer-width) + 1.5rem);
+}
+
+/* Telas estreitas: o painel cobre o mapa (recolhe para ver o mapa inteiro). */
+
+@media (max-width: 760px) {
+    :root {
+        --tv-drawer-width: calc(100vw - 3.25rem);
+    }
+
+    .tv-drawer {
+        position: absolute;
+        inset: 0 0 0 auto;
+    }
+
+    .is-tv-drawer-open .action-menu__fab,
+    .is-tv-drawer-open .tool-panel {
+        right: max(1rem, var(--safe-right));
+        opacity: 0.35;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tv-drawer {
+        transition: none;
+    }
+}
+
 @media (max-width: 760px) {
     .spawn-grid {
         grid-template-columns: 1fr;
