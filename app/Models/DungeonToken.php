@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\TokenType;
 use App\Models\Concerns\BumpsBoardVersion;
 use App\Models\Concerns\HasPublicFiles;
+use App\Support\BoardGrid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -98,6 +99,25 @@ class DungeonToken extends Model
     public function typeKey(): string
     {
         return $this->type instanceof \BackedEnum ? $this->type->value : (string) $this->type;
+    }
+
+    /**
+     * Reencaixa todos os tokens de um mapa da campanha num formato de grade
+     * (usado quando o mestre troca quadrados por hexágonos e vice-versa).
+     */
+    public static function snapAllTo(GameSession $session, CampaignMap $map, string $gridType): void
+    {
+        $cols = $map->gridCols();
+        $rows = $map->gridRows();
+
+        static::query()
+            ->where('game_session_id', $session->id)
+            ->where('campaign_map_id', $map->id)
+            ->get()
+            ->each(static function (DungeonToken $token) use ($cols, $rows, $gridType): void {
+                [$token->x, $token->y] = BoardGrid::snap((float) $token->x, (float) $token->y, $cols, $rows, (float) $token->size, $gridType);
+                $token->save();
+            });
     }
 
     /**

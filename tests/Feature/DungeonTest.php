@@ -13,6 +13,7 @@ use App\Models\DungeonToken;
 use App\Models\GameSession;
 use App\Models\MapDrawing;
 use App\Models\User;
+use App\Support\BoardGrid;
 use App\Support\BoardVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -351,6 +352,51 @@ class DungeonTest extends TestCase
         $this->actingAs($this->gm)->deleteJson($this->url('dungeon.markers.destroy', ['marker' => $marker]))->assertOk();
         $this->actingAs($this->player)->deleteJson($this->url('dungeon.aoes.clear'))->assertForbidden();
         $this->actingAs($this->gm)->deleteJson($this->url('dungeon.aoes.clear'))->assertOk();
+    }
+
+    public function test_gm_switches_the_grid_to_hexagons(): void
+    {
+        $token = $this->join();
+
+        $this->actingAs($this->player)->putJson($this->url('dungeon.grid'), ['grid_type' => 'hex'])->assertForbidden();
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.grid'), ['grid_type' => 'triangulos'])->assertUnprocessable();
+
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.grid'), ['grid_type' => 'hex'])
+            ->assertOk()
+            ->assertJsonPath('grid_type', 'hex');
+
+        // O token já colocado vai para o centro do hexágono (coluna 1, linha 2).
+        $moved = DungeonToken::query()->findOrFail($token['id']);
+        $this->assertEqualsWithDelta(14.286, (float) $moved->x, 0.001);
+        $this->assertEqualsWithDelta(50.0, (float) $moved->y, 0.001);
+
+        $this->actingAs($this->player)->getJson($this->url('dungeon.state'))
+            ->assertOk()
+            ->assertJsonPath('layers.grid_type', 'hex');
+
+        // Movimentos passam a encaixar nos hexágonos (linha ímpar deslocada meia célula).
+        $this->actingAs($this->player)->putJson($this->url('dungeon.tokens.update', ['token' => $token['id']]), ['x' => 33, 'y' => 71])
+            ->assertOk()
+            ->assertJsonPath('token.x', 28.571)
+            ->assertJsonPath('token.y', 68.75);
+
+        $this->actingAs($this->gm)->get(route('dungeon.index', ['campanha' => $this->session->id]))
+            ->assertOk()
+            ->assertSee('data-grid-type aria-pressed="true"', false);
+    }
+
+    public function test_player_movement_reveals_hexagons_around_on_a_hex_grid(): void
+    {
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.grid'), ['grid_type' => 'hex'])->assertOk();
+        $this->actingAs($this->gm)->putJson($this->url('dungeon.fog'), ['enabled' => true, 'revealed_cells' => []])->assertOk();
+        $this->join();
+
+        // Entrou no hexágono (1, 2) → revela dois anéis, recortados pela grade.
+        $cells = DungeonFog::query()->sole()->revealed_cells;
+        sort($cells);
+        $this->assertSame(BoardGrid::cellsAround(1, 2, 3, 10, 5, BoardGrid::HEX), $cells);
+        $this->assertContains(21, $cells);
+        $this->assertNotContains(4, $cells);
     }
 
     public function test_world_maps_are_not_battlemaps(): void

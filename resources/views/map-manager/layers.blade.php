@@ -18,7 +18,7 @@
         <div class="layers-editor__canvas glass">
             <div class="layers-stage" data-stage>
                 <img class="layers-stage__image" src="{{ $config['imageUrl'] }}" alt="{{ $map->name }}" draggable="false" data-image>
-                <div class="layers-stage__grid" data-grid aria-hidden="true"></div>
+                <svg class="layers-stage__grid board-grid" data-grid viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
                 <canvas class="layers-stage__fog" data-fog aria-hidden="true"></canvas>
                 <svg class="layers-stage__ruler" data-ruler viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
                 <span class="layers-stage__readout" data-readout hidden></span>
@@ -62,6 +62,19 @@
                         </label>
                     </div>
                 @endforeach
+
+                <div class="layer-control">
+                    <div class="layer-control__head">
+                        <x-icon name="hexagon" :size="16" />
+                        <span>Formato da grade</span>
+                    </div>
+                    <div class="segmented segmented--full" role="group" aria-label="Formato da grade">
+                        @foreach (App\Support\BoardGrid::TYPES as $gridKey => $gridLabel)
+                            <button type="button" class="segmented__option" data-grid-type-option="{{ $gridKey }}" aria-pressed="false">{{ $gridLabel }}</button>
+                        @endforeach
+                    </div>
+                    <p class="muted layer-control__note">Trocar o formato reencaixa os tokens da masmorra; a névoa revelada continua valendo.</p>
+                </div>
 
                 <div class="layer-control">
                     <label class="layer-control__head">

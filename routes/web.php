@@ -317,6 +317,7 @@ Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
             Route::put('/nevoa', [DungeonController::class, 'fog'])->name('fog');
             Route::put('/combate', [DungeonController::class, 'combat'])->name('combat');
             Route::put('/clima', [DungeonController::class, 'weather'])->name('weather');
+            Route::put('/grade', [DungeonController::class, 'grid'])->name('grid');
             Route::post('/tokens', [DungeonTokenController::class, 'store'])->middleware('throttle:60,1')->name('tokens.store');
             Route::put('/tokens/{token}', [DungeonTokenController::class, 'update'])->middleware('throttle:240,1')->name('tokens.update');
             Route::delete('/tokens/{token}', [DungeonTokenController::class, 'destroy'])->name('tokens.destroy');

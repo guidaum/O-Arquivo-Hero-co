@@ -1575,6 +1575,40 @@ html.has-lightbox {
     overflow: hidden;
 }
 
+/*
+ * Grade tática (SVG desenhado por core/maps.js: quadrados ou hexágonos), na
+ * masmorra e no inspetor de camadas. Contorno escuro sob uma linha clara:
+ * fica legível tanto em mapas claros quanto escuros.
+ */
+
+.board-grid {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+.board-grid path {
+    fill: none;
+    stroke-linejoin: round;
+}
+
+.board-grid__shadow {
+    stroke: rgba(0, 0, 0, 0.85);
+    stroke-width: 3px;
+}
+
+.board-grid__line {
+    stroke: rgba(255, 255, 255, 0.8);
+    stroke-width: 1.15px;
+}
+
+.board-grid[data-grid-type="hex"] .board-grid__shadow {
+    stroke-width: 2.6px;
+}
+
 /* Ficha do personagem em popup (a página da ficha embutida num iframe): masmorra e Escudo do Mestre. */
 
 .modal.sheet-popup {

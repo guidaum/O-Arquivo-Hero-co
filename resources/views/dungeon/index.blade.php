@@ -153,7 +153,7 @@
 
                     <div class="world-map__stage dungeon__stage" data-stage>
                         <img class="world-map__image" src="{{ $map->image_url }}" alt="{{ $map->name }}" draggable="false" data-map-image>
-                        <div class="dungeon__grid" data-grid aria-hidden="true"></div>
+                        <svg class="dungeon__grid board-grid" data-grid viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
                         <svg class="dungeon__aoes" data-aoes aria-hidden="true"></svg>
                         <svg class="world-map__drawings" data-drawings viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
                         <div class="dungeon__markers" data-markers></div>
@@ -187,6 +187,9 @@
                         <button type="button" class="icon-button" data-zoom="out" title="Afastar"><x-icon name="zoom-out" :size="18" /></button>
                         <button type="button" class="icon-button" data-zoom="reset" title="Centralizar"><x-icon name="locate" :size="18" /></button>
                         <button type="button" class="icon-button" data-grid-toggle aria-pressed="true" title="Grade"><x-icon name="grid" :size="18" /></button>
+                        @if ($isGm)
+                            <button type="button" class="icon-button" data-grid-type aria-pressed="{{ $config['grid']['type'] === 'hex' ? 'true' : 'false' }}" title="Formato da grade: quadrados ou hexágonos (todos veem)"><x-icon name="hexagon" :size="18" /></button>
+                        @endif
                     </div>
 
                     <p class="world-map__coords glass" data-coords>Passe o cursor sobre o mapa</p>

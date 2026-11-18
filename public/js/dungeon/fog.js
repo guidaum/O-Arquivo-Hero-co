@@ -2,16 +2,11 @@
 // O servidor só aceita mudanças do mestre; os jogadores veem o resultado pelo estado.
 
 import { request } from '../core/http.js';
-import { cellsInRadius } from '../core/maps.js';
+import { cellAt, cellsInRadius } from '../core/maps.js';
 import { renderFog } from './board.js';
 
-// Célula (coluna/linha) de um ponto em % da imagem.
-export function cellAt(grid, point) {
-    return {
-        col: Math.min(grid.cols - 1, Math.floor((point.x / 100) * grid.cols)),
-        row: Math.min(grid.rows - 1, Math.floor((point.y / 100) * grid.rows)),
-    };
-}
+// Célula (coluna/linha) de um ponto em % da imagem, em quadrados ou hexágonos.
+export { cellAt };
 
 export function createFog(ctx) {
     const { root, $, config, state, grid, stage, viewport } = ctx;
@@ -21,7 +16,7 @@ export function createFog(ctx) {
     function brushCells(point) {
         const { col, row } = cellAt(grid, point);
 
-        return cellsInRadius(col, row, state.brush.size, grid.cols, grid.rows);
+        return cellsInRadius(col, row, state.brush.size, grid.cols, grid.rows, grid.type);
     }
 
     function paintAt(point) {
@@ -95,7 +90,7 @@ export function createFog(ctx) {
             const set = new Set(cells);
             state.tokens.filter((token) => token.type === 'player').forEach((token) => {
                 const { col, row } = cellAt(grid, token);
-                cellsInRadius(col, row, 3, grid.cols, grid.rows).forEach((cell) => set.add(cell));
+                cellsInRadius(col, row, 3, grid.cols, grid.rows, grid.type).forEach((cell) => set.add(cell));
             });
             cells = [...set];
         }

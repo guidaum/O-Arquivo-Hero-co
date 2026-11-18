@@ -7,9 +7,12 @@ namespace App\Http\Controllers;
 use App\Enums\MapType;
 use App\Models\CampaignMap;
 use App\Models\DungeonFog;
+use App\Models\DungeonToken;
 use App\Models\GameSession;
 use App\Models\GameSessionMap;
 use App\Models\User;
+use App\Support\BoardGrid;
+use App\Support\BoardVersion;
 use App\Support\Navigation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -190,6 +193,7 @@ class MapManagerController extends Controller
             'layers.fog_opacity' => ['required', 'integer', 'min:0', 'max:100'],
             'layers.grid_scale.unit' => ['required', Rule::in(array_keys(GameSessionMap::SCALE_UNITS))],
             'layers.grid_scale.value_per_square' => ['required', 'numeric', 'min:0.1', 'max:10000'],
+            'layers.grid_type' => ['sometimes', Rule::in(array_keys(BoardGrid::TYPES))],
             'fog.enabled' => ['required', 'boolean'],
             'fog.revealed_cells' => ['present', 'array', 'max:'.$total],
             'fog.revealed_cells.*' => ['integer', 'min:0', 'max:'.($total - 1)],
@@ -199,13 +203,24 @@ class MapManagerController extends Controller
         $user = $request->user();
 
         DB::transaction(static function () use ($gameSession, $campaignMap, $layers, $data, $user): void {
-            if ($gameSession->maps()->whereKey($campaignMap->id)->exists()) {
+            $pivot = $gameSession->maps()->whereKey($campaignMap->id)->first()?->pivot;
+            $previousGrid = GameSessionMap::normalizeLayers($pivot?->layer_settings)['grid_type'];
+            $layers['grid_type'] = isset($data['layers']['grid_type']) ? $layers['grid_type'] : $previousGrid;
+
+            if ($pivot !== null) {
                 $gameSession->maps()->updateExistingPivot($campaignMap->id, ['layer_settings' => $layers]);
             } else {
                 $gameSession->maps()->attach($campaignMap->id, ['active' => $campaignMap->active, 'layer_settings' => $layers]);
             }
 
+            // Trocar quadrados por hexágonos (ou o contrário) reencaixa os tokens da masmorra.
+            if ($previousGrid !== $layers['grid_type']) {
+                DungeonToken::snapAllTo($gameSession, $campaignMap, $layers['grid_type']);
+            }
+
             DungeonFog::saveFor($gameSession, $campaignMap, (bool) $data['fog']['enabled'], $data['fog']['revealed_cells'], $user);
+            // As camadas aparecem na masmorra aberta: o pulso avisa quem está nela.
+            BoardVersion::bump($gameSession->id, $campaignMap->id);
         });
 
         return response()->json(['message' => 'Camadas, névoa de guerra e régua do mapa "'.$campaignMap->name.'" salvas.']);

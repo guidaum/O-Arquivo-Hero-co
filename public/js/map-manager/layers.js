@@ -4,7 +4,7 @@
 // mestre vê o mapa através das células ocultas (os jogadores não verão).
 
 import { request } from '../core/http.js';
-import { cellsInRadius, gridDistance } from '../core/maps.js';
+import { cellAt, cellsInRadius, gridDistance, paintFog, renderGridSvg, strokeCells } from '../core/maps.js';
 
 const root = document.querySelector('[data-layers]');
 
@@ -20,6 +20,9 @@ if (root) {
     const hint = $('[data-hint]');
     const { cols, rows } = config;
     const total = cols * rows;
+    // Grade atual (o formato muda nas camadas: quadrados ou hexágonos).
+    const currentGrid = () => ({ cols, rows, type: state.layers.grid_type });
+    const BRUSH_LABELS = { square: ['1 célula', '3×3', '5×5'], hex: ['1 célula', '1 + 6 vizinhos', '2 anéis'] };
 
     const state = {
         tab: 'layers',
@@ -44,10 +47,9 @@ if (root) {
     }
 
     function entranceCells() {
-        const col = Math.max(0, Math.min(cols - 1, Math.floor((config.entrance.x / 100) * cols)));
-        const row = Math.max(0, Math.min(rows - 1, Math.floor((config.entrance.y / 100) * rows)));
+        const { col, row } = cellAt(currentGrid(), config.entrance);
 
-        return cellsInRadius(col, row, 3, cols, rows);
+        return cellsInRadius(col, row, 3, cols, rows, state.layers.grid_type);
     }
 
     const markDirty = () => { state.dirty = true; };
@@ -57,10 +59,13 @@ if (root) {
     function renderLayers() {
         const { layers } = state;
         image.style.opacity = layers.show_background ? String(layers.background_opacity / 100) : '0.08';
-        grid.hidden = !layers.show_grid;
-        grid.style.opacity = String(layers.grid_opacity / 100);
-        grid.style.setProperty('--cols', cols);
-        grid.style.setProperty('--rows', rows);
+        renderGridSvg(grid, currentGrid(), layers.show_grid, layers.grid_opacity / 100);
+        root.querySelectorAll('[data-grid-type-option]').forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.gridTypeOption === layers.grid_type));
+        });
+        root.querySelectorAll('[data-brush-size]').forEach((button) => {
+            button.textContent = BRUSH_LABELS[layers.grid_type]?.[Number(button.dataset.brushSize) - 1] ?? button.textContent;
+        });
 
         root.querySelectorAll('[data-layer]').forEach((input) => {
             const value = layers[input.dataset.layer];
@@ -85,26 +90,16 @@ if (root) {
         ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         ctx.clearRect(0, 0, width, height);
 
-        const cellWidth = width / cols;
-        const cellHeight = height / rows;
         const showFog = state.fogEnabled || state.tab === 'fog';
 
         if (showFog) {
             // Visão do mestre: as células ocultas ficam escurecidas, mas o mapa continua visível.
-            ctx.fillStyle = `rgba(8, 7, 12, ${Math.min(0.75, state.layers.fog_opacity / 100 * 0.8)})`;
-            for (let cell = 0; cell < total; cell++) {
-                if (!state.revealed.has(cell)) {
-                    ctx.fillRect((cell % cols) * cellWidth, Math.floor(cell / cols) * cellHeight, cellWidth + 0.5, cellHeight + 0.5);
-                }
-            }
+            paintFog(ctx, currentGrid(), width, height, state.revealed, `rgba(8, 7, 12, ${Math.min(0.75, state.layers.fog_opacity / 100 * 0.8)})`);
         }
 
         if (state.tab === 'fog' && state.hover) {
-            ctx.strokeStyle = state.brushMode === 'reveal' ? '#38bdf8' : '#ef4444';
-            ctx.lineWidth = 2;
-            cellsInRadius(state.hover.col, state.hover.row, state.brushSize, cols, rows).forEach((cell) => {
-                ctx.strokeRect((cell % cols) * cellWidth + 1, Math.floor(cell / cols) * cellHeight + 1, cellWidth - 2, cellHeight - 2);
-            });
+            const cells = cellsInRadius(state.hover.col, state.hover.row, state.brushSize, cols, rows, state.layers.grid_type);
+            strokeCells(ctx, currentGrid(), width, height, cells, state.brushMode === 'reveal' ? '#38bdf8' : '#ef4444');
         }
 
         $('[data-fog-count]').textContent = `${state.revealed.size} de ${total} células reveladas${state.fogEnabled ? '' : ' (névoa desligada: os jogadores veem o mapa inteiro)'}.`;
@@ -122,7 +117,7 @@ if (root) {
             .forEach(([name, value]) => line.setAttribute(name, String(value)));
         ruler.append(line);
 
-        const distance = gridDistance(state.rulerStart, state.rulerEnd, cols, rows, state.layers.grid_scale);
+        const distance = gridDistance(state.rulerStart, state.rulerEnd, cols, rows, state.layers.grid_scale, state.layers.grid_type);
         readout.textContent = distance.formatted;
         readout.style.left = `${(state.rulerStart.x + state.rulerEnd.x) / 2}%`;
         readout.style.top = `${(state.rulerStart.y + state.rulerEnd.y) / 2}%`;
@@ -172,6 +167,12 @@ if (root) {
         render();
     }));
 
+    root.querySelectorAll('[data-grid-type-option]').forEach((button) => button.addEventListener('click', () => {
+        state.layers.grid_type = button.dataset.gridTypeOption;
+        markDirty();
+        render();
+    }));
+
     root.querySelectorAll('[data-layer]').forEach((input) => input.addEventListener('input', () => {
         state.layers[input.dataset.layer] = input.type === 'checkbox' ? input.checked : Number(input.value);
         markDirty();
@@ -216,11 +217,11 @@ if (root) {
         const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
         const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
 
-        return { x, y, col: Math.min(cols - 1, Math.floor((x / 100) * cols)), row: Math.min(rows - 1, Math.floor((y / 100) * rows)) };
+        return { x, y, ...cellAt(currentGrid(), { x, y }) };
     }
 
     function paint(point) {
-        cellsInRadius(point.col, point.row, state.brushSize, cols, rows).forEach((cell) => {
+        cellsInRadius(point.col, point.row, state.brushSize, cols, rows, state.layers.grid_type).forEach((cell) => {
             if (state.brushMode === 'reveal') state.revealed.add(cell);
             else state.revealed.delete(cell);
         });

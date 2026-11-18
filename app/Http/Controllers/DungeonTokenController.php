@@ -11,7 +11,9 @@ use App\Models\Character;
 use App\Models\DungeonFog;
 use App\Models\DungeonToken;
 use App\Models\GameSession;
+use App\Models\GameSessionMap;
 use App\Models\User;
+use App\Support\BoardGrid;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -108,16 +110,22 @@ class DungeonTokenController extends Controller
             $token->user_id = $user->id;
         }
 
-        $cols = $campaignMap->gridCols();
-        $rows = $campaignMap->gridRows();
-        $token->x = self::snap((float) ($data['x'] ?? $campaignMap->entrance_x ?? 10), $cols, (float) $token->size);
-        $token->y = self::snap((float) ($data['y'] ?? $campaignMap->entrance_y ?? 50), $rows, (float) $token->size);
+        $layers = $this->layerSettings($gameSession, $campaignMap);
+        $gridType = GameSessionMap::normalizeLayers($layers)['grid_type'];
+        [$token->x, $token->y] = BoardGrid::snap(
+            (float) ($data['x'] ?? $campaignMap->entrance_x ?? 10),
+            (float) ($data['y'] ?? $campaignMap->entrance_y ?? 50),
+            $campaignMap->gridCols(),
+            $campaignMap->gridRows(),
+            (float) $token->size,
+            $gridType,
+        );
         $token->conditions = [];
         $token->last_moved_by = $user->id;
         $token->last_moved_at = now();
         $token->save();
 
-        $this->revealAround($token, $gameSession, $campaignMap, $user);
+        $this->revealAround($token, $gameSession, $campaignMap, $user, $layers, $gridType);
 
         return response()->json([
             'message' => $token->name.' entrou no mapa.',
@@ -156,9 +164,19 @@ class DungeonTokenController extends Controller
         }
 
         $moved = isset($data['x']) || isset($data['y']);
+        $layers = null;
+        $gridType = BoardGrid::SQUARE;
         if ($moved) {
-            $token->x = self::snap((float) ($data['x'] ?? $token->x), $campaignMap->gridCols(), (float) $token->size);
-            $token->y = self::snap((float) ($data['y'] ?? $token->y), $campaignMap->gridRows(), (float) $token->size);
+            $layers = $this->layerSettings($gameSession, $campaignMap);
+            $gridType = GameSessionMap::normalizeLayers($layers)['grid_type'];
+            [$token->x, $token->y] = BoardGrid::snap(
+                (float) ($data['x'] ?? $token->x),
+                (float) ($data['y'] ?? $token->y),
+                $campaignMap->gridCols(),
+                $campaignMap->gridRows(),
+                (float) $token->size,
+                $gridType,
+            );
             $token->last_moved_by = $user->id;
             $token->last_moved_at = now();
         }
@@ -181,7 +199,7 @@ class DungeonTokenController extends Controller
         $token->save();
 
         if ($moved) {
-            $this->revealAround($token, $gameSession, $campaignMap, $user);
+            $this->revealAround($token, $gameSession, $campaignMap, $user, $layers, $gridType);
         }
 
         return response()->json(['token' => $token->load(DungeonToken::BOARD_RELATIONS)->toBoardArray($user, $isGm)]);
@@ -200,19 +218,12 @@ class DungeonTokenController extends Controller
     }
 
     /**
-     * Encaixa a posição na grade: centro da célula para tokens de tamanho
-     * ímpar, cruzamento das linhas para tamanho par, sempre dentro do mapa.
+     * Encaixe de um eixo da grade quadrada (ver BoardGrid::snap(), que também
+     * trata hexágonos).
      */
     public static function snap(float $value, int $cells, float $size): float
     {
-        $cell = 100 / max(1, $cells);
-        $size = max(1.0, $size);
-        $snapped = ((int) $size) % 2 === 1
-            ? (floor($value / $cell) + 0.5) * $cell
-            : round($value / $cell) * $cell;
-        $half = $size * $cell / 2;
-
-        return round(min(100 - $half, max($half, $snapped)), 3);
+        return BoardGrid::snapAxis($value, $cells, $size);
     }
 
     /**
@@ -228,16 +239,19 @@ class DungeonTokenController extends Controller
         return [max(0, min((int) $current, $max)), $max];
     }
 
-    /** Jogador que se move revela a névoa ao redor (autoRevealOnMove do sistema antigo). */
-    private function revealAround(DungeonToken $token, GameSession $session, CampaignMap $map, User $user): void
+    /**
+     * Jogador que se move revela a névoa ao redor (autoRevealOnMove do sistema
+     * antigo): 5×5 quadrados ou dois anéis de hexágonos.
+     *
+     * @param  array<string, mixed>|null  $layers  camadas do mapa na campanha (pivot)
+     */
+    private function revealAround(DungeonToken $token, GameSession $session, CampaignMap $map, User $user, ?array $layers, string $gridType): void
     {
-        $type = $token->type instanceof \BackedEnum ? $token->type->value : (string) $token->type;
-
-        if ($type !== 'player') {
+        if ($token->typeKey() !== 'player') {
             return;
         }
 
-        $fog = $map->fogIn($session, $session->maps()->whereKey($map->id)->first()?->pivot?->layer_settings);
+        $fog = $map->fogIn($session, $layers);
 
         if (! $fog['enabled']) {
             return;
@@ -245,23 +259,22 @@ class DungeonTokenController extends Controller
 
         $cols = $map->gridCols();
         $rows = $map->gridRows();
-        $cell = DungeonController::cellOf($token->x, $token->y, $cols, $rows);
-        $col = $cell % $cols;
-        $row = intdiv($cell, $cols);
-        $reach = self::REVEAL_RADIUS - 1;
-        $cells = $fog['revealed_cells'];
-
-        for ($dy = -$reach; $dy <= $reach; $dy++) {
-            for ($dx = -$reach; $dx <= $reach; $dx++) {
-                if ($col + $dx >= 0 && $col + $dx < $cols && $row + $dy >= 0 && $row + $dy < $rows) {
-                    $cells[] = ($row + $dy) * $cols + $col + $dx;
-                }
-            }
-        }
+        [$col, $row] = BoardGrid::colRowOf((float) $token->x, (float) $token->y, $cols, $rows, $gridType);
+        $cells = [...$fog['revealed_cells'], ...BoardGrid::cellsAround($col, $row, self::REVEAL_RADIUS, $cols, $rows, $gridType)];
 
         if (count(array_unique($cells)) !== count($fog['revealed_cells'])) {
             DungeonFog::saveFor($session, $map, true, $cells, $user);
         }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function layerSettings(GameSession $session, CampaignMap $map): ?array
+    {
+        $settings = $session->maps()->whereKey($map->id)->first()?->pivot?->layer_settings;
+
+        return is_array($settings) ? $settings : null;
     }
 
     private function ensureOnMap(DungeonToken $token, GameSession $session, CampaignMap $map): void

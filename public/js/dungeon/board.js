@@ -3,7 +3,7 @@
 // tamanho em pixels vem do palco (definido por world-map/viewport.js).
 
 import { el, icon, replace } from '../core/dom.js';
-import { gridDistance } from '../core/maps.js';
+import { cellWidth, gridDistance, paintFog, renderGridSvg, strokeCells } from '../core/maps.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -26,9 +26,7 @@ export function stageSize(stage) {
 }
 
 export function renderGrid(gridEl, grid, layers) {
-    gridEl.style.setProperty('--cols', grid.cols);
-    gridEl.style.setProperty('--rows', grid.rows);
-    gridEl.style.opacity = layers.show_grid ? String(layers.grid_opacity / 100) : '0';
+    renderGridSvg(gridEl, grid, layers.show_grid, layers.grid_opacity / 100);
 }
 
 /**
@@ -48,31 +46,17 @@ export function renderFog(canvas, stage, grid, fog, layers, isGm, brush = null) 
 
     if (!fog.enabled && !brush) return;
 
-    const cellW = width / grid.cols;
-    const cellH = height / grid.rows;
-    const revealed = new Set(fog.revealed_cells);
-    const total = grid.cols * grid.rows;
     const opacity = isGm ? 0.55 : Math.max(0.1, layers.fog_opacity / 100);
 
-    ctx.fillStyle = `rgba(6, 5, 10, ${opacity})`;
-    for (let cell = 0; cell < total; cell++) {
-        if (!revealed.has(cell)) {
-            ctx.fillRect((cell % grid.cols) * cellW, Math.floor(cell / grid.cols) * cellH, cellW + 0.5, cellH + 0.5);
-        }
-    }
-
-    if (brush) {
-        ctx.strokeStyle = brush.mode === 'reveal' ? '#38bdf8' : '#ef4444';
-        ctx.lineWidth = 2;
-        brush.cells.forEach((cell) => ctx.strokeRect((cell % grid.cols) * cellW + 1, Math.floor(cell / grid.cols) * cellH + 1, cellW - 2, cellH - 2));
-    }
+    if (fog.enabled) paintFog(ctx, grid, width, height, new Set(fog.revealed_cells), `rgba(6, 5, 10, ${opacity})`);
+    if (brush) strokeCells(ctx, grid, width, height, brush.cells, brush.mode === 'reveal' ? '#38bdf8' : '#ef4444');
 }
 
 export function renderAoes(layer, stage, grid, aoes, scale, selectedId) {
     const { width, height } = stageSize(stage);
     layer.setAttribute('viewBox', `0 0 ${width} ${height}`);
     layer.replaceChildren();
-    const cell = width / grid.cols;
+    const cell = (width * cellWidth(grid)) / 100;
 
     aoes.forEach((aoe) => {
         const x = (aoe.x / 100) * width;
@@ -129,7 +113,7 @@ export function renderMarkers(layer, markers, categories, onOpen) {
 
 export function renderTokens(layer, stage, grid, tokens, { selectedId, activeId, conditions, showTokens, onSelect }) {
     const { width } = stageSize(stage);
-    const cell = width / grid.cols;
+    const cell = (width * cellWidth(grid)) / 100;
 
     replace(layer, tokens.map((token) => {
         const size = cell * token.size * 0.86;
@@ -175,7 +159,7 @@ export function renderRuler(layer, stage, grid, scale, from, to) {
     const y1 = (from.y / 100) * height;
     const x2 = (to.x / 100) * width;
     const y2 = (to.y / 100) * height;
-    const distance = gridDistance(from, to, grid.cols, grid.rows, scale);
+    const distance = gridDistance(from, to, grid.cols, grid.rows, scale, grid.type);
     const label = svg('text', { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 10, 'text-anchor': 'middle', class: 'ruler__label' });
     label.textContent = distance.formatted;
 

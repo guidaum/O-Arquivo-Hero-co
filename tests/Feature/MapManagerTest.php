@@ -9,6 +9,7 @@ use App\Enums\ViewMode;
 use App\Models\CampaignMap;
 use App\Models\Character;
 use App\Models\DungeonFog;
+use App\Models\DungeonToken;
 use App\Models\GameSession;
 use App\Models\GameSessionMap;
 use App\Models\User;
@@ -176,6 +177,32 @@ class MapManagerTest extends TestCase
         ])->assertJsonValidationErrors('fog.revealed_cells.0');
 
         $this->actingAs($this->player)->getJson(route('map-manager.layers', [$this->session, $this->preset]))->assertForbidden();
+    }
+
+    public function test_switching_the_grid_to_hexagons_resnaps_the_tokens(): void
+    {
+        $token = new DungeonToken(['name' => 'Goblin', 'type' => 'monster', 'hp' => 7, 'max_hp' => 7, 'size' => 1, 'initiative' => 10, 'is_hidden' => false, 'x' => 15, 'y' => 50]);
+        $token->forceFill(['game_session_id' => $this->session->id, 'campaign_map_id' => $this->preset->id, 'user_id' => $this->gm->id, 'conditions' => []])->save();
+        $layers = [
+            'show_background' => true, 'background_opacity' => 100, 'show_grid' => true, 'grid_opacity' => 75,
+            'show_tokens' => true, 'fog_opacity' => 90, 'grid_scale' => ['unit' => 'ft', 'value_per_square' => 5],
+        ];
+
+        $this->actingAs($this->gm)->putJson(route('map-manager.layers.update', [$this->session, $this->preset]), [
+            'layers' => [...$layers, 'grid_type' => 'hex'],
+            'fog' => ['enabled' => false, 'revealed_cells' => []],
+        ])->assertOk();
+
+        $this->assertSame('hex', $this->session->maps()->whereKey($this->preset->id)->first()->pivot->layer_settings['grid_type']);
+        $this->assertEqualsWithDelta(14.286, (float) $token->fresh()->x, 0.001);
+
+        // Um envio sem o formato (cliente antigo) mantém os hexágonos.
+        $this->actingAs($this->gm)->putJson(route('map-manager.layers.update', [$this->session, $this->preset]), [
+            'layers' => $layers,
+            'fog' => ['enabled' => false, 'revealed_cells' => []],
+        ])->assertOk();
+
+        $this->assertSame('hex', $this->session->maps()->whereKey($this->preset->id)->first()->pivot->layer_settings['grid_type']);
     }
 
     public function test_imported_layer_settings_are_understood(): void

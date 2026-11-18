@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\BoardGrid;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 
 /**
@@ -24,6 +25,7 @@ class GameSessionMap extends Pivot
         'show_tokens' => true,
         'fog_opacity' => 90,
         'grid_scale' => ['unit' => 'ft', 'value_per_square' => 5],
+        'grid_type' => BoardGrid::SQUARE,
     ];
 
     /** Unidades da régua: chave => [rótulo curto, descrição]. "sq" antigo = "squares". */
@@ -76,6 +78,7 @@ class GameSessionMap extends Pivot
                 'unit' => array_key_exists($unit, self::SCALE_UNITS) ? $unit : 'ft',
                 'value_per_square' => is_numeric($perSquare) ? max(0.1, round((float) $perSquare, 2)) : 5,
             ],
+            'grid_type' => BoardGrid::normalizeType($read('grid_type', 'gridType', BoardGrid::SQUARE)),
         ];
     }
 }

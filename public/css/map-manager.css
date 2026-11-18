@@ -239,15 +239,6 @@
 .layers-stage__grid {
     position: absolute;
     inset: 0;
-    background-image:
-        linear-gradient(to right, rgba(255, 255, 255, 0.5) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.5) 1px, transparent 1px);
-    background-size: calc(100% / var(--cols)) calc(100% / var(--rows));
-    pointer-events: none;
-}
-
-.layers-stage__grid[hidden] {
-    display: none;
 }
 
 .layers-stage__fog,

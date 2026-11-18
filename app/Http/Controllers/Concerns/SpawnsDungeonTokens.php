@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Concerns;
 
 use App\Enums\MapType;
-use App\Http\Controllers\DungeonTokenController;
 use App\Models\CampaignMap;
 use App\Models\DungeonToken;
 use App\Models\GameSession;
 use App\Models\User;
+use App\Support\BoardGrid;
 
 /**
  * Criaturas colocadas pelo painel do mestre numa masmorra da campanha:
@@ -44,10 +44,21 @@ trait SpawnsDungeonTokens
         $token->campaign_map_id = $map->id;
         $token->user_id = $gm->id;
 
-        $x = min(95.0, max(5.0, (float) ($map->entrance_x ?? 10) + ($index % 5) * (100 / $cols)));
-        $y = min(95.0, max(5.0, (float) ($map->entrance_y ?? 50) + intdiv($index, 5) * (100 / $rows)));
-        $token->x = DungeonTokenController::snap($x, $cols, $size);
-        $token->y = DungeonTokenController::snap($y, $rows, $size);
+        $gridType = $map->gridTypeIn($session);
+        $entranceX = (float) ($map->entrance_x ?? 10);
+        $entranceY = (float) ($map->entrance_y ?? 50);
+
+        if ($gridType === BoardGrid::HEX) {
+            // Hexágonos: conta células a partir da entrada (cinco por fileira).
+            [$col, $row] = BoardGrid::colRowOf($entranceX, $entranceY, $cols, $rows, $gridType);
+            [$x, $y] = BoardGrid::center(min($cols - 1, $col + $index % 5), min($rows - 1, $row + intdiv($index, 5)), $cols, $rows, $gridType);
+            $token->x = round($x, 3);
+            $token->y = round($y, 3);
+        } else {
+            $x = min(95.0, max(5.0, $entranceX + ($index % 5) * (100 / $cols)));
+            $y = min(95.0, max(5.0, $entranceY + intdiv($index, 5) * (100 / $rows)));
+            [$token->x, $token->y] = BoardGrid::snap($x, $y, $cols, $rows, $size);
+        }
         $token->last_moved_by = $gm->id;
         $token->last_moved_at = now();
         $token->save();

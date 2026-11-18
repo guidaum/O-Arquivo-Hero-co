@@ -15,12 +15,13 @@
 
 import { subscribe } from '../core/realtime.js';
 import { postJson, request } from '../core/http.js';
-import { el } from '../core/dom.js';
+import { busy, el } from '../core/dom.js';
 import { createViewport } from '../world-map/viewport.js';
 import { createDrawing } from '../world-map/drawing.js';
 import { renderAoes, renderFog, renderGrid, renderMarkers, renderRuler, renderTokens } from './board.js';
 import { createWeather } from './weather.js';
 import { cellAt, createFog } from './fog.js';
+import { cellCenter } from '../core/maps.js';
 import { createAnnotations } from './annotations.js';
 import { createPanel } from './panel.js';
 import { createSpawn } from './spawn.js';
@@ -38,7 +39,7 @@ if (root) {
 
     const state = {
         version: null,
-        layers: { show_grid: true, grid_opacity: 75, show_tokens: true, fog_opacity: 90, grid_scale: { unit: 'ft', value_per_square: 5 } },
+        layers: { show_grid: true, grid_opacity: 75, show_tokens: true, fog_opacity: 90, grid_scale: { unit: 'ft', value_per_square: 5 }, grid_type: grid.type },
         fog: { enabled: false, revealed_cells: [] },
         tokens: [],
         aoes: [],
@@ -159,6 +160,7 @@ if (root) {
                     combat: body.combat,
                     weather: body.weather ?? 'none',
                 });
+                syncGridType(body.layers?.grid_type);
                 weather.set(state.weather);
                 if (weatherSelect && document.activeElement !== weatherSelect) weatherSelect.value = state.weather;
                 drawing.setStrokes(body.drawings ?? []);
@@ -187,6 +189,35 @@ if (root) {
             ctx.fail(failure);
         }
     });
+
+    // Formato da grade: vem nas camadas do estado; o mestre troca pelo botão.
+    // Mudar o formato reencaixa os tokens no servidor (a névoa continua valendo).
+
+    const BRUSH_LABELS = { square: ['1', '3×3', '5×5'], hex: ['1', '1 + 6', '2 anéis'] };
+
+    function syncGridType(type) {
+        grid.type = type === 'hex' ? 'hex' : 'square';
+        root.dataset.grid = grid.type;
+        $('[data-grid-type]')?.setAttribute('aria-pressed', String(grid.type === 'hex'));
+        root.querySelectorAll('[data-brush-size]').forEach((button) => {
+            button.textContent = BRUSH_LABELS[grid.type][Number(button.dataset.brushSize) - 1] ?? button.textContent;
+        });
+    }
+
+    syncGridType(grid.type);
+
+    $('[data-grid-type]')?.addEventListener('click', (event) => busy(event.currentTarget, async () => {
+        try {
+            const body = await request(config.gridUrl, { method: 'PUT', data: { grid_type: grid.type === 'hex' ? 'square' : 'hex' } });
+            syncGridType(body.grid_type);
+            state.layers = { ...state.layers, grid_type: grid.type };
+            notify(body.message);
+            renderAll();
+            ctx.refresh();
+        } catch (failure) {
+            ctx.fail(failure);
+        }
+    }));
 
     // Modos
 
@@ -379,6 +410,15 @@ if (root) {
         event.preventDefault();
 
         const [dx, dy] = deltas[event.key];
+
+        if (grid.type === 'hex') {
+            // Hexágonos: mesma coluna na linha de cima/baixo (anda em zigue-zague).
+            const { col, row } = cellAt(grid, token);
+            const next = cellCenter(grid, Math.max(0, Math.min(grid.cols - 1, col + dx)), Math.max(0, Math.min(grid.rows - 1, row + dy)));
+            moveToken(token.id, next).catch(ctx.fail);
+            return;
+        }
+
         moveToken(token.id, { x: token.x + (dx * 100) / grid.cols, y: token.y + (dy * 100) / grid.rows }).catch(ctx.fail);
     });
 

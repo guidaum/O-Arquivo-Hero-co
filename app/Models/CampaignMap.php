@@ -90,6 +90,19 @@ class CampaignMap extends Model
     }
 
     /**
+     * Formato da grade nesta campanha (camadas do mapa: quadrados ou hexágonos).
+     * Usa as camadas já carregadas por GameSession::mapsOfType() quando existem.
+     */
+    public function gridTypeIn(GameSession $session): string
+    {
+        $settings = array_key_exists('session_layer_settings', $this->getAttributes())
+            ? $this->getAttribute('session_layer_settings')
+            : $session->maps()->whereKey($this->id)->first()?->pivot?->layer_settings;
+
+        return GameSessionMap::normalizeLayers(is_array($settings) ? $settings : null)['grid_type'];
+    }
+
+    /**
      * Miniatura: jogadores veem a imagem genérica (sem revelar o mapa), o mestre vê a real.
      */
     public function thumbnailUrl(bool $isGm): string

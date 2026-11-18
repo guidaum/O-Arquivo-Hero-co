@@ -23,7 +23,15 @@ class LayerSettingsTest extends TestCase
             'show_tokens' => true,
             'fog_opacity' => 90,
             'grid_scale' => ['unit' => 'ft', 'value_per_square' => 5.0],
+            'grid_type' => 'square',
         ], GameSessionMap::normalizeLayers(null));
+    }
+
+    public function test_grid_type_accepts_hexagons_and_falls_back_to_squares(): void
+    {
+        $this->assertSame('hex', GameSessionMap::normalizeLayers(['grid_type' => 'hex'])['grid_type']);
+        $this->assertSame('hex', GameSessionMap::normalizeLayers(['gridType' => 'hex'])['grid_type']);
+        $this->assertSame('square', GameSessionMap::normalizeLayers(['grid_type' => 'triangulos'])['grid_type']);
     }
 
     public function test_imported_camel_case_is_understood(): void

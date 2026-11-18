@@ -17,6 +17,7 @@ use App\Models\GameSessionMap;
 use App\Models\MapDrawing;
 use App\Models\MapPing;
 use App\Models\User;
+use App\Support\BoardGrid;
 use App\Support\BoardVersion;
 use App\Support\Pulse;
 use App\Support\Navigation;
@@ -76,7 +77,9 @@ class DungeonController extends Controller
                 'pingsUrl' => route('maps.pings.store', $base),
                 'isGm' => $isGm,
                 'userId' => $user->id,
-                'grid' => ['cols' => $map->gridCols(), 'rows' => $map->gridRows()],
+                'grid' => ['cols' => $map->gridCols(), 'rows' => $map->gridRows(), 'type' => $map->gridTypeIn($session)],
+                'gridUrl' => route('dungeon.grid', $base),
+                'gridTypes' => BoardGrid::TYPES,
                 'entrance' => ['x' => $map->entrance_x ?? 10, 'y' => $map->entrance_y ?? 50],
                 'conditions' => array_map(static fn (array $c): array => ['name' => $c[0], 'symbol' => $c[1], 'color' => $c[2]], DungeonToken::CONDITIONS),
                 'markerCategories' => array_map(static fn (array $c): array => ['label' => $c[0], 'icon' => $c[1], 'color' => $c[2]], DungeonMarker::CATEGORIES),
@@ -133,12 +136,14 @@ class DungeonController extends Controller
         $cols = $campaignMap->gridCols();
         $rows = $campaignMap->gridRows();
         $revealed = array_flip($fog['revealed_cells']);
+        $layers = GameSessionMap::normalizeLayers($pivot?->layer_settings);
+        $gridType = $layers['grid_type'];
         // Jogador vê o próprio personagem sempre; qualquer outro token (inclusive
         // de outros jogadores e criaturas do mestre) só fora da névoa e se não
         // estiver oculto. Tokens de jogador revelam a névoa ao redor quando se
         // movem, então os companheiros aparecem assim que andam.
         // O mestre no modo Jogador também vê como jogador: suas criaturas não contam como "dele".
-        $tokens = $allTokens->filter(static function (DungeonToken $token) use ($isGm, $user, $fog, $revealed, $cols, $rows): bool {
+        $tokens = $allTokens->filter(static function (DungeonToken $token) use ($isGm, $user, $fog, $revealed, $cols, $rows, $gridType): bool {
             if ($isGm || $token->isPlayerTokenOf($user)) {
                 return true;
             }
@@ -149,14 +154,14 @@ class DungeonController extends Controller
                 return true;
             }
 
-            return isset($revealed[self::cellOf($token->x, $token->y, $cols, $rows)]);
+            return isset($revealed[self::cellOf((float) $token->x, (float) $token->y, $cols, $rows, $gridType)]);
         });
 
         return response()->json([
             'version' => $version,
             'changed' => true,
             'pulse' => $pulse,
-            'layers' => GameSessionMap::normalizeLayers($pivot?->layer_settings),
+            'layers' => $layers,
             'fog' => $fog,
             'tokens' => $tokens->map(static fn (DungeonToken $token): array => $token->toBoardArray($user, $isGm))->values(),
             'aoes' => DungeonAoe::query()->tap($scope)->orderBy('id')->get()->map(static fn (DungeonAoe $aoe): array => [
@@ -280,13 +285,49 @@ class DungeonController extends Controller
         return response()->json(['weather' => $weather, 'message' => 'Clima: '.Sounds::WEATHER[$weather].'.']);
     }
 
-    /** Índice da célula da grade que contém o ponto (em %). */
-    public static function cellOf(float $x, float $y, int $cols, int $rows): int
+    /**
+     * Formato da grade (mestre): quadrados ou hexágonos. Guarda nas camadas
+     * do mapa na campanha e reencaixa os tokens no novo formato; a névoa
+     * continua valendo, porque as células têm a mesma numeração.
+     */
+    public function grid(Request $request, GameSession $gameSession, CampaignMap $campaignMap): JsonResponse
     {
-        $col = min($cols - 1, max(0, (int) floor($x / 100 * $cols)));
-        $row = min($rows - 1, max(0, (int) floor($y / 100 * $rows)));
+        $this->authorizeDungeon($request, $gameSession, $campaignMap);
+        Gate::authorize('update', $gameSession);
 
-        return $row * $cols + $col;
+        $type = $request->validate(
+            ['grid_type' => ['required', Rule::in(array_keys(BoardGrid::TYPES))]],
+            [],
+            ['grid_type' => 'formato da grade'],
+        )['grid_type'];
+
+        DB::transaction(static function () use ($gameSession, $campaignMap, $type): void {
+            $pivot = $gameSession->maps()->whereKey($campaignMap->id)->first()?->pivot;
+            $layers = GameSessionMap::normalizeLayers($pivot?->layer_settings);
+
+            if ($layers['grid_type'] === $type) {
+                return;
+            }
+
+            $layers['grid_type'] = $type;
+
+            if ($pivot !== null) {
+                $gameSession->maps()->updateExistingPivot($campaignMap->id, ['layer_settings' => $layers]);
+            } else {
+                $gameSession->maps()->attach($campaignMap->id, ['active' => $campaignMap->active, 'layer_settings' => $layers]);
+            }
+
+            DungeonToken::snapAllTo($gameSession, $campaignMap, $type);
+            BoardVersion::bump($gameSession->id, $campaignMap->id);
+        });
+
+        return response()->json(['grid_type' => $type, 'message' => 'Grade: '.mb_strtolower(BoardGrid::TYPES[$type]).'.']);
+    }
+
+    /** Índice da célula da grade (quadrados ou hexágonos) que contém o ponto (em %). */
+    public static function cellOf(float $x, float $y, int $cols, int $rows, string $gridType = BoardGrid::SQUARE): int
+    {
+        return BoardGrid::cellOf($x, $y, $cols, $rows, $gridType);
     }
 
     /**
