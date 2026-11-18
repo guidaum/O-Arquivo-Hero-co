@@ -1,5 +1,8 @@
 // Painel lateral da masmorra (estilo Roll20), recolhível, dentro e fora do
 // Modo TV (o nome do arquivo vem de quando ele só existia no Modo TV).
+// - Tokens e Combate: desenhados por panel.js; o token/área selecionado fica
+//   acima das abas e, com o painel recolhido, abre o painel enquanto durar a
+//   seleção (evento dungeon:selection);
 // - Campanha (mestre): jogadores, NPCs e monstros com a vida (gm/health.js,
 //   mesma rota do Painel do Mestre) e "Ver ficha";
 // - Ficha: a página da ficha embutida (carrega só quando a aba abre);
@@ -51,20 +54,37 @@ export function createTvDrawer(ctx) {
 
     const state = {
         tv: false,
-        // Fora do Modo TV o painel começa recolhido; no Modo TV, aberto.
-        openMap: saved.openMap ?? false,
+        // Começa aberto (a lista de tokens mora aqui); cada modo lembra o seu.
+        openMap: saved.openMap ?? true,
         openTv: saved.openTv ?? true,
         tab: hasTab(saved.tab) ? saved.tab : tabs[0]?.dataset.tvTab,
         unread: 0,
         notesReady: false,
+        // Aberto só enquanto há um token/área selecionado (o painel estava recolhido).
+        peeking: false,
     };
 
-    const isOpen = () => (state.tv ? state.openTv : state.openMap);
+    const isOpen = () => state.peeking || (state.tv ? state.openTv : state.openMap);
 
     function setOpen(open) {
+        state.peeking = false;
         if (state.tv) state.openTv = open;
         else state.openMap = open;
     }
+
+    // Selecionar um token com o painel recolhido abre o painel para mostrar o
+    // token; desmarcar recolhe de novo (sem mudar a preferência guardada).
+    document.addEventListener('dungeon:selection', (event) => {
+        if (event.detail?.selected) {
+            if (isOpen()) return;
+            state.peeking = true;
+        } else if (state.peeking) {
+            state.peeking = false;
+        } else {
+            return;
+        }
+        apply();
+    });
 
     if (ctx.config.isGm) setupHealth(drawer, { notify });
 
@@ -193,6 +213,7 @@ export function createTvDrawer(ctx) {
         setTv(on) {
             if (state.tv === on) return;
             state.tv = on;
+            state.peeking = false;
             document.documentElement.classList.toggle('is-tv-mode', on);
             apply();
         },

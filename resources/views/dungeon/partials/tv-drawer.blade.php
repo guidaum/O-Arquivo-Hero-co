@@ -1,13 +1,17 @@
 {{--
     Painel lateral da masmorra (estilo Roll20), recolhível, no mapa normal e
     no Modo TV (o nome do arquivo vem de quando ele só existia no Modo TV).
-    Mestre: campanha (jogadores, NPCs e monstros com a vida), ficha, chat e
-    anotações da campanha. Jogador: a própria ficha, chat e as anotações do
-    personagem. O chat é o mesmo do menu de ações, acoplado aqui
-    (public/js/dungeon/tv-drawer.js).
+    Todos: tokens do mapa e combate (dungeon/panel.js), com o token ou a área
+    selecionada no topo (visível em qualquer aba). Mestre: campanha (jogadores,
+    NPCs e monstros com a vida), ficha, chat e anotações da campanha. Jogador:
+    a própria ficha, chat e as anotações do personagem. O chat é o mesmo do
+    menu de ações, acoplado aqui (public/js/dungeon/tv-drawer.js).
+    As abas mostram só o ícone; a aba ativa mostra também o nome.
 --}}
 @php
     $tabs = array_filter([
+        'tokens' => ['Tokens', 'crosshair'],
+        'combate' => ['Combate', 'swords'],
         'campanha' => $isGm ? ['Campanha', 'users'] : null,
         'ficha' => $tv['sheets']->isNotEmpty() ? ['Ficha', 'scroll-text'] : null,
         'chat' => ['Chat', 'message-square'],
@@ -28,12 +32,33 @@
     <div class="tv-drawer__body glass" id="tv-drawer-body">
         <nav class="tabs tabs--small tv-drawer__tabs" role="tablist" aria-label="Painel da mesa">
             @foreach ($tabs as $key => [$label, $tabIcon])
-                <button type="button" class="tabs__link" role="tab" id="tv-tab-{{ $key }}" aria-controls="tv-pane-{{ $key }}" aria-selected="false" data-tv-tab="{{ $key }}">
-                    <x-icon :name="$tabIcon" :size="15" /> {{ $label }}
+                <button type="button" class="tabs__link" role="tab" id="tv-tab-{{ $key }}" aria-controls="tv-pane-{{ $key }}" aria-selected="false" title="{{ $label }}" data-tv-tab="{{ $key }}">
+                    <x-icon :name="$tabIcon" :size="16" /> <span class="tv-drawer__tab-label">{{ $label }}</span>
                 </button>
             @endforeach
             <button type="button" class="icon-button tv-drawer__exit" data-tv-exit title="Sair do Modo TV"><x-icon name="minimize" :size="16" /><span class="visually-hidden">Sair do Modo TV</span></button>
         </nav>
+
+        {{-- Token ou área selecionada no mapa (dungeon/panel.js). --}}
+        <section class="dungeon-selected" data-selected hidden></section>
+
+        <div class="tv-drawer__pane" role="tabpanel" id="tv-pane-tokens" aria-labelledby="tv-tab-tokens" data-tv-pane="tokens" hidden>
+            <ul class="pin-list" data-token-list></ul>
+        </div>
+
+        <div class="tv-drawer__pane" role="tabpanel" id="tv-pane-combate" aria-labelledby="tv-tab-combate" data-tv-pane="combate" hidden>
+            <p class="dungeon-round" data-round></p>
+            @if ($isGm)
+                <div class="dungeon-combat-actions">
+                    <button type="button" class="button button--secondary" data-combat="prev" title="Turno anterior"><x-icon name="undo" :size="14" /></button>
+                    <button type="button" class="button" data-combat="start">Iniciar</button>
+                    <button type="button" class="button" data-combat="next">Próximo turno</button>
+                    <button type="button" class="button button--secondary" data-combat="reroll" title="Rolar iniciativa de todos"><x-icon name="dice" :size="14" /></button>
+                    <button type="button" class="button button--secondary" data-combat="reset" title="Encerrar combate"><x-icon name="x" :size="14" /></button>
+                </div>
+            @endif
+            <ol class="pin-list dungeon-turns" data-turns></ol>
+        </div>
 
         @if ($isGm)
             <div class="tv-drawer__pane" role="tabpanel" id="tv-pane-campanha" aria-labelledby="tv-tab-campanha" data-tv-pane="campanha" hidden>

@@ -199,32 +199,8 @@
                     <p class="world-map__coords glass" data-coords>Passe o cursor sobre o mapa</p>
                 </div>
 
-                {{-- Painel recolhível (ficha, chat e anotações), entre o mapa e a lista de tokens; no Modo TV fica sozinho à direita. --}}
+                {{-- Painel recolhível à direita: tokens, combate, ficha, chat e anotações (também no Modo TV). --}}
                 @include('dungeon.partials.tv-drawer')
-
-                <aside class="world-map__sidebar glass dungeon__sidebar" data-sidebar>
-                    <section class="dungeon-selected" data-selected hidden></section>
-
-                    <nav class="tabs tabs--small dungeon__tabs" aria-label="Painel">
-                        <button type="button" class="tabs__link" data-tab="tokens" aria-current="page">Tokens</button>
-                        <button type="button" class="tabs__link" data-tab="combat">Combate</button>
-                    </nav>
-                    <ul class="pin-list" data-panel="tokens" data-token-list></ul>
-                    <div data-panel="combat" hidden>
-                        <p class="dungeon-round" data-round></p>
-                        @if ($isGm)
-                            <div class="dungeon-combat-actions">
-                                <button type="button" class="button button--secondary" data-combat="prev" title="Turno anterior"><x-icon name="undo" :size="14" /></button>
-                                <button type="button" class="button" data-combat="start">Iniciar</button>
-                                <button type="button" class="button" data-combat="next">Próximo turno</button>
-                                <button type="button" class="button button--secondary" data-combat="reroll" title="Rolar iniciativa de todos"><x-icon name="dice" :size="14" /></button>
-                                <button type="button" class="button button--secondary" data-combat="reset" title="Encerrar combate"><x-icon name="x" :size="14" /></button>
-                            </div>
-                        @endif
-                        <ol class="pin-list dungeon-turns" data-turns></ol>
-                    </div>
-                </aside>
-
             </div>
         </div>
 

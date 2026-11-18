@@ -1,5 +1,6 @@
-// Barra lateral da masmorra: painel do token ou da área selecionada, lista de
-// tokens, ordem de combate e a ficha do personagem em popup.
+// Tokens da masmorra, dentro do painel lateral (tv-drawer.js cuida das abas):
+// token ou área selecionada, lista de tokens, ordem de combate e a ficha do
+// personagem em popup.
 
 import { deleteJson, request } from '../core/http.js';
 import { busy, el, icon, replace } from '../core/dom.js';
@@ -156,7 +157,16 @@ export function createPanel(ctx, annotations) {
         if (aoe) renderAoe(panel, aoe);
         else if (token) renderToken(panel, token);
         else if (!panel.querySelector('[data-keep]')) panel.hidden = true;
+
+        // O painel lateral abre sozinho enquanto algo está selecionado (tv-drawer.js).
+        const selection = aoe ? `aoe:${aoe.id}` : (token ? `token:${token.id}` : '');
+        if (selection !== lastSelection) {
+            lastSelection = selection;
+            document.dispatchEvent(new CustomEvent('dungeon:selection', { detail: { selected: selection !== '' } }));
+        }
     }
+
+    let lastSelection = '';
 
     // Lista de tokens e combate
 
@@ -197,11 +207,6 @@ export function createPanel(ctx, annotations) {
             ? el('li', { class: 'pin-list__empty' }, 'Sem combatentes.')
             : order.map((token, index) => tokenRow(token, el('span', { class: 'dungeon-turn-index' }, String(index + 1)))));
     }
-
-    root.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => {
-        root.querySelectorAll('[data-tab]').forEach((item) => (item === tab ? item.setAttribute('aria-current', 'page') : item.removeAttribute('aria-current')));
-        root.querySelectorAll('[data-panel]').forEach((panel) => { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
-    }));
 
     // "Próximo turno" clicado duas vezes pularia um combatente: um pedido por vez.
     root.querySelectorAll('[data-combat]').forEach((button) => button.addEventListener('click', () => busy(button, async () => {

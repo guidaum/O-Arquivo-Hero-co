@@ -339,32 +339,7 @@
     stroke-width: 6;
 }
 
-/* Painel lateral */
-
-.dungeon__sidebar {
-    gap: 0.75rem;
-}
-
-.dungeon__tabs {
-    width: 100%;
-    margin: 0;
-}
-
-.dungeon__tabs .tabs__link {
-    flex: 1;
-    justify-content: center;
-    border: 0;
-    font-family: inherit;
-    cursor: pointer;
-}
-
-.dungeon__tabs .tabs__link:not([aria-current]) {
-    background: transparent;
-}
-
-.dungeon__sidebar [data-panel][hidden] {
-    display: none;
-}
+/* Token ou área selecionada e listas (dentro do painel lateral) */
 
 .dungeon-selected {
     display: grid;
@@ -506,12 +481,11 @@
     cursor: pointer;
 }
 
-/* Modo TV: só o mapa. */
+/* Modo TV: o mapa em tela cheia, com as ferramentas flutuantes (mover, régua,
+   sinal, áreas, marcadores, desenho, névoa e as opções de cada uma) e o
+   painel lateral; sem a barra superior nem as coordenadas. */
 
 .dungeon--tv .world-map__bar,
-.dungeon--tv .world-map__sidebar,
-.dungeon--tv .dungeon-tools,
-.dungeon--tv .dungeon-options,
 .dungeon--tv .world-map__coords {
     display: none;
 }
@@ -525,13 +499,13 @@
 }
 
 /*
- * Painel lateral da masmorra (estilo Roll20): entre o mapa e a lista de
- * tokens, recolhível; no Modo TV fica sozinho à direita. Fichas, chat
- * (acoplado do menu de ações) e anotações; tv-drawer.js.
+ * Painel lateral da masmorra (estilo Roll20): à direita do mapa, recolhível,
+ * também no Modo TV. Tokens, combate, fichas, chat (acoplado do menu de
+ * ações) e anotações; tv-drawer.js e panel.js.
  */
 
 :root {
-    --tv-drawer-width: min(24rem, 30vw);
+    --tv-drawer-width: min(25rem, 34vw);
 }
 
 :root.is-tv-mode {
@@ -616,11 +590,25 @@
     width: 100%;
     flex-shrink: 0;
     align-items: center;
+    gap: 0.15rem;
     margin: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
 }
 
 .tv-drawer__tabs .tabs__link {
-    padding-inline: 0.6rem;
+    flex-shrink: 0;
+    padding-inline: 0.55rem;
+}
+
+/* Só a aba ativa mostra o nome; as outras ficam no ícone (title e leitor de tela). */
+.tv-drawer__tabs .tabs__link:not([aria-current]) .tv-drawer__tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .tv-drawer__tabs .tabs__link.has-unread::after {
@@ -639,8 +627,12 @@
     display: none;
 }
 
-.dungeon:not(.dungeon--tv) .tv-drawer__tabs .tabs__link:last-of-type {
-    margin-right: auto;
+/* Token ou área selecionada: fica acima das abas de conteúdo, em qualquer aba. */
+.tv-drawer .dungeon-selected {
+    max-height: 50%;
+    flex-shrink: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .tv-drawer__pane {
@@ -729,20 +721,27 @@
     box-shadow: none;
 }
 
-/* Menu de ações (dados, ambientação) por cima do Modo TV, ao lado do painel. */
+/* Menu de ações (dados, ambientação): por cima do Modo TV e, com o painel
+   aberto, ao lado dele; o zoom do mapa sobe para não ficar sob o botão. */
 
 .is-tv-mode .action-menu__fab,
 .is-tv-mode .tool-panel {
     z-index: 96;
 }
 
-.is-tv-mode.is-tv-drawer-open .action-menu__fab,
-.is-tv-mode.is-tv-drawer-open .tool-panel {
-    right: calc(var(--tv-drawer-width) + 1.5rem);
+.dungeon .world-map__controls {
+    bottom: calc(5.25rem + var(--safe-bottom, 0px));
+}
+
+@media (min-width: 1024px) {
+    .is-tv-drawer-open .action-menu__fab,
+    .is-tv-drawer-open .tool-panel {
+        right: calc(var(--tv-drawer-width) + 1.5rem);
+    }
 }
 
 /*
- * Telas médias e pequenas (a lista de tokens vira faixa inferior): o painel
+ * Telas médias e pequenas: o painel
  * cobre o mapa pela direita; recolha para ver o mapa inteiro. Com ele aberto,
  * o botão do menu de ações sai da frente (o envio do chat fica no mesmo canto).
  */
@@ -762,6 +761,11 @@
     .is-tv-drawer-open .action-menu__fab,
     .is-tv-drawer-open .tool-panel {
         visibility: hidden;
+    }
+
+    /* Sem a faixa inferior da lista de tokens (ela mora no painel). */
+    .dungeon .world-map__coords {
+        bottom: 0.75rem;
     }
 }
 
