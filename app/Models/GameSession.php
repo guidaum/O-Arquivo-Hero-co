@@ -229,6 +229,16 @@ class GameSession extends Model
     }
 
     /**
+     * Referências visuais do mestre (Escudo do Mestre).
+     *
+     * @return HasMany<GameSessionReference, $this>
+     */
+    public function references(): HasMany
+    {
+        return $this->hasMany(GameSessionReference::class);
+    }
+
+    /**
      * @return HasMany<JournalEntry, $this>
      */
     public function journalEntries(): HasMany

@@ -15,7 +15,8 @@ function stateOf(current, max) {
 function render(card, { current_pv: current, temp_pv: temp, max_pv: max }) {
     const percent = max > 0 ? Math.max(0, Math.min(100, Math.round((current / max) * 100))) : 0;
 
-    card.querySelector('[data-health-current]').textContent = String(current);
+    // O Escudo do Mestre também mostra o PV no resumo da linha do NPC.
+    card.querySelectorAll('[data-health-current]').forEach((node) => { node.textContent = String(current); });
     card.querySelector('[data-health-max]').textContent = String(max);
     card.querySelector('[data-health-fill]').style.width = `${percent}%`;
     card.querySelector('[data-health-shield]').style.width = `${max > 0 ? Math.min(100 - percent, Math.round((temp / max) * 100)) : 0}%`;

@@ -27,6 +27,9 @@
         </x-slot:badges>
 
         <x-slot:actions>
+            <a class="button button--gold button--pill" href="{{ route('gm.sessions.screen', $session) }}" title="Grupo, NPCs, anotações, referências, mapas, regras e chat numa tela só">
+                <x-icon name="shield" /> Escudo do Mestre
+            </a>
             <a class="button button--secondary button--pill" href="{{ route('gm.sessions.rules.edit', $session) }}" @if ($libraryPending > 0) title="{{ $libraryPending }} sugestão(ões) das Configurações Base" @endif>
                 <x-icon name="sliders" /> Regras & Biblioteca
                 @if ($libraryPending > 0) <span class="tabs__count">{{ $libraryPending }}</span> @endif

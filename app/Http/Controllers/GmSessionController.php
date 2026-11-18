@@ -16,6 +16,7 @@ use App\Models\GameSession;
 use App\Models\RuleSet;
 use App\Support\CampaignLibrary;
 use App\Support\Sounds;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -137,13 +138,21 @@ class GmSessionController extends Controller
     /**
      * Anotações privadas do mestre (gmNotes).
      */
-    public function updateNotes(Request $request, GameSession $gameSession): RedirectResponse
+    public function updateNotes(Request $request, GameSession $gameSession): RedirectResponse|JsonResponse
     {
         Gate::authorize('update', $gameSession);
 
         $data = $request->validate(['gm_notes' => ['nullable', 'string', 'max:65000']], [], ['gm_notes' => 'anotações']);
 
         $gameSession->update(['gm_notes' => $data['gm_notes'] ?? null]);
+
+        // O Escudo do Mestre salva sozinho enquanto o mestre escreve.
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Notas do mestre salvas!',
+                'saved_at' => now()->timezone(config('app.timezone'))->format('H:i'),
+            ]);
+        }
 
         return redirect()->route('gm.sessions.show', [$gameSession, 'aba' => 'anotacoes'])->with('status', 'Notas do mestre salvas!');
     }
@@ -163,6 +172,7 @@ class GmSessionController extends Controller
         ]);
 
         self::deleteStoredFile($gameSession->image_path);
+        $gameSession->references()->get()->each->deleteFile();
         $gameSession->delete();
 
         return redirect()->route('dashboard')->with('status', 'Campanha "'.$gameSession->name.'" excluída.');

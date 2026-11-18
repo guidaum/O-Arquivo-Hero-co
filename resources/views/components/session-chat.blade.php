@@ -1,4 +1,4 @@
-@props(['session', 'character' => null, 'launcher' => true])
+@props(['session', 'character' => null, 'launcher' => true, 'docked' => false])
 
 {{--
     Chat da Sessão (SessionChat.tsx): botão flutuante + painel. As mensagens
@@ -15,6 +15,7 @@
         'characterId' => $character?->id,
         'userId' => auth()->id(),
         'participants' => $session->chatParticipants(),
+        'docked' => $docked,
     ];
 @endphp
 
@@ -27,9 +28,9 @@
     @endpush
 @endonce
 
-{{-- Sem launcher, o chat abre pelo menu de ações (x-action-menu), que mostra as não lidas. --}}
-<div @class(['chat', 'chat--embedded' => ! $launcher]) data-chat data-config="{{ json_encode($config) }}">
-    @if ($launcher)
+{{-- Sem launcher, o chat abre pelo menu de ações (x-action-menu), que mostra as não lidas. Com docked, fica sempre aberto dentro da página (Escudo do Mestre). --}}
+<div @class(['chat', 'chat--embedded' => ! $launcher && ! $docked, 'chat--docked' => $docked]) data-chat data-config="{{ json_encode($config) }}">
+    @if ($launcher && ! $docked)
         <button type="button" class="chat-launcher" data-chat-toggle aria-expanded="false" aria-controls="chat-panel-{{ $session->id }}" title="Chat da Sessão">
             <x-icon name="message-square" :size="22" />
             <span class="visually-hidden">Abrir o chat da sessão</span>
@@ -51,12 +52,14 @@
                         <span data-chat-clear-label class="visually-hidden">Limpar o chat</span>
                     </button>
                 @endif
-                <button type="button" class="icon-button hide-mobile" data-chat-expand title="Aumentar ou reduzir" aria-pressed="false">
-                    <x-icon name="maximize" :size="18" />
-                </button>
-                <button type="button" class="icon-button" data-chat-toggle title="Fechar o chat">
-                    <x-icon name="chevron-down" :size="20" />
-                </button>
+                @unless ($docked)
+                    <button type="button" class="icon-button hide-mobile" data-chat-expand title="Aumentar ou reduzir" aria-pressed="false">
+                        <x-icon name="maximize" :size="18" />
+                    </button>
+                    <button type="button" class="icon-button" data-chat-toggle title="Fechar o chat">
+                        <x-icon name="chevron-down" :size="20" />
+                    </button>
+                @endunless
             </div>
         </header>
 

@@ -47,6 +47,8 @@ use App\Http\Controllers\QuickNoteController;
 use App\Http\Controllers\GmBestiaryController;
 use App\Http\Controllers\GmCharacterController;
 use App\Http\Controllers\GmPlayerController;
+use App\Http\Controllers\GmReferenceController;
+use App\Http\Controllers\GmScreenController;
 use App\Http\Controllers\GmSessionController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\InventoryItemController;
@@ -119,6 +121,14 @@ Route::middleware(['auth', 'throttle:writes'])->group(function (): void {
     // Painel do Mestre: abas por query string (?aba=mesa|bestiario|encontros|anotacoes|configuracoes).
     Route::prefix('/mestre/sessoes/{gameSession}')->name('gm.sessions.')->group(function (): void {
         Route::get('/', [GmSessionController::class, 'show'])->name('show');
+        // Escudo do Mestre: tela de apoio durante a sessão.
+        Route::get('/escudo', [GmScreenController::class, 'show'])->name('screen');
+        Route::scopeBindings()->prefix('/referencias')->name('references.')->group(function (): void {
+            Route::post('/', [GmReferenceController::class, 'store'])->middleware('throttle:uploads')->name('store');
+            Route::put('/{reference}', [GmReferenceController::class, 'update'])->name('update');
+            Route::delete('/{reference}', [GmReferenceController::class, 'destroy'])->name('destroy');
+            Route::post('/{reference}/mostrar', [GmReferenceController::class, 'share'])->middleware('throttle:30,1')->name('share');
+        });
         Route::put('/configuracoes', [GmSessionController::class, 'update'])->middleware('throttle:uploads')->name('update');
         Route::put('/anotacoes', [GmSessionController::class, 'updateNotes'])->name('notes');
         Route::delete('/', [GmSessionController::class, 'destroy'])->name('destroy');

@@ -1,14 +1,17 @@
-@props(['session' => null, 'character' => null, 'notes' => 'character'])
+@props(['session' => null, 'character' => null, 'notes' => 'character', 'chat' => true])
 
 {{--
     Menu de Ações (ActionMenu.tsx): botão flutuante que abre o Rolador de
     Dados, o Chat da Sessão e as Anotações Rápidas. Só uma ferramenta fica
     aberta por vez (eventos tool:toggle / tool:state em public/js/tools/).
-    $notes escolhe o escopo inicial das anotações: "character" ou "campaign".
+    $notes escolhe o escopo inicial das anotações: "character", "campaign"
+    ou "none" (sem anotações). :chat="false" tira o chat do menu, para telas
+    que já mostram o chat fixo (Escudo do Mestre).
 --}}
 @php
     $user = auth()->user();
-    $showChat = $session !== null && $user->can('view', $session);
+    $canChat = $session !== null && $user->can('view', $session);
+    $showChat = $chat && $canChat;
     $speaker = $character !== null && $character->user_id === $user->id ? $character : null;
     $ruleSet = App\Game\GameRules::forSession($session)->ruleSet();
 
@@ -19,14 +22,16 @@
     if ($session !== null && $user->can('update', $session)) {
         $noteScopes['campaign'] = ['label' => 'Campanha', 'name' => $session->name, 'url' => route('sessions.notes.index', $session)];
     }
-    if (isset($noteScopes[$notes])) {
+    if ($notes === 'none') {
+        $noteScopes = [];
+    } elseif (isset($noteScopes[$notes])) {
         $noteScopes = [$notes => $noteScopes[$notes]] + $noteScopes;
     }
 
     $soundUrls = App\Support\Sounds::urls($ruleSet);
     $diceConfig = [
         'rollUrl' => route('dice.roll'),
-        'sessionId' => $showChat ? $session->id : null,
+        'sessionId' => $canChat ? $session->id : null,
         'characterId' => $speaker?->id,
         'sounds' => [
             'diceRoll' => $soundUrls['dice_roll'],
@@ -38,7 +43,7 @@
     ];
 
     // Ambientação: todo participante da campanha ouve; o mestre controla.
-    $showAmbience = $showChat;
+    $showAmbience = $canChat;
     $ambienceGm = $showAmbience && $user->can('update', $session);
     $ambienceConfig = $showAmbience ? [
         'stateUrl' => route('ambience.state', $session),
@@ -87,7 +92,7 @@
             <span class="icon-tile"><x-icon name="die-20" :size="18" /></span>
             <div class="tool-panel__title">
                 <h2>Rolador de Dados</h2>
-                <p class="eyebrow">{{ $showChat ? 'Resultados vão para o chat' : 'Rolagem livre' }}</p>
+                <p class="eyebrow">{{ $canChat ? 'Resultados vão para o chat' : 'Rolagem livre' }}</p>
             </div>
             <nav class="tabs tabs--small dice-tabs" aria-label="Rolador ou histórico">
                 <button type="button" class="tabs__link" aria-current="page" data-dice-tab="roller">Rolador</button>
@@ -305,10 +310,12 @@
                     <x-icon name="feather" :size="20" /><span class="action-menu__label">Anotações Rápidas</span>
                 </button>
             @endif
-            <button type="button" class="action-menu__option action-menu__option--chat" data-tool-open="chat" @unless ($showChat) data-tool-unavailable="Vincule seu personagem a uma campanha para abrir o Chat da Sessão!" @endunless title="Chat da Sessão">
-                <x-icon name="message-square" :size="20" /><span class="action-menu__label">Chat da Sessão</span>
-                <span class="action-menu__badge" data-tool-badge="chat" hidden></span>
-            </button>
+            @if ($chat)
+                <button type="button" class="action-menu__option action-menu__option--chat" data-tool-open="chat" @unless ($showChat) data-tool-unavailable="Vincule seu personagem a uma campanha para abrir o Chat da Sessão!" @endunless title="Chat da Sessão">
+                    <x-icon name="message-square" :size="20" /><span class="action-menu__label">Chat da Sessão</span>
+                    <span class="action-menu__badge" data-tool-badge="chat" hidden></span>
+                </button>
+            @endif
             @if ($showAmbience)
                 <button type="button" class="action-menu__option action-menu__option--ambience" data-tool-open="ambience" title="Ambientação">
                     <x-icon name="volume" :size="20" /><span class="action-menu__label">Ambientação</span>

@@ -197,7 +197,7 @@ function setupChat(root) {
 
     // Abrir e fechar
 
-    function setOpen(open) {
+    function setOpen(open, focus = true) {
         state.open = open;
         panel.hidden = !open;
         root.classList.toggle('chat--open', open);
@@ -207,10 +207,13 @@ function setupChat(root) {
         if (open) {
             feed.refresh();
             scrollToBottom(false);
-            input.focus();
+            if (focus) input.focus();
         }
 
-        document.dispatchEvent(new CustomEvent('tool:state', { detail: { tool: 'chat', open } }));
+        // O chat fixo (Escudo do Mestre) não participa do "uma ferramenta por vez".
+        if (!config.docked) {
+            document.dispatchEvent(new CustomEvent('tool:state', { detail: { tool: 'chat', open } }));
+        }
         updateUnread();
     }
 
@@ -218,10 +221,10 @@ function setupChat(root) {
 
     // Integração com o menu de ações: abrir pelo botão dele e fechar quando outra ferramenta abre.
     document.addEventListener('tool:toggle', (event) => {
-        if (event.detail?.tool === 'chat') setOpen(event.detail.open ?? !state.open);
+        if (!config.docked && event.detail?.tool === 'chat') setOpen(event.detail.open ?? !state.open);
     });
     document.addEventListener('tool:state', (event) => {
-        if (event.detail?.tool !== 'chat' && event.detail?.open && state.open) setOpen(false);
+        if (!config.docked && event.detail?.tool !== 'chat' && event.detail?.open && state.open) setOpen(false);
     });
 
     root.querySelector('[data-chat-expand]')?.addEventListener('click', (event) => {
@@ -231,7 +234,7 @@ function setupChat(root) {
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && state.open && mentionBox.hidden && !document.querySelector('dialog[open]')) setOpen(false);
+        if (event.key === 'Escape' && !config.docked && state.open && mentionBox.hidden && !document.querySelector('dialog[open]')) setOpen(false);
     });
 
     // Limpar (mestre): pede confirmação com um segundo clique em até 3 segundos.
@@ -454,8 +457,11 @@ function setupChat(root) {
         }
     });
 
-    // Link de notificação (?chat=1) abre o chat direto.
-    if (new URLSearchParams(window.location.search).get('chat') === '1') {
+    // Chat fixo na tela: sempre aberto, sem roubar o foco ao carregar.
+    if (config.docked) {
+        setOpen(true, false);
+    } else if (new URLSearchParams(window.location.search).get('chat') === '1') {
+        // Link de notificação (?chat=1) abre o chat direto.
         setOpen(true);
     }
 }
