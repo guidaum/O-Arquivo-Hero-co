@@ -277,7 +277,7 @@
 
 .main__inner {
     width: 100%;
-    max-width: 90rem;
+    /*max-width: 90rem;*/
     margin: 0 auto;
 }
 
