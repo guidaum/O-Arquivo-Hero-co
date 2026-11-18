@@ -48,5 +48,22 @@ document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
     });
 });
 
+// Página embutida (ficha no painel ou no popup do mapa): segue o tema da
+// página de fora, inclusive quando ele é trocado com a ficha aberta.
+try {
+    if (root.classList.contains('is-embedded') && window.parent !== window) {
+        const outer = window.parent.document.documentElement;
+        const follow = () => {
+            root.classList.toggle('light', outer.classList.contains('light'));
+            updateButtons(currentTheme());
+        };
+
+        new MutationObserver(follow).observe(outer, { attributes: true, attributeFilter: ['class'] });
+        follow();
+    }
+} catch (error) {
+    // Página de fora de outra origem: fica o tema salvo neste navegador.
+}
+
 updateButtons(currentTheme());
 syncThemeColor();

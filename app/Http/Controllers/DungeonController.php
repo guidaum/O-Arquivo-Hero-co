@@ -102,7 +102,7 @@ class DungeonController extends Controller
     }
 
     /**
-     * Painel lateral do Modo TV (estilo Roll20): fichas, chat e anotações.
+     * Painel lateral da masmorra (estilo Roll20, também no Modo TV): fichas, chat e anotações.
      * Mestre: personagens dos jogadores e NPCs/monstros com a vida (mesma rota
      * do Painel do Mestre) e as anotações da campanha. Jogador: as próprias
      * fichas e as anotações do personagem.

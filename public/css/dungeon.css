@@ -525,25 +525,26 @@
 }
 
 /*
- * Painel lateral do Modo TV (estilo Roll20): ao lado do mapa, recolhível.
- * Fichas, chat (acoplado do menu de ações) e anotações; tv-drawer.js.
+ * Painel lateral da masmorra (estilo Roll20): entre o mapa e a lista de
+ * tokens, recolhível; no Modo TV fica sozinho à direita. Fichas, chat
+ * (acoplado do menu de ações) e anotações; tv-drawer.js.
  */
 
 :root {
+    --tv-drawer-width: min(24rem, 30vw);
+}
+
+:root.is-tv-mode {
     --tv-drawer-width: min(26rem, 40vw);
 }
 
 .tv-drawer {
     position: relative;
     z-index: 6;
-    display: none;
+    display: flex;
     width: var(--tv-drawer-width);
     flex-shrink: 0;
     transition: width 0.2s ease;
-}
-
-.dungeon--tv .tv-drawer {
-    display: flex;
 }
 
 .tv-drawer.is-collapsed {
@@ -632,6 +633,14 @@
 
 .tv-drawer__exit {
     margin-left: auto;
+}
+
+.dungeon:not(.dungeon--tv) .tv-drawer__exit {
+    display: none;
+}
+
+.dungeon:not(.dungeon--tv) .tv-drawer__tabs .tabs__link:last-of-type {
+    margin-right: auto;
 }
 
 .tv-drawer__pane {
@@ -727,27 +736,32 @@
     z-index: 96;
 }
 
-.is-tv-drawer-open .action-menu__fab,
-.is-tv-drawer-open .tool-panel {
+.is-tv-mode.is-tv-drawer-open .action-menu__fab,
+.is-tv-mode.is-tv-drawer-open .tool-panel {
     right: calc(var(--tv-drawer-width) + 1.5rem);
 }
 
-/* Telas estreitas: o painel cobre o mapa (recolhe para ver o mapa inteiro). */
+/*
+ * Telas médias e pequenas (a lista de tokens vira faixa inferior): o painel
+ * cobre o mapa pela direita; recolha para ver o mapa inteiro. Com ele aberto,
+ * o botão do menu de ações sai da frente (o envio do chat fica no mesmo canto).
+ */
 
-@media (max-width: 760px) {
-    :root {
-        --tv-drawer-width: calc(100vw - 3.25rem);
+@media (max-width: 1023px) {
+    :root,
+    :root.is-tv-mode {
+        --tv-drawer-width: min(26rem, calc(100vw - 3.25rem));
     }
 
     .tv-drawer {
         position: absolute;
         inset: 0 0 0 auto;
+        z-index: 9;
     }
 
     .is-tv-drawer-open .action-menu__fab,
     .is-tv-drawer-open .tool-panel {
-        right: max(1rem, var(--safe-right));
-        opacity: 0.35;
+        visibility: hidden;
     }
 }
 

@@ -1,13 +1,15 @@
-// Painel lateral do Modo TV (estilo Roll20): recolhível, com abas.
+// Painel lateral da masmorra (estilo Roll20), recolhível, dentro e fora do
+// Modo TV (o nome do arquivo vem de quando ele só existia no Modo TV).
 // - Campanha (mestre): jogadores, NPCs e monstros com a vida (gm/health.js,
 //   mesma rota do Painel do Mestre) e "Ver ficha";
 // - Ficha: a página da ficha embutida (carrega só quando a aba abre);
-// - Chat: o chat do menu de ações é acoplado aqui enquanto o Modo TV está
-//   ligado (evento chat:dock), então a página continua com um chat só;
+// - Chat: o chat do menu de ações fica acoplado aqui (evento chat:dock), então
+//   a página continua com um chat só; o botão de chat do menu abre esta aba;
 // - Notas: anotações rápidas (campanha para o mestre, personagem para o
 //   jogador), com o quadro do Escudo (gm-screen/notes.js), carregadas na
 //   primeira abertura para não consultar o servidor à toa.
-// Aberto/recolhido e a última aba ficam no navegador.
+// Aberto/recolhido (um estado para o mapa normal, outro para o Modo TV) e a
+// última aba ficam no navegador.
 
 import { setupHealth } from '../gm/health.js';
 import { setupNotes } from '../gm-screen/notes.js';
@@ -49,11 +51,20 @@ export function createTvDrawer(ctx) {
 
     const state = {
         tv: false,
-        open: saved.open ?? true,
+        // Fora do Modo TV o painel começa recolhido; no Modo TV, aberto.
+        openMap: saved.openMap ?? false,
+        openTv: saved.openTv ?? true,
         tab: hasTab(saved.tab) ? saved.tab : tabs[0]?.dataset.tvTab,
         unread: 0,
         notesReady: false,
     };
+
+    const isOpen = () => (state.tv ? state.openTv : state.openMap);
+
+    function setOpen(open) {
+        if (state.tv) state.openTv = open;
+        else state.openMap = open;
+    }
 
     if (ctx.config.isGm) setupHealth(drawer, { notify });
 
@@ -94,9 +105,7 @@ export function createTvDrawer(ctx) {
 
     // Mensagens novas com o chat fora de vista
 
-    function chatVisible() {
-        return state.tv && state.open && state.tab === 'chat';
-    }
+    const chatVisible = () => isOpen() && state.tab === 'chat';
 
     function renderBadge() {
         badge.hidden = state.unread === 0;
@@ -114,10 +123,11 @@ export function createTvDrawer(ctx) {
     // Abrir, recolher e trocar de aba
 
     function apply() {
-        drawer.classList.toggle('is-collapsed', !state.open);
-        toggle.setAttribute('aria-expanded', String(state.open));
-        toggle.title = state.open ? 'Recolher o painel' : 'Abrir o painel';
-        document.documentElement.classList.toggle('is-tv-drawer-open', state.tv && state.open);
+        const open = isOpen();
+        drawer.classList.toggle('is-collapsed', !open);
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.title = open ? 'Recolher o painel' : 'Abrir o painel (ficha, chat e anotações)';
+        document.documentElement.classList.toggle('is-tv-drawer-open', open);
 
         tabs.forEach((tab) => {
             const current = tab.dataset.tvTab === state.tab;
@@ -127,7 +137,7 @@ export function createTvDrawer(ctx) {
         });
         drawer.querySelectorAll('[data-tv-pane]').forEach((pane) => { pane.hidden = pane.dataset.tvPane !== state.tab; });
 
-        if (state.tv && state.open) {
+        if (open) {
             if (state.tab === 'ficha') loadSheet();
             if (state.tab === 'notas' && !state.notesReady && notesConfig.url) {
                 state.notesReady = true;
@@ -137,17 +147,17 @@ export function createTvDrawer(ctx) {
         if (chatVisible()) state.unread = 0;
 
         renderBadge();
-        save({ open: state.open, tab: state.tab });
+        save({ openMap: state.openMap, openTv: state.openTv, tab: state.tab });
     }
 
     function show(tab) {
         if (hasTab(tab)) state.tab = tab;
-        state.open = true;
+        setOpen(true);
         apply();
     }
 
     toggle.addEventListener('click', () => {
-        state.open = !state.open;
+        setOpen(!isOpen());
         apply();
     });
 
@@ -164,20 +174,26 @@ export function createTvDrawer(ctx) {
         });
     });
 
-    // No Modo TV, o botão de chat do menu de ações abre esta aba.
+    // O botão de chat do menu de ações abre esta aba (o chat mora aqui).
     document.addEventListener('tool:toggle', (event) => {
-        if (state.tv && event.detail?.tool === 'chat' && event.detail.open !== false) show('chat');
+        if (event.detail?.tool === 'chat' && event.detail.open !== false) show('chat');
     });
+
+    // Acopla o chat; se o script do chat ainda não rodou, tenta de novo quando
+    // a página termina de carregar (todos os módulos rodam antes disso).
+    const dock = () => document.dispatchEvent(new CustomEvent('chat:dock', { detail: { sessionId, slot: chatSlot } }));
+    dock();
+    if (!chatSlot.querySelector('[data-chat]')) document.addEventListener('DOMContentLoaded', dock, { once: true });
+
+    // Link de notificação (?chat=1): abre direto no chat.
+    if (new URLSearchParams(window.location.search).get('chat') === '1') show('chat');
+    else apply();
 
     return {
         setTv(on) {
             if (state.tv === on) return;
             state.tv = on;
             document.documentElement.classList.toggle('is-tv-mode', on);
-            document.dispatchEvent(new CustomEvent('chat:dock', { detail: { sessionId, slot: on ? chatSlot : null } }));
-
-            // Fora do Modo TV a ficha sai da memória; volta atualizada na próxima vez.
-            if (!on && sheetFrame) sheetFrame.setAttribute('src', 'about:blank');
             apply();
         },
     };

@@ -199,6 +199,9 @@
                     <p class="world-map__coords glass" data-coords>Passe o cursor sobre o mapa</p>
                 </div>
 
+                {{-- Painel recolhível (ficha, chat e anotações), entre o mapa e a lista de tokens; no Modo TV fica sozinho à direita. --}}
+                @include('dungeon.partials.tv-drawer')
+
                 <aside class="world-map__sidebar glass dungeon__sidebar" data-sidebar>
                     <section class="dungeon-selected" data-selected hidden></section>
 
@@ -222,7 +225,6 @@
                     </div>
                 </aside>
 
-                @include('dungeon.partials.tv-drawer')
             </div>
         </div>
 

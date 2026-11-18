@@ -1,9 +1,10 @@
 {{--
-    Painel lateral do Modo TV (estilo Roll20), recolhível. Só aparece com o
-    mapa em Modo TV. Mestre: campanha (jogadores, NPCs e monstros com a vida),
-    ficha, chat e anotações da campanha. Jogador: a própria ficha, chat e as
-    anotações do personagem. O chat é o mesmo do menu de ações, movido para cá
-    enquanto o Modo TV está ligado (public/js/dungeon/tv-drawer.js).
+    Painel lateral da masmorra (estilo Roll20), recolhível, no mapa normal e
+    no Modo TV (o nome do arquivo vem de quando ele só existia no Modo TV).
+    Mestre: campanha (jogadores, NPCs e monstros com a vida), ficha, chat e
+    anotações da campanha. Jogador: a própria ficha, chat e as anotações do
+    personagem. O chat é o mesmo do menu de ações, acoplado aqui
+    (public/js/dungeon/tv-drawer.js).
 --}}
 @php
     $tabs = array_filter([

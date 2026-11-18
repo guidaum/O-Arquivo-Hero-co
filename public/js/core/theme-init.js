@@ -5,15 +5,27 @@
 // Como no sistema antigo, no celular o site sempre abre no tema claro.
 (function () {
     var root = document.documentElement;
+    var outer = null;
 
     // Página aberta dentro de um popup de outra tela (ex.: ficha no battlemap):
     // sem menu, cabeçalho nem ferramentas (responsive.css), e sem polling (realtime.js).
     try {
         if (window.self !== window.top) {
             root.classList.add('is-embedded');
+            outer = window.parent.document.documentElement;
         }
     } catch (error) {
         root.classList.add('is-embedded');
+    }
+
+    // Embutida, usa o tema da página de fora (a largura do iframe não diz se é
+    // celular); theme.js acompanha as trocas de tema dela ao vivo.
+    if (outer) {
+        if (outer.classList.contains('light')) {
+            root.classList.add('light');
+        }
+
+        return;
     }
     var isMobile = window.innerWidth < 768
         || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
